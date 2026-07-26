@@ -16,3 +16,5 @@
 2026-07-26T02:35:17Z | forge | EP-001 | MILESTONE_PASS | M6 foundation gates green (8/8 per milestone RUN list; smoke+live-fire blocked until EP-003+)
 2026-07-26T02:40:46Z | forge | EP-001 | LEASE_RELEASE | EP-001 completed
 2026-07-26T02:40:57Z | forge | EP-001 | NODE_DONE | all 6 milestones passed; M1-M6 gates green; smoke+live-fire deferred to EP-007+
+2026-07-26T02:41:18Z | forge | EP-002 | LEASE | forge starting EP-002 core domain
+2026-07-26T02:44:23Z | forge | EP-002 | MILESTONE_PASS | M1 core and rng ok
