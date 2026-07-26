@@ -83,12 +83,11 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     // Load the campaign save
-    let save_raw = std::fs::read(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw =
+        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData =
-        pb_save::format::deserialize_save(&save_raw)
-            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+    let save: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw)
+        .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Find available missions
     let graph = build_graph(&content);
@@ -186,12 +185,11 @@ pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
         .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
-    let save_raw = std::fs::read(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw =
+        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData =
-        pb_save::format::deserialize_save(&save_raw)
-            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+    let save: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw)
+        .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Build ledger chain
     let mut chain = LedgerChain::new();
