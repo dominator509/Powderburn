@@ -27,4 +27,4 @@
 2026-07-26T03:11:57Z | forge | EP-003 | LEASE | forge starting EP-003 data and persistence
 2026-07-26T03:25:14Z | forge | EP-003 | MILESTONE_PASS | M1 schema ok
 2026-07-26T03:35:43Z | forge | EP-003 | MILESTONE_PASS | M2-M7 all milestones complete
-2026-07-26T03:35:43Z | forge | EP-003 | NODE_DONE | 7 milestones: schema, rules data, validator, campaign graph, save/ledger, loader faithfulness, mod sandbox
+2026-07-26T03:35:51Z | forge | EP-003 | LEASE_RELEASE | EP-003 completed
