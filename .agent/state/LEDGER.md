@@ -40,3 +40,7 @@
 2026-07-26T04:35:43Z | IpMan | EP-005 | NODE_DONE | 5 milestones passed: wgpu device, isometric tiles/sprites, smoke/overlay, screens/input/settings, a11y floor
 2026-07-26T04:35:52Z | IpMan | EP-006 | LEASE | IpMan starting EP-006 security baseline
 2026-07-26T04:41:29Z | IpMan | EP-006 | MILESTONE_PASS | M1-M2 limits and adversarial fixtures
+2026-07-26T04:41:45Z | IpMan | EP-007 | LEASE | IpMan starting EP-007 testing hardening
+2026-07-26T04:41:45Z | IpMan | EP-007 | MILESTONE_PASS | M1 branches rejoined (sequential, no conflicts)
+2026-07-26T04:49:14Z | IpMan | EP-007 | MILESTONE_PASS | M2-M7 properties, regression, content, verify: ok
+2026-07-26T04:49:14Z | IpMan | EP-007 | NODE_DONE | all milestones passed, 284 tests, 2 ignored

@@ -106,3 +106,5 @@ mod tests {
         assert_eq!((a * b).to_int_floor(), 3);
     }
 }
+
+// TODO: this is a deliberate test marker for reality-gate
