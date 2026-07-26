@@ -24,4 +24,5 @@
 2026-07-26T03:01:20Z | forge | EP-002 | MILESTONE_PASS | M5 ai ok
 2026-07-26T03:04:27Z | forge | EP-002 | MILESTONE_PASS | M6 test-integration: ok
 2026-07-26T03:04:41Z | forge | EP-002 | NODE_DONE | all 6 milestones passed; test-unit+test-integration green; 130+ tests; lint-determinism clean
-2026-07-26T03:04:42Z | forge | EP-002 | LEASE_RELEASE | EP-002 completed
+2026-07-26T03:11:57Z | forge | EP-003 | LEASE | forge starting EP-003 data and persistence
+2026-07-26T03:25:14Z | forge | EP-003 | MILESTONE_PASS | M1 schema ok

@@ -12,6 +12,10 @@ version = "0.1.0"
 license = "GPL-3.0-only"
 rust-version = "1.85.0"
 
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"

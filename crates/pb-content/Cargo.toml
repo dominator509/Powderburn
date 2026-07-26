@@ -11,3 +11,5 @@ workspace = true
 [dependencies]
     pb-core = { path = "../pb-core" }
     pb-rules = { path = "../pb-rules" }
+    serde = { workspace = true }
+    ron = { workspace = true }
