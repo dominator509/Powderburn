@@ -1,0 +1,28 @@
+# prov_called_shot.jrnl
+# Scenario: e_shooter (1031197739) at (5,5), hp 35, seq 7, ap 8
+#           e_target (834164300) at (8,5), hp 40, seq 3
+# Turn order: e_shooter first (seq 7 > seq 3)
+# Called shot to GunArm (5 AP) should trigger:
+#   event: HitLocation actor=e_target location=GunArm
+#   event: WoundApplied actor=e_target wound=Broken
+#   event: WeaponDropped actor=e_target item=colt_army_1860
+0 1031197739 CalledShot target=834164300 loc=GunArm
+0 834164300 Hold
+1 1031197739 CalledShot target=834164300 loc=GunArm
+1 834164300 Hold
+2 1031197739 CalledShot target=834164300 loc=GunArm
+2 834164300 Hold
+3 1031197739 CalledShot target=834164300 loc=GunArm
+3 834164300 Hold
+4 1031197739 CalledShot target=834164300 loc=GunArm
+4 834164300 Hold
+5 1031197739 CalledShot target=834164300 loc=GunArm
+5 834164300 Hold
+6 1031197739 CalledShot target=834164300 loc=GunArm
+6 834164300 Hold
+7 1031197739 CalledShot target=834164300 loc=GunArm
+7 834164300 Hold
+8 1031197739 CalledShot target=834164300 loc=GunArm
+8 834164300 Hold
+9 1031197739 CalledShot target=834164300 loc=GunArm
+9 834164300 Hold

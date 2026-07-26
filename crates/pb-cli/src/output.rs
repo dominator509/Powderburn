@@ -61,6 +61,9 @@ pub const DIMENSIONS: &str = "dimensions: ";
 /// Atlas ok sentinel.
 pub const ATLAS_OK: &str = "atlas: ok ";
 
+/// Resumed hash prefix.
+pub const RESUMED_HASH_FORMAT: &str = "resumed-hash: ";
+
 /// Worst AI turn time prefix.
 pub const WORST_AI_TURN: &str = "worst-ai-turn-ms: ";
 

@@ -21,14 +21,15 @@ fn main() {
         "bench" => run_bench(&args),
         "selftest" => pb_cli::cmd_selftest::run_selftest(&args),
         "a11y-report" => pb_cli::cmd_a11y::run_a11y_report(),
+        "capture" => pb_cli::cmd_capture::run_capture(&args),
         "" => {
             eprintln!("Usage: pbcli <subcommand> [options]");
-            eprintln!("Subcommands: sim, replay, campaign, bench, selftest, a11y-report");
+            eprintln!("Subcommands: sim, replay, campaign, bench, selftest, a11y-report, capture");
             process::exit(1);
         }
         other => {
             eprintln!("ERROR: unknown subcommand '{}'", other);
-            eprintln!("Subcommands: sim, replay, campaign, bench, selftest, a11y-report");
+            eprintln!("Subcommands: sim, replay, campaign, bench, selftest, a11y-report, capture");
             process::exit(1);
         }
     };

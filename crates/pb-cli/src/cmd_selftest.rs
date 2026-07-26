@@ -89,7 +89,11 @@ pub fn run_selftest(args: &Args) -> Result<(), String> {
 
     // Emit the state hash if --emit-hash was passed
     if args.emit_hash {
-        let hex: String = h.iter().map(|b| format!("{:02x}", b)).collect();
+        use std::fmt::Write;
+        let mut hex = String::with_capacity(64);
+        for b in &h {
+            write!(hex, "{:02x}", b).unwrap();
+        }
         println!("state-hash: {}", hex);
     }
 

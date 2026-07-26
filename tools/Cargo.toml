@@ -1,0 +1,7 @@
+[package]
+name = "compute_ids"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pb-core = { path = "../crates/pb-core" }

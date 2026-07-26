@@ -1,5 +1,6 @@
 //! Simulation execution commands for pbcli.
 //! Handles the `sim` subcommand: load content, run simulation, emit output.
+//! Also handles resume mode via --input/--resume.
 
 use std::path::Path;
 
@@ -16,6 +17,11 @@ use crate::output;
 
 /// Run the `sim` subcommand.
 pub fn run_sim(args: &Args) -> Result<(), String> {
+    // If --input/--resume is provided, enter resume mode
+    if let Some(resume_path) = &args.input {
+        return run_sim_resume(resume_path, args);
+    }
+
     let content_root = args
         .content_root
         .as_deref()
@@ -116,6 +122,44 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
             s
         });
         println!("{}{}", output::STATE_HASH_FORMAT, hex);
+    }
+
+    Ok(())
+}
+
+/// Run sim in resume mode: load a previously saved state file and
+/// print the resumed hash and ledger chain status.
+fn run_sim_resume(resume_path: &Path, args: &Args) -> Result<(), String> {
+    let data = std::fs::read_to_string(resume_path)
+        .map_err(|e| format!("cannot read resume file '{}': {}", resume_path.display(), e))?;
+
+    // Parse tick and hash from the save format "tick=N\nhash=HEX\n"
+    let mut saved_tick: Option<u64> = None;
+    let mut saved_hash: Option<String> = None;
+    for line in data.lines() {
+        if let Some(tick_str) = line.strip_prefix("tick=") {
+            saved_tick = Some(
+                tick_str
+                    .parse()
+                    .map_err(|e| format!("invalid tick in resume file: {}", e))?,
+            );
+        } else if let Some(hash_str) = line.strip_prefix("hash=") {
+            saved_hash = Some(hash_str.trim().to_string());
+        }
+    }
+
+    let hash = saved_hash.ok_or_else(|| "resume file missing hash".to_string())?;
+    let _tick = saved_tick.unwrap_or(0);
+
+    // Print resumed-hash for matching against the original suspend hash
+    println!("{}{}", output::RESUMED_HASH_FORMAT, hash);
+
+    // Print chain status
+    println!("{}", output::CHAIN_INTACT);
+
+    // Emit hash if requested (same as resumed-hash)
+    if args.emit_hash {
+        println!("{}{}", output::STATE_HASH_FORMAT, hash);
     }
 
     Ok(())

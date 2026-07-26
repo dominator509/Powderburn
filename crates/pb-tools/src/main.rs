@@ -47,15 +47,29 @@ fn run_validate(args: &[String]) -> Result<(), String> {
     let content_root = Path::new("content");
 
     match sub {
-        "content" => validate::validate_content(content_root),
+        "content" => {
+            // Check for --with-fixture flag
+            let fixture_path = get_flag_value(args, "--with-fixture");
+            if let Some(fixture) = fixture_path {
+                validate::validate_content_with_fixture(content_root, Path::new(&fixture))
+            } else {
+                validate::validate_content(content_root)
+            }
+        }
         "representation" => validate::validate_representation(content_root),
         "provenance" => {
-            let asset_root = if args.len() > 1 {
-                Path::new(&args[1])
-            } else {
-                Path::new("assets")
-            };
-            validate::validate_provenance(asset_root)
+            let asset_root = get_flag_value(args, "--asset-root")
+                .map(|p| Path::new(&p).to_path_buf())
+                .or_else(|| {
+                    // Fallback: positional arg after "provenance"
+                    if args.len() > 1 && !args[1].starts_with('-') {
+                        Some(Path::new(&args[1]).to_path_buf())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| Path::new("assets").to_path_buf());
+            validate::validate_provenance(&asset_root)
         }
         _ => {
             Err(format!(
@@ -64,6 +78,17 @@ fn run_validate(args: &[String]) -> Result<(), String> {
             ))
         }
     }
+}
+
+/// Get the value of a --flag from the args slice (supports --flag <value>).
+fn get_flag_value(args: &[String], flag: &str) -> Option<String> {
+    let mut iter = args.iter();
+    while let Some(a) = iter.next() {
+        if a == flag {
+            return iter.next().cloned();
+        }
+    }
+    None
 }
 
 /// Dispatch golden sub-subcommands.

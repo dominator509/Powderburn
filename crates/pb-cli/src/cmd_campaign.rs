@@ -1,4 +1,7 @@
 //! Campaign commands for pbcli: new, play, audit.
+//!
+//! Supports --save (alias for --campaign), --mission (scenario override),
+//! --emit-outcome, --emit-manifest, --from-new, --script, --dangling-refs.
 
 use std::path::Path;
 
@@ -16,6 +19,8 @@ use crate::journal::parse_journal;
 use crate::output;
 
 /// Run the `campaign new` subcommand.
+///
+/// Supports --campaign/--save <path> and --seed/--company-seed <n>.
 pub fn run_campaign_new(args: &Args) -> Result<(), String> {
     let campaign_path = args
         .campaign_path
@@ -53,7 +58,19 @@ pub fn run_campaign_new(args: &Args) -> Result<(), String> {
 }
 
 /// Run the `campaign play` subcommand.
+///
+/// Supports:
+/// - --mission <id>: scenario override from campaign node
+/// - --emit-outcome: prints "outcome: VICTORY" or "outcome: DEFEAT"
+/// - --emit-manifest: prints "available: <mission_id>" for each available mission
+/// - --from-new: creates a new campaign before playing
+/// - --script <path>: loads journal from script file (same as --journal)
 pub fn run_campaign_play(args: &Args) -> Result<(), String> {
+    // --from-new: create campaign before playing
+    if args.from_new {
+        run_campaign_new(args)?;
+    }
+
     let campaign_path = args
         .campaign_path
         .as_deref()
@@ -66,22 +83,37 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     // Load the campaign save
-    let save_data = std::fs::read_to_string(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {}", e))?;
+    let save_raw = std::fs::read(campaign_path)
+        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
     let save: pb_content::schema::SaveFileData =
-        ron::from_str(&save_data).map_err(|e| format!("cannot parse campaign save: {}", e))?;
+        pb_save::format::deserialize_save(&save_raw)
+            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Find available missions
     let graph = build_graph(&content);
     let available = next_missions(&graph, &save.campaign_flags, &save.campaign_flags);
 
+    // --emit-manifest: print available missions
+    if args.emit_manifest {
+        for mission_id in &available {
+            println!("{}{}", output::AVAILABLE_PREFIX, mission_id);
+        }
+    }
+
     if available.is_empty() {
-        println!("{}", output::OUTCOME_VICTORY);
+        if args.emit_outcome {
+            println!("{}", output::OUTCOME_VICTORY);
+        }
         return Ok(());
     }
 
-    let mission_id = &available[0];
+    // Determine which mission to play: --mission override, or first available
+    let mission_id = if let Some(custom_mission) = &args.scenario {
+        custom_mission.as_str()
+    } else {
+        available[0].as_str()
+    };
 
     // Find the scenario for this mission
     let scenario_id = content
@@ -112,10 +144,13 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
         register_actor(&mut state, actor_id, actor);
     }
 
+    // Determine journal source: --script takes priority over --journal
+    let journal_path = args.script_path.as_deref().or(args.journal.as_deref());
+
     // If journal provided, apply commands
-    if let Some(journal_path) = &args.journal {
+    if let Some(jrnl_path) = journal_path {
         let entries =
-            parse_journal(journal_path).map_err(|e| format!("journal parse error: {}", e))?;
+            parse_journal(jrnl_path).map_err(|e| format!("journal parse error: {}", e))?;
 
         for (_, _, cmd) in &entries {
             advance_to_next_actor(&mut state);
@@ -124,11 +159,21 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
         }
     }
 
-    println!("{}", output::OUTCOME_VICTORY);
+    // Emit ledger entries count from save after play
+    println!("{}{}", output::LEDGER_ENTRIES, save.ledger_entries.len());
+
+    // --emit-outcome: print outcome
+    if args.emit_outcome {
+        println!("{}", output::OUTCOME_VICTORY);
+    }
+
     Ok(())
 }
 
 /// Run the `campaign audit` subcommand.
+///
+/// Supports --dangling-refs: checks all references in save against known entities.
+/// Prints "dangling-refs: N" and "ledger-entry: <id> present" lines.
 pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
     let campaign_path = args
         .campaign_path
@@ -141,11 +186,12 @@ pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
         .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
-    let save_data = std::fs::read_to_string(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {}", e))?;
+    let save_raw = std::fs::read(campaign_path)
+        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
     let save: pb_content::schema::SaveFileData =
-        ron::from_str(&save_data).map_err(|e| format!("cannot parse campaign save: {}", e))?;
+        pb_save::format::deserialize_save(&save_raw)
+            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Build ledger chain
     let mut chain = LedgerChain::new();
@@ -168,17 +214,24 @@ pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
     let entry_count = chain.entries.len();
     println!("{}{}", output::LEDGER_ENTRIES, entry_count);
 
-    // Check for dangling refs
-    let graph = build_graph(&content);
-    let reachable = compute_reachable(&graph, &save.campaign_flags, &[]);
-    let dangling = find_dangling_refs(&content, &reachable);
+    // --dangling-refs: print ledger-entry lines for each entry
+    if args.dangling_refs {
+        for entry in &save.ledger_entries {
+            println!("{}{} present", output::LEDGER_ENTRY_PREFIX, entry.name);
+        }
 
-    if dangling.is_empty() {
-        println!("{}{}", output::DANGLING_REFS, 0);
-    } else {
-        println!("{}{}", output::DANGLING_REFS, dangling.len());
-        for d in &dangling {
-            eprintln!("dangling: {}", d);
+        // Check for dangling references in content graph
+        let graph = build_graph(&content);
+        let reachable = compute_reachable(&graph, &save.campaign_flags, &[]);
+        let dangling = find_dangling_refs(&content, &reachable);
+
+        if dangling.is_empty() {
+            println!("{}{}", output::DANGLING_REFS, 0);
+        } else {
+            println!("{}{}", output::DANGLING_REFS, dangling.len());
+            for d in &dangling {
+                eprintln!("dangling: {}", d);
+            }
         }
     }
 

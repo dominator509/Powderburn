@@ -74,8 +74,11 @@ pub fn run_bench(args: &Args) -> Result<(), String> {
         }
     }
 
-    println!("{}{}", output::WORST_AI_TURN, worst_turn_ms);
-    println!("{}{}", output::WORST_SIM_STEP, worst_step_ms);
+    // --emit-budget: only emit budget lines if explicitly requested
+    if args.emit_budget {
+        println!("{}{}", output::WORST_AI_TURN, worst_turn_ms);
+        println!("{}{}", output::WORST_SIM_STEP, worst_step_ms);
+    }
     Ok(())
 }
 
