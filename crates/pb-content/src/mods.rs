@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::error::ModError;
 use crate::schema::Content;

@@ -49,7 +49,7 @@ pub fn compute_reachable(
         };
 
         // Check companion gates: if a gated companion is dead, this node may be blocked
-        let companion_blocked = node.companion_gates.iter().any(|g| dead_set.contains(g.as_str()));
+        let _companion_blocked = node.companion_gates.iter().any(|g| dead_set.contains(g.as_str()));
 
         // For now, we still traverse but mark the limitation
         for unlocked in &node.unlocks {
@@ -68,7 +68,7 @@ pub fn compute_reachable(
 /// content references them. Returns a list of violations.
 pub fn check_permadeath_propagation(
     graph: &CampaignGraph,
-    content: &Content,
+    _content: &Content,
     dead_companions: &[String],
     flags: &[String],
 ) -> Vec<String> {
@@ -113,7 +113,7 @@ pub fn next_missions(
         let requires_met = node.requires.is_empty()
             || node.requires.iter().all(|r| flag_set.contains(r.as_str()));
         // Check at least one unlocker is completed
-        let unlocked = completed_set.contains(id.as_str())
+        let _unlocked = completed_set.contains(id.as_str())
             || node.requires.is_empty()
             || completed.iter().any(|c| node.requires.contains(c));
 

@@ -12,3 +12,5 @@ workspace = true
     pb-core = { path = "../pb-core" }
     pb-sim = { path = "../pb-sim" }
     pb-content = { path = "../pb-content" }
+    wgpu.workspace = true
+    image.workspace = true
