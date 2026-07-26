@@ -1,0 +1,24 @@
+[package]
+name = "pb-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+    pb-core = { path = "../pb-core" }
+    pb-rng = { path = "../pb-rng" }
+    pb-rules = { path = "../pb-rules" }
+    pb-sim = { path = "../pb-sim" }
+    pb-ai = { path = "../pb-ai" }
+    pb-content = { path = "../pb-content" }
+    pb-save = { path = "../pb-save" }
+    pb-render = { path = "../pb-render" }
+    pb-audio = { path = "../pb-audio" }
+
+[[bin]]
+name = "pbcli"
+path = "src/main.rs"

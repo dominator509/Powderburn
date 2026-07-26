@@ -1,0 +1,18 @@
+[package]
+name = "pb-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+    pb-core = { path = "../pb-core" }
+    pb-content = { path = "../pb-content" }
+    pb-rules = { path = "../pb-rules" }
+
+[[bin]]
+name = "pbtool"
+path = "src/main.rs"

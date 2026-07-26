@@ -6,3 +6,6 @@
 2026-07-26T02:28:54Z | forge | EP-000 | MILESTONE_PASS | M4 commands: resolved
 2026-07-26T02:29:22Z | forge | EP-000 | MILESTONE_PASS | M5 inventory: recorded
 2026-07-26T02:29:34Z | forge | EP-000 | NODE_DONE | all 5 milestones passed; preflight: ok; expected files audit clean
+2026-07-26T02:29:56Z | forge | EP-001 | LEASE | forge starting EP-001 foundation
+2026-07-26T02:31:34Z | forge | EP-001 | MILESTONE_PASS | M1 workspace: resolved
+2026-07-26T02:31:34Z | forge | EP-001 | MILESTONE_PASS | M2 skeletons: ok

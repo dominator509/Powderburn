@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/pb-core", "crates/pb-rng", "crates/pb-rules", "crates/pb-sim",
+  "crates/pb-ai", "crates/pb-content", "crates/pb-save", "crates/pb-render",
+  "crates/pb-audio", "crates/pb-app", "crates/pb-cli", "crates/pb-tools",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "GPL-3.0-only"
+rust-version = "1.85.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic_in_result_fn = "deny"
+float_arithmetic = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+debug = 1
