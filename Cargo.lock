@@ -789,6 +789,16 @@ name = "pb-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sha2",
+]
+
+[[package]]
+name = "pb-dev-tools"
+version = "0.1.0"
+dependencies = [
+ "pb-content",
+ "pb-core",
+ "pb-sim",
 ]
 
 [[package]]

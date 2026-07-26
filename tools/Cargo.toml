@@ -1,7 +1,24 @@
 [package]
-name = "compute_ids"
+name = "pb-dev-tools"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "compute_ids"
+path = "compute_ids.rs"
+
+[[bin]]
+name = "trace_combat"
+path = "trace_combat.rs"
+
 [dependencies]
 pb-core = { path = "../crates/pb-core" }
+pb-content = { path = "../crates/pb-content" }
+pb-sim = { path = "../crates/pb-sim" }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "allow"
+expect_used = "allow"

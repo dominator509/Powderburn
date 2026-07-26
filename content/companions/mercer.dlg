@@ -1,0 +1,10 @@
+scene intro
+  line "Hollis Mercer: \"The war ended thirteen years ago, but some of us are still fighting it. The only difference is now I don't know which side I'm on.\""
+scene camp
+  line "Hollis Mercer: \"I rode with Quantrill. I saw Lawrence burn. I've done things that would make a preacher weep and a soldier blush. And I'd do them all again if it meant keeping this company alive.\""
+scene camp
+  line "Hollis Mercer: \"You want to know why I'm here? Because out here, the past doesn't matter. Only the next bullet, the next meal, the next dawn.\""
+scene mission
+  line "Hollis Mercer: \"Let me take point. I've got a nose for trouble and a trigger finger that doesn't flinch.\""
+scene mission
+  line "Hollis Mercer: \"Ambush! Get down!\""

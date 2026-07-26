@@ -182,7 +182,11 @@ impl Args {
                 "--adapter" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--adapter requires a value")?;
-                    adapter = Some(val.to_str().ok_or("--adapter value not UTF-8")?.to_string());
+                    adapter = Some(
+                        val.to_str()
+                            .ok_or("--adapter value not UTF-8")?
+                            .to_string(),
+                    );
                 }
                 "--suspend-at-tick" => {
                     i += 1;

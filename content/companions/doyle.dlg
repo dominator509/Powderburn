@@ -1,0 +1,10 @@
+scene intro
+  line "Sgt. Absalom Doyle: \"I've worn this uniform for fifteen years. It still doesn't fit right. But I took an oath, and I aim to keep it.\""
+scene camp
+  line "Sgt. Absalom Doyle: \"The 10th Cavalry — they call us Buffalo Soldiers. The Cheyenne gave us that name, and I wear it with honor. The officers, they call us something else.\""
+scene camp
+  line "Sgt. Absalom Doyle: \"War is easy. It's the peace that's hard. Knowing what you did, what you were ordered to do, and trying to sleep at night.\""
+scene mission
+  line "Sgt. Absalom Doyle: \"Form up! Keep your spacing. I don't want to see a cluster — that's how men die.\""
+scene mission
+  line "Sgt. Absalom Doyle: \"On my command. Ready... fire!\""

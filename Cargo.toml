@@ -4,6 +4,7 @@ members = [
   "crates/pb-core", "crates/pb-rng", "crates/pb-rules", "crates/pb-sim",
   "crates/pb-ai", "crates/pb-content", "crates/pb-save", "crates/pb-render",
   "crates/pb-audio", "crates/pb-app", "crates/pb-cli", "crates/pb-tools",
+  "tools",
 ]
 
 [workspace.package]

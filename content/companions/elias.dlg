@@ -1,0 +1,10 @@
+scene intro
+  line "Elias Ward: \"The Army taught me one thing — numbers don't lie. But out here, the numbers never add up the way the officers said they would.\""
+scene camp
+  line "Elias Ward: \"I keep a journal. Every name, every date. Someone ought to remember what happened, even if the official reports get 'lost'.\""
+scene camp
+  line "Elias Ward: \"You see that rock formation? Looks like a ledger page to me. Maybe I've been at this too long.\""
+scene mission
+  line "Elias Ward: \"Keep your head down and your powder dry. The Rebs taught me that much, and I figure it applies just as well out here.\""
+scene mission  
+  line "Elias Ward: \"I've got the range. Tell me when to fire.\""

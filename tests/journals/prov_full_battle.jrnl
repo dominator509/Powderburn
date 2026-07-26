@@ -1,47 +1,56 @@
 # prov_full_battle.jrnl
-# Turn order: e_ally_02 (2019247960, seq7), e_enemy_02 (3869251918, seq6),
-#             e_ally_01 (688168136, seq5), e_enemy_01 (2260984324, seq4)
+# SHA-256 actor IDs:
+#   e_ally_02 (3037190930, seq7) -> turn_length=72
+#   e_enemy_02 (3769966676, seq6) -> turn_length=76
+#   e_ally_01 (2180853174, seq5) -> turn_length=80
+#   e_enemy_01 (3916335308, seq4) -> turn_length=84
 #
 # Strategy: Move allies toward enemies and shoot them with SnapShot.
+# Combat timeline (from trace):
+#   Round 1: allies move forward
+#   Round 2: ally_02 MISS, ally_01 HIT (15 dmg, Vitals), e_enemy_01 wounded
+#   Round 3: ally_02 HIT (11 dmg, GunArm), ally_01 HIT (14 dmg, Torso) KILLS e_enemy_01
+#            -> e_enemy_01 dead from round 3 onwards
+#   Round 4: ally_02 MISS
+#   Round 5: ally_02 HIT (12 dmg, OffArm)
+#   Round 6: ally_02 HIT (13 dmg, Vitals) KILLS e_enemy_02
+#
+# Note: e_enemy_01 commands removed after round 2 (died tick 160).
 
-# Round 1
-0 2019247960 move x=8 y=6
-0 3869251918 Hold
-0 688168136 move x=8 y=5
-0 2260984324 Hold
+# Round 1 - move forward
+0 3037190930 move x=8 y=6
+0 3769966676 Hold
+0 2180853174 move x=8 y=5
+0 3916335308 Hold
 
-# Round 2
-1 2019247960 move x=12 y=6
-1 3869251918 Hold
-1 688168136 move x=12 y=5
-1 2260984324 Hold
+# Round 2 - shoot at enemies
+1 3037190930 SnapShot target=3769966676
+1 3769966676 Hold
+1 2180853174 SnapShot target=3916335308
+1 3916335308 Hold
 
-# Round 3 - allies shoot at enemies
-2 2019247960 SnapShot target=3869251918
-2 3869251918 Hold
-2 688168136 SnapShot target=2260984324
-2 2260984324 Hold
+# Round 3 - e_enemy_01 dies during this round
+2 3037190930 SnapShot target=3769966676
+2 3769966676 Hold
+2 2180853174 SnapShot target=3916335308
+# e_enemy_01 (3916335308) dies at tick 160 - no more commands
 
-# Round 4 - allies fire again if needed
-3 2019247960 SnapShot target=3869251918
-3 3869251918 Hold
-3 688168136 SnapShot target=2260984324
-3 2260984324 Hold
+# Round 4
+3 3037190930 SnapShot target=3769966676
+3 3769966676 Hold
+3 2180853174 Hold
 
-# Round 5 - keep shooting until enemies dead
-4 2019247960 SnapShot target=3869251918
-4 3869251918 Hold
-4 688168136 SnapShot target=2260984324
-4 2260984324 Hold
+# Round 5
+4 3037190930 SnapShot target=3769966676
+4 3769966676 Hold
+4 2180853174 Hold
 
 # Round 6
-5 2019247960 SnapShot target=3869251918
-5 3869251918 Hold
-5 688168136 SnapShot target=2260984324
-5 2260984324 Hold
+5 3037190930 SnapShot target=3769966676
+5 3769966676 Hold
+5 2180853174 Hold
 
 # Round 7
-6 2019247960 SnapShot target=3869251918
-6 3869251918 Hold
-6 688168136 SnapShot target=2260984324
-6 2260984324 Hold
+6 3037190930 SnapShot target=3769966676
+6 3769966676 Hold
+6 2180853174 Hold

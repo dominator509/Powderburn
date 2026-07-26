@@ -1,56 +1,56 @@
 # m04_whitehorse_dies.jrnl
 # Mission 4 Medicine Lodge uses scenario prov_full_battle.
-# Companion c_whitehorse (ActorId: 2701534062) dies during combat.
+# Companion c_whitehorse (ActorId: 2676799163) dies during combat.
 #
-# Turn order: e_ally_02 (2019247960, seq7), e_enemy_02 (3869251918, seq6),
-#             e_ally_01 (688168136, seq5), e_enemy_01 (2260984324, seq4)
+# Turn order: e_ally_02 (3037190930, seq7), e_enemy_02 (3769966676, seq6),
+#             e_ally_01 (2180853174, seq5), e_enemy_01 (3916335308, seq4)
 # Whitehorse is not in the base scenario - the companion tag would be added by campaign.
 # We use Hold for all allies while enemies act, to simulate companion death.
 
 # Round 1
-0 2019247960 Hold
-0 3869251918 SnapShot target=2701534062
-0 688168136 Hold
-0 2260984324 SnapShot target=2701534062
+0 3037190930 Hold
+0 3769966676 SnapShot target=2676799163
+0 2180853174 Hold
+0 3916335308 SnapShot target=2676799163
 
 # Round 2
-1 2019247960 Hold
-1 3869251918 SnapShot target=2701534062
-1 688168136 Hold
-1 2260984324 SnapShot target=2701534062
+1 3037190930 Hold
+1 3769966676 SnapShot target=2676799163
+1 2180853174 Hold
+1 3916335308 SnapShot target=2676799163
 
 # Round 3
-2 2019247960 Hold
-2 3869251918 SnapShot target=2701534062
-2 688168136 Hold
-2 2260984324 SnapShot target=2701534062
+2 3037190930 Hold
+2 3769966676 SnapShot target=2676799163
+2 2180853174 Hold
+2 3916335308 SnapShot target=2676799163
 
 # Round 4
-3 2019247960 Hold
-3 3869251918 SnapShot target=2701534062
-3 688168136 Hold
-3 2260984324 SnapShot target=2701534062
+3 3037190930 Hold
+3 3769966676 SnapShot target=2676799163
+3 2180853174 Hold
+3 3916335308 SnapShot target=2676799163
 
 # Round 5
-4 2019247960 Hold
-4 3869251918 SnapShot target=2701534062
-4 688168136 Hold
-4 2260984324 SnapShot target=2701534062
+4 3037190930 Hold
+4 3769966676 SnapShot target=2676799163
+4 2180853174 Hold
+4 3916335308 SnapShot target=2676799163
 
 # Round 6
-5 2019247960 Hold
-5 3869251918 SnapShot target=2701534062
-5 688168136 Hold
-5 2260984324 SnapShot target=2701534062
+5 3037190930 Hold
+5 3769966676 SnapShot target=2676799163
+5 2180853174 Hold
+5 3916335308 SnapShot target=2676799163
 
 # Round 7
-6 2019247960 Hold
-6 3869251918 SnapShot target=2701534062
-6 688168136 Hold
-6 2260984324 SnapShot target=2701534062
+6 3037190930 Hold
+6 3769966676 SnapShot target=2676799163
+6 2180853174 Hold
+6 3916335308 SnapShot target=2676799163
 
 # Round 8
-7 2019247960 Hold
-7 3869251918 SnapShot target=2701534062
-7 688168136 Hold
-7 2260984324 SnapShot target=2701534062
+7 3037190930 Hold
+7 3769966676 SnapShot target=2676799163
+7 2180853174 Hold
+7 3916335308 SnapShot target=2676799163

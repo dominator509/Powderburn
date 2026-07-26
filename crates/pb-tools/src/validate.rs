@@ -105,14 +105,24 @@ pub fn validate_content_with_fixture(
         .map_err(|e| format!("cannot read fixture '{}': {}", fixture_path.display(), e))?;
 
     // Parse fixture as Vec<ActorData>
-    let fixture_actors: Vec<pb_content::schema::ActorData> = ron::from_str(&fixture_data)
-        .map_err(|e| format!("cannot parse fixture '{}': {}", fixture_path.display(), e))?;
+    let fixture_actors: Vec<pb_content::schema::ActorData> =
+        ron::from_str(&fixture_data).map_err(|e| {
+            format!(
+                "cannot parse fixture '{}': {}",
+                fixture_path.display(),
+                e
+            )
+        })?;
 
     // Check E-HIST-001: fixture alters a HISTORICAL_FIXED scenario.
     let fixed_scenarios: Vec<String> = content
         .campaign_nodes
         .values()
-        .filter(|n| n.historical_tag.as_deref() == Some("HISTORICAL_FIXED"))
+        .filter(|n| {
+            n.historical_tag
+                .as_deref()
+                .map_or(false, |t| t == "HISTORICAL_FIXED")
+        })
         .filter_map(|n| n.scenario_id.clone())
         .collect();
 
@@ -152,10 +162,7 @@ pub fn validate_content_with_fixture(
     if diagnostics.is_empty() {
         Ok(())
     } else {
-        Err(format!(
-            "{} historical violation(s) detected",
-            diagnostics.len()
-        ))
+        Err(format!("{} historical violation(s) detected", diagnostics.len()))
     }
 }
 

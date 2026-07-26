@@ -1,0 +1,10 @@
+scene intro
+  line "Tomas Alcantara: \"I took the cloth and I took the scalpel. I lost the cloth. The scalpel I still know how to use, though I've seen more of death than healing out here.\""
+scene camp
+  line "Tomas Alcantara: \"The yellow fever is coming. I've seen the patterns — the way it moves south to north, the way it takes the young and the healthy first. There's no cure, only waiting.\""
+scene camp
+  line "Tomas Alcantara: \"I pray for the souls of the men I patch up. I pray for the souls of the men I put down. God's silence is the hardest part.\""
+scene mission
+  line "Tomas Alcantara: \"Stay still. This will hurt. But it will hurt worse if you move while I dig out that lead.\""
+scene mission
+  line "Tomas Alcantara: \"I can patch a wound, but I can't patch a man's conscience. That's between him and his maker.\""

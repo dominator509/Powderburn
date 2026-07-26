@@ -10,3 +10,4 @@ workspace = true
 
 [dependencies]
     serde = { workspace = true }
+    sha2 = { workspace = true }

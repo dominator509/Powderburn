@@ -9,7 +9,7 @@
     historical_tag: None,
     citations: [],
     companion_gates: [],
-    scenario_id: Some("prov_full_battle"),
+    scenario_id: Some("scn_m01_elk_creek"),
   ),
   (
     id: "m02_promontory",

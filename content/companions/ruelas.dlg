@@ -1,0 +1,10 @@
+scene intro
+  line "Ignacio Ruelas: \"The border is a wound that never heals. I was born on one side, my family buried on the other. I fight for the land, not the line.\""
+scene camp
+  line "Ignacio Ruelas: \"Down in El Paso, the Salt War is brewing. The Anglos want the salt flats. The Tejanos have worked them for generations. Something's going to give.\""
+scene camp
+  line "Ignacio Ruelas: \"My abuela used to say a man without a horse was half a man. Out here, a man without a good rifle is half a dead man.\""
+scene mission
+  line "Ignacio Ruelas: \"I know this country. Follow me, and I'll keep you out of the worst of it.\""
+scene mission
+  line "Ignacio Ruelas: \"Listen — that's not the wind. That's horses. We've got company.\""

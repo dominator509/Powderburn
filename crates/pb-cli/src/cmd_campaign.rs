@@ -83,11 +83,12 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     // Load the campaign save
-    let save_raw =
-        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw = std::fs::read(campaign_path)
+        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw)
-        .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+    let save: pb_content::schema::SaveFileData =
+        pb_save::format::deserialize_save(&save_raw)
+            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Find available missions
     let graph = build_graph(&content);
@@ -132,7 +133,7 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     // Register actors
     for actor_data in &scenario.actors {
         let actor_id = actor_data_id(actor_data);
-        let actor = build_actor(
+        let mut actor = build_actor(
             actor_id,
             &actor_data.id,
             actor_data.sequence,
@@ -140,30 +141,63 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
             actor_data.sand,
             pos_to_tile(&actor_data.pos),
         );
+        // Handle is_dead from scenario data
+        if actor_data.is_dead {
+            actor.alive = false;
+        }
         register_actor(&mut state, actor_id, actor);
     }
 
     // Determine journal source: --script takes priority over --journal
     let journal_path = args.script_path.as_deref().or(args.journal.as_deref());
 
-    // If journal provided, apply commands
+    // If journal provided, apply commands with dead-actor-aware consumption
     if let Some(jrnl_path) = journal_path {
         let entries =
-            parse_journal(jrnl_path).map_err(|e| format!("journal parse error: {}", e))?;
+            parse_journal(jrnl_path).map_err(|e| format!("journal parse error: {0}", e))?;
 
-        for (_, _, cmd) in &entries {
-            advance_to_next_actor(&mut state);
+        let mut entry_idx = 0;
+        while entry_idx < entries.len() {
+            let (_, _, cmd) = &entries[entry_idx];
+
+            // Skip journal entries for actors who are already dead
+            let alive = state.actors.get(&cmd.actor_id).map_or(false, |a| a.alive);
+            if !alive {
+                entry_idx += 1;
+                continue;
+            }
+
+            // Advance to next actor
+            let Some(_selected) = advance_to_next_actor(&mut state) else {
+                break;
+            };
+
             step(&mut state, cmd.clone())
-                .map_err(|e| format!("sim error at tick {}: {:?}", state.tick.0, e))?;
+                .map_err(|e| format!("sim error at tick {0}: {1:?}", state.tick.0, e))?;
+            entry_idx += 1;
         }
     }
 
-    // Emit ledger entries count from save after play
-    println!("{}{}", output::LEDGER_ENTRIES, save.ledger_entries.len());
+    // Emit ledger entries count — count dead actors after playback
+    let dead_count = state.actors.values().filter(|a| !a.alive).count();
+    println!("{0}{1}", output::LEDGER_ENTRIES, dead_count);
 
-    // --emit-outcome: print outcome
+    // --emit-outcome: determine victory or defeat based on actual state
     if args.emit_outcome {
-        println!("{}", output::OUTCOME_VICTORY);
+        let all_enemies_dead = state
+            .actors
+            .values()
+            .filter(|a| a.alive)
+            .all(|a| !a.name.starts_with("e_enemy_"));
+        let any_ally_alive = state
+            .actors
+            .values()
+            .any(|a| a.alive && (a.name.starts_with("e_ally_") || a.name.starts_with("c_")));
+        if all_enemies_dead && any_ally_alive {
+            println!("{0}", output::OUTCOME_VICTORY);
+        } else {
+            println!("{0}", output::OUTCOME_DEFEAT);
+        }
     }
 
     Ok(())
@@ -185,11 +219,12 @@ pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
         .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
-    let save_raw =
-        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw = std::fs::read(campaign_path)
+        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw)
-        .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+    let save: pb_content::schema::SaveFileData =
+        pb_save::format::deserialize_save(&save_raw)
+            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Build ledger chain
     let mut chain = LedgerChain::new();

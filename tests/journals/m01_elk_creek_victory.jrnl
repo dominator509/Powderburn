@@ -1,46 +1,41 @@
 # m01_elk_creek_victory.jrnl
-# Mission 1 Elk Creek uses scenario prov_full_battle (same setup).
-# Same turn order: e_ally_02 (2019247960, seq7), e_enemy_02 (3869251918, seq6),
-#                  e_ally_01 (688168136, seq5), e_enemy_01 (2260984324, seq4)
+# Actors: e_ally_02 (3037190930, seq7), e_enemy_02 (3769966676, seq6, hp5),
+#          e_ally_01 (2180853174, seq5), e_enemy_01 (3916335308, seq4, hp5),
+#          e_extra_01 (3811996071, seq3, hp1), e_extra_02 (1659562191, seq2, dead)
+#
+# Strategy: Both allies shoot enemies. 3 enemies with hp 5,5,1 die quickly.
+# Dead actors' Hold entries are auto-skipped by the sim engine.
 
-# Round 1
-0 2019247960 move x=8 y=6
-0 3869251918 Hold
-0 688168136 move x=8 y=5
-0 2260984324 Hold
+# Round 1 - Move east
+0 3037190930 move x=8 y=6
+0 3769966676 Hold
+0 2180853174 move x=8 y=5
+0 3916335308 Hold
+0 3811996071 Hold
 
-# Round 2
-1 2019247960 move x=12 y=6
-1 3869251918 Hold
-1 688168136 move x=12 y=5
-1 2260984324 Hold
+# Round 2 - Move further east
+1 3037190930 move x=12 y=6
+1 3769966676 Hold
+1 2180853174 move x=12 y=5
+1 3916335308 Hold
+1 3811996071 Hold
 
-# Round 3 - shoot
-2 2019247960 SnapShot target=3869251918
-2 3869251918 Hold
-2 688168136 SnapShot target=2260984324
-2 2260984324 Hold
+# Round 3 - Kill e_enemy_02 and e_enemy_01
+2 3037190930 SnapShot target=3769966676
+2 3769966676 Hold
+2 2180853174 SnapShot target=3916335308
+2 3916335308 Hold
+2 3811996071 Hold
 
-# Round 4
-3 2019247960 SnapShot target=3869251918
-3 3869251918 Hold
-3 688168136 SnapShot target=2260984324
-3 2260984324 Hold
+# Round 4 - Kill e_extra_01. Keep firing at survivors
+3 3037190930 SnapShot target=3811996071
+3 2180853174 SnapShot target=3769966676
+3 3811996071 Hold
 
-# Round 5
-4 2019247960 SnapShot target=3869251918
-4 3869251918 Hold
-4 688168136 SnapShot target=2260984324
-4 2260984324 Hold
+# Round 5 - Cleanup
+4 3037190930 SnapShot target=3916335308
+4 2180853174 SnapShot target=3769966676
 
-# Round 6
-5 2019247960 SnapShot target=3869251918
-5 3869251918 Hold
-5 688168136 SnapShot target=2260984324
-5 2260984324 Hold
-
-# Round 7
-6 2019247960 SnapShot target=3869251918
-6 3869251918 Hold
-6 688168136 SnapShot target=2260984324
-6 2260984324 Hold
+# Round 6 - Extra cleanup
+5 3037190930 SnapShot target=3916335308
+5 2180853174 SnapShot target=3769966676

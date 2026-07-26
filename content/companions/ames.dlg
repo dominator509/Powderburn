@@ -1,0 +1,10 @@
+scene intro
+  line "Cordelia Ames: \"The Pinkertons taught me that information is a weapon. A well-placed word can bring down a man faster than any bullet.\""
+scene camp
+  line "Cordelia Ames: \"I've tracked train robbers across four territories. The worst criminals I've met were wearing suits, not masks.\""
+scene camp
+  line "Cordelia Ames: \"The strike is coming — the railroad workers, the miners, all of them. The country is a powder keg, and we're standing on the fuse.\""
+scene mission
+  line "Cordelia Ames: \"Don't underestimate me because I'm a woman. I've killed men bigger than you who made that mistake.\""
+scene mission
+  line "Cordelia Ames: \"I've got eyes on their position. Two o'clock, about fifty yards.\""

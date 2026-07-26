@@ -139,8 +139,8 @@ fn execute_shot(
     state: &mut SimState,
     actor_id: ActorId,
     target: ActorId,
-    _aimed: bool,
-    _called: Option<HitLocationType>,
+    aimed: bool,
+    called: Option<HitLocationType>,
 ) -> Vec<Event> {
     // Check target exists
     let target_alive = state.actors.get(&target).is_some_and(|a| a.alive);
@@ -155,8 +155,9 @@ fn execute_shot(
     let scenario = state.scenario_id;
     let actor_num = actor_id.0;
 
+    // Aimed shots get +15 to hit bonus
+    let base_hit: i32 = if aimed { 75 } else { 60 };
     let hit_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::ToHit, 0, 99);
-    let base_hit = 60; // moderate default
     let hit = hit_roll < base_hit;
 
     let mut events = vec![Event::ShotHit {
@@ -166,22 +167,26 @@ fn execute_shot(
     }];
 
     if hit {
-        // Simple location roll
-        let loc_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::Damage, 0, 99);
-        let location = if loc_roll < 10 {
-            HitLocationType::Head
-        } else if loc_roll < 13 {
-            HitLocationType::Eyes
-        } else if loc_roll < 48 {
-            HitLocationType::Torso
-        } else if loc_roll < 60 {
-            HitLocationType::Vitals
-        } else if loc_roll < 75 {
-            HitLocationType::GunArm
-        } else if loc_roll < 85 {
-            HitLocationType::OffArm
+        // If called shot, use the specified location; otherwise random
+        let location = if let Some(loc) = called {
+            loc
         } else {
-            HitLocationType::Legs
+            let loc_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::Damage, 0, 99);
+            if loc_roll < 10 {
+                HitLocationType::Head
+            } else if loc_roll < 13 {
+                HitLocationType::Eyes
+            } else if loc_roll < 48 {
+                HitLocationType::Torso
+            } else if loc_roll < 60 {
+                HitLocationType::Vitals
+            } else if loc_roll < 75 {
+                HitLocationType::GunArm
+            } else if loc_roll < 85 {
+                HitLocationType::OffArm
+            } else {
+                HitLocationType::Legs
+            }
         };
 
         events.push(Event::HitLocation {
