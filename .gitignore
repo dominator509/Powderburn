@@ -1,0 +1,14 @@
+.env
+.pbcache/
+target/
+*.rlib
+*.rmeta
+*.pdb
+*.tar.zst
+*.tar.zst.minisig
+dist/
+capture/
+perf.data
+perf.data.old
+*.profraw
+.DS_Store

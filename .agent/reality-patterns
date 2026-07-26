@@ -1,0 +1,14 @@
+TODO|FIXME|XXX|HACK
+todo!\(|unimplemented!\(|unreachable!\("not
+NotImplementedError|raise NotImplemented
+not implemented|Not implemented|NOT IMPLEMENTED
+PLACEHOLDER|__REPLACE__|CHANGEME|changeme
+\{\{[A-Z_]+\}\}
+lorem ipsum|Lorem Ipsum
+example\.com/api|sk-test-|xxxx-xxxx
+demo_mode|sandbox_mode|fake_|dummy_|stub_
+return Ok\(\(\)\) // no-op
+panic!\("stub
+#\[ignore\]
+placeholder_sprite|missing_texture_ok
+simulate_result|pretend_
