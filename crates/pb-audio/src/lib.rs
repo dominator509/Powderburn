@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
@@ -46,7 +46,7 @@ impl Sfx {
 /// via `aplay` (or `paplay` as fallback).
 #[derive(Debug)]
 pub struct AudioSystem {
-    sfx_dir: PathBuf,
+    _sfx_dir: PathBuf,
     tx: mpsc::Sender<Sfx>,
 }
 
@@ -55,7 +55,7 @@ impl AudioSystem {
     ///
     /// `asset_root` should point to the `assets/` directory; WAV files
     /// are expected in `assets/audio/`.
-    pub fn new(asset_root: &PathBuf) -> Self {
+    pub fn new(asset_root: &Path) -> Self {
         let sfx_dir = asset_root.join("audio");
         let (tx, rx) = mpsc::channel::<Sfx>();
 
@@ -79,7 +79,10 @@ impl AudioSystem {
             }
         });
 
-        AudioSystem { sfx_dir, tx }
+        AudioSystem {
+            _sfx_dir: sfx_dir,
+            tx,
+        }
     }
 
     /// Play a sound effect (non-blocking). Returns immediately; playback

@@ -48,11 +48,12 @@ pub fn render_title(
     ];
     let overlay_system = OverlaySystem::new(render_device, &overlay_tiles, &camera_bytes);
 
-    let mut encoder = render_device
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("title encoder"),
-        });
+    let mut encoder =
+        render_device
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("title encoder"),
+            });
     {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("title pass"),

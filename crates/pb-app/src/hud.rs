@@ -197,11 +197,7 @@ impl RectRenderer {
             all_idx.extend(idx.iter().map(|i| i + base));
         }
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&all_verts),
-        );
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&all_verts));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&all_idx));
 
         rpass.set_pipeline(&self.pipeline);
@@ -377,11 +373,12 @@ impl HudRenderer {
 
         // ── Render pass ────────────────────────────────────────────────
 
-        let mut encoder = render_device
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("hud encoder"),
-            });
+        let mut encoder =
+            render_device
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("hud encoder"),
+                });
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -404,16 +401,23 @@ impl HudRenderer {
                 .render_rects(&render_device.queue, &mut rpass, &rects, sw, sh);
 
             // 2. Turn indicator (top-left).
-            let turn_mesh = font.render_text(turn_text, MARGIN, 8.0, TXT_SCALE, [1.0, 0.9, 0.4, 1.0], sw, sh);
+            let turn_mesh = font.render_text(
+                turn_text,
+                MARGIN,
+                8.0,
+                TXT_SCALE,
+                [1.0, 0.9, 0.4, 1.0],
+                sw,
+                sh,
+            );
             self.text_renderer
                 .render(&render_device.queue, &mut rpass, &turn_mesh);
 
             // 3. Selection info (top area, right side).
             if let Some(ref info) = selected_info {
                 let info_x = MARGIN + HP_BAR_W + 30.0;
-                let info_mesh = font.render_text(
-                    info, info_x, 8.0, TXT_SCALE, [1.0, 1.0, 1.0, 1.0], sw, sh,
-                );
+                let info_mesh =
+                    font.render_text(info, info_x, 8.0, TXT_SCALE, [1.0, 1.0, 1.0, 1.0], sw, sh);
                 self.text_renderer
                     .render(&render_device.queue, &mut rpass, &info_mesh);
             }
@@ -462,10 +466,13 @@ impl HudRenderer {
             }
         }
 
-        render_device.queue.submit(std::iter::once(encoder.finish()));
+        render_device
+            .queue
+            .submit(std::iter::once(encoder.finish()));
     }
 
     /// Render a dimming overlay with centred text (for pause menu or slot selection).
+    #[allow(clippy::too_many_arguments)]
     fn render_dim_overlay(
         &self,
         font: &BitmapFont,
@@ -489,7 +496,15 @@ impl HudRenderer {
         }];
 
         // ── Build text meshes ─────────────────────────────────────────
-        let title_mesh = font.render_text(title_line, 60.0, sh * 0.3, 3.5, [1.0, 1.0, 0.4, 1.0], sw, sh);
+        let title_mesh = font.render_text(
+            title_line,
+            60.0,
+            sh * 0.3,
+            3.5,
+            [1.0, 1.0, 0.4, 1.0],
+            sw,
+            sh,
+        );
         let text_meshes: Vec<_> = lines
             .iter()
             .enumerate()
@@ -506,11 +521,12 @@ impl HudRenderer {
             })
             .collect();
 
-        let mut encoder = render_device
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("overlay encoder"),
-            });
+        let mut encoder =
+            render_device
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("overlay encoder"),
+                });
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -538,7 +554,9 @@ impl HudRenderer {
             }
         }
 
-        render_device.queue.submit(std::iter::once(encoder.finish()));
+        render_device
+            .queue
+            .submit(std::iter::once(encoder.finish()));
     }
 
     /// Render the pause menu overlay (dimmed combat + pause text).
@@ -583,10 +601,7 @@ impl HudRenderer {
             screen_w,
             screen_h,
             title,
-            &[
-                "Press 1-5 to select a slot",
-                "Press ESC to cancel",
-            ],
+            &["Press 1-5 to select a slot", "Press ESC to cancel"],
         );
     }
 }

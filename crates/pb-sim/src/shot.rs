@@ -119,7 +119,11 @@ pub fn resolve_shot(
 
     // --- Flanking bonus ---
     // Compute based on target facing and relative position
-    let flanking_bonus = compute_flanking_bonus(target_actor.position, target_actor.facing, shooter_actor.position);
+    let flanking_bonus = compute_flanking_bonus(
+        target_actor.position,
+        target_actor.facing,
+        shooter_actor.position,
+    );
 
     // --- Final hit chance ---
     let mut hit_chance = base_hit
@@ -131,9 +135,9 @@ pub fn resolve_shot(
         - smoke_penalty
         + suppression_penalty   // morale_accuracy_penalty returns NEGATIVE values
         + flanking_bonus
-        + extra_penalty;        // FanHammer penalty, etc.
+        + extra_penalty; // FanHammer penalty, etc.
 
-    hit_chance = hit_chance.max(5).min(95); // clamp 5%–95%
+    hit_chance = hit_chance.clamp(5, 95); // clamp 5%–95%
 
     // --- Stage 4: ToHit roll ---
     let to_hit_roll = PbRng::draw(rng_seed, scenario, tick, shooter.0, StreamTag::ToHit, 0, 99);
@@ -281,7 +285,11 @@ fn stance_evasion_bonus(stance: Stance) -> i32 {
 // ---------------------------------------------------------------------------
 // Helper: compute flanking bonus based on target facing and relative position
 // ---------------------------------------------------------------------------
-fn compute_flanking_bonus(target_pos: TileXY, target_facing: pb_core::geom::Facing, shooter_pos: TileXY) -> i32 {
+fn compute_flanking_bonus(
+    target_pos: TileXY,
+    target_facing: pb_core::geom::Facing,
+    shooter_pos: TileXY,
+) -> i32 {
     let dx = shooter_pos.x as i32 - target_pos.x as i32;
     let dy = shooter_pos.y as i32 - target_pos.y as i32;
 
@@ -340,11 +348,7 @@ fn apply_sand_loss_to_target(_state: &SimState, _target_id: ActorId, _was_hit: b
 }
 
 /// Resolve a melee attack, returning damage events.
-pub fn resolve_melee(
-    state: &mut SimState,
-    attacker: ActorId,
-    target: ActorId,
-) -> Vec<Event> {
+pub fn resolve_melee(state: &mut SimState, attacker: ActorId, target: ActorId) -> Vec<Event> {
     let rng_seed = state.seed;
     let scenario = state.scenario_id;
     let tick = state.tick.0;
@@ -446,7 +450,15 @@ mod tests {
             .actors
             .insert(target, make_actor(target, TileXY::new(5, 0)));
 
-        let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm), true, 0).unwrap();
+        let result = resolve_shot(
+            &state,
+            shooter,
+            target,
+            Some(HitLocationType::GunArm),
+            true,
+            0,
+        )
+        .unwrap();
 
         assert!(
             result.len() >= 3,
@@ -515,41 +527,29 @@ mod tests {
     #[test]
     fn direction_index_basic() {
         assert_eq!(direction_index(0, -1), 0); // North
-        assert_eq!(direction_index(1, 0), 2);  // East
-        assert_eq!(direction_index(0, 1), 4);  // South
+        assert_eq!(direction_index(1, 0), 2); // East
+        assert_eq!(direction_index(0, 1), 4); // South
         assert_eq!(direction_index(-1, 0), 6); // West
     }
 
     #[test]
     fn flanking_bonus_front() {
         // Target at (0,0) facing South, shooter at (0, 1) = directly in front
-        let bonus = compute_flanking_bonus(
-            TileXY::new(0, 0),
-            Facing::South,
-            TileXY::new(0, 1),
-        );
+        let bonus = compute_flanking_bonus(TileXY::new(0, 0), Facing::South, TileXY::new(0, 1));
         assert_eq!(bonus, 0);
     }
 
     #[test]
     fn flanking_bonus_behind() {
         // Target at (0,0) facing South, shooter at (0, -1) = behind
-        let bonus = compute_flanking_bonus(
-            TileXY::new(0, 0),
-            Facing::South,
-            TileXY::new(0, -1),
-        );
+        let bonus = compute_flanking_bonus(TileXY::new(0, 0), Facing::South, TileXY::new(0, -1));
         assert_eq!(bonus, 20);
     }
 
     #[test]
     fn flanking_bonus_side() {
         // Target at (0,0) facing South, shooter at (1, 0) = East (side)
-        let bonus = compute_flanking_bonus(
-            TileXY::new(0, 0),
-            Facing::South,
-            TileXY::new(1, 0),
-        );
+        let bonus = compute_flanking_bonus(TileXY::new(0, 0), Facing::South, TileXY::new(1, 0));
         assert_eq!(bonus, 10);
     }
 
@@ -567,7 +567,9 @@ mod tests {
 
         let events = resolve_melee(&mut state, attacker, target);
         // Should have at least a DamageApplied event
-        assert!(events.iter().any(|e| matches!(e, Event::DamageApplied { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::DamageApplied { .. })));
         // HP should have been reduced
         assert!(state.actors[&target].hit_points < 20);
     }

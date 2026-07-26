@@ -35,6 +35,7 @@ impl AfterActionRenderer {
     }
 
     /// Render one frame of the after-action report.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         gs: &GameState,
@@ -49,7 +50,7 @@ impl AfterActionRenderer {
         let sh = height as f32;
 
         // ── Determine mission outcome ────────────────────────────────────
-        let is_victory = gs.sim.as_ref().map_or(false, |sim| {
+        let is_victory = gs.sim.as_ref().is_some_and(|sim| {
             sim.actors
                 .values()
                 .filter(|a| a.alive && is_enemy(a))
@@ -97,12 +98,28 @@ impl AfterActionRenderer {
         let cy = rows / 2;
         let overlay_tiles: Vec<(u32, u32, OverlayTileKind)> = (0..4)
             .flat_map(|i| {
-                let r = i as i32;
+                let r = i;
                 vec![
-                    (cx as i32 + r, cy as i32, OverlayTileKind::Movable { ap_cost: 0 }),
-                    (cx as i32 - r, cy as i32, OverlayTileKind::Movable { ap_cost: 0 }),
-                    (cx as i32, cy as i32 + r, OverlayTileKind::Movable { ap_cost: 0 }),
-                    (cx as i32, cy as i32 - r, OverlayTileKind::Movable { ap_cost: 0 }),
+                    (
+                        cx as i32 + r,
+                        cy as i32,
+                        OverlayTileKind::Movable { ap_cost: 0 },
+                    ),
+                    (
+                        cx as i32 - r,
+                        cy as i32,
+                        OverlayTileKind::Movable { ap_cost: 0 },
+                    ),
+                    (
+                        cx as i32,
+                        cy as i32 + r,
+                        OverlayTileKind::Movable { ap_cost: 0 },
+                    ),
+                    (
+                        cx as i32,
+                        cy as i32 - r,
+                        OverlayTileKind::Movable { ap_cost: 0 },
+                    ),
                 ]
             })
             .filter(|(x, y, _)| *x >= 0 && *x < cols as i32 && *y >= 0 && *y < rows as i32)
@@ -129,7 +146,8 @@ impl AfterActionRenderer {
         };
 
         let title_mesh = font.render_text(outcome, 60.0, 80.0, 4.0, fg_color, sw, sh);
-        let summary_mesh = font.render_text(&summary, 60.0, 160.0, 2.5, [1.0, 1.0, 1.0, 1.0], sw, sh);
+        let summary_mesh =
+            font.render_text(&summary, 60.0, 160.0, 2.5, [1.0, 1.0, 1.0, 1.0], sw, sh);
         let prompt_mesh = font.render_text(prompt, 60.0, 220.0, 2.0, [0.7, 0.7, 0.7, 1.0], sw, sh);
 
         // ── Render pass ──────────────────────────────────────────────────

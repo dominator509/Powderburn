@@ -106,6 +106,7 @@ pub fn load_game(state: &mut GameState, slot: &str) -> Result<(), String> {
 ///
 /// Returns the stem of each `.pbsv` file found in the saves directory,
 /// sorted alphabetically.
+#[allow(dead_code)]
 pub fn list_saves() -> Vec<String> {
     let dir = match std::fs::read_dir(Path::new(SAVE_DIR)) {
         Ok(d) => d,
@@ -114,7 +115,12 @@ pub fn list_saves() -> Vec<String> {
 
     let mut slots: Vec<String> = dir
         .filter_map(|entry| entry.ok())
-        .filter(|e| e.path().extension().map(|ext| ext == "pbsv").unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "pbsv")
+                .unwrap_or(false)
+        })
         .filter_map(|e| {
             e.path()
                 .file_stem()

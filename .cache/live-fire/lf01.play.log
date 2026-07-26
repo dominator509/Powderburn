@@ -1,0 +1,20 @@
+event: ShotHit actor=e_ally_02 target=e_enemy_02 hit=true
+event: HitLocation actor=e_enemy_02 location=Vitals
+event: DamageApplied actor=e_enemy_02 damage=60
+event: WoundApplied actor=e_enemy_02 wound=Bleeding
+event: SmokeDeposited tile=(12, 6) density=3
+event: ActorKilled actor=e_enemy_02
+event: ShotHit actor=e_ally_01 target=e_enemy_01 hit=true
+event: HitLocation actor=e_enemy_01 location=Torso
+event: DamageApplied actor=e_enemy_01 damage=22
+event: WoundApplied actor=e_enemy_01 wound=Bleeding
+event: SmokeDeposited tile=(12, 5) density=3
+event: ActorKilled actor=e_enemy_01
+event: ActorKilled actor=e_extra_01
+event: ActorKilled actor=e_enemy_02
+event: ActorKilled actor=e_enemy_01
+event: ActorKilled actor=e_enemy_02
+event: ActorKilled actor=e_enemy_01
+event: ActorKilled actor=e_enemy_02
+ledger-entries: 4
+outcome: VICTORY

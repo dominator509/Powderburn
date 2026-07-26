@@ -9,13 +9,14 @@
 
 #![forbid(unsafe_code)]
 #![allow(deprecated)]
+#![allow(clippy::float_arithmetic)]
 
+mod afteraction;
 mod combat;
 mod hud;
 mod menu;
-mod state;
 mod saveload;
-mod afteraction;
+mod state;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -118,26 +119,22 @@ fn main() -> Result<(), String> {
     });
 
     // ── Load bitmap font ──────────────────────────────────────────────
-    let font_png_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/font.png");
-    let font_png_bytes = std::fs::read(&font_png_path)
-        .map_err(|e| format!("failed to read font.png: {e}"))?;
+    let font_png_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/font.png");
+    let font_png_bytes =
+        std::fs::read(&font_png_path).map_err(|e| format!("failed to read font.png: {e}"))?;
     let font = BitmapFont::from_png_bytes(&device, &queue, &font_png_bytes)?;
-    println!("font: loaded {} glyphs from {}", 96, font_png_path.display());
+    println!(
+        "font: loaded {} glyphs from {}",
+        96,
+        font_png_path.display()
+    );
 
     // ── HUD renderer ──────────────────────────────────────────────────
-    let hud_renderer = hud::HudRenderer::new(
-        &device,
-        &font,
-        surface_format,
-    );
+    let hud_renderer = hud::HudRenderer::new(&device, &font, surface_format);
 
     // ── After-action report renderer ──────────────────────────────────
-    let after_action_renderer = afteraction::AfterActionRenderer::new(
-        &device,
-        &font,
-        surface_format,
-    );
+    let after_action_renderer =
+        afteraction::AfterActionRenderer::new(&device, &font, surface_format);
 
     // ── Game state ────────────────────────────────────────────────────
     let mut game_state = GameState::new();
@@ -164,10 +161,7 @@ fn main() -> Result<(), String> {
             } => target.exit(),
 
             Event::WindowEvent {
-                event:
-                    WindowEvent::KeyboardInput {
-                        event: kevent, ..
-                    },
+                event: WindowEvent::KeyboardInput { event: kevent, .. },
                 ..
             } => {
                 if kevent.state != ElementState::Pressed {
@@ -351,8 +345,7 @@ fn main() -> Result<(), String> {
                                     actor: actor_id,
                                     action: PlayerAction::AimedShot,
                                 };
-                                game_state.message =
-                                    "Aimed shot — click on an enemy".to_string();
+                                game_state.message = "Aimed shot — click on an enemy".to_string();
                             }
 
                             // 'h' → Hold (end turn, keep remaining AP)
@@ -416,10 +409,8 @@ fn main() -> Result<(), String> {
                                     actor: actor_id,
                                     action: PlayerAction::CalledShot(location),
                                 };
-                                game_state.message = format!(
-                                    "Called shot to {:?} — click on an enemy",
-                                    location
-                                );
+                                game_state.message =
+                                    format!("Called shot to {:?} — click on an enemy", location);
                             }
 
                             _ => {}
@@ -552,13 +543,7 @@ fn main() -> Result<(), String> {
                 let sh = size.height.max(1);
                 match game_state.screen {
                     GameScreen::Title => {
-                        menu::render_title(
-                            &render_device,
-                            &view,
-                            surface_format,
-                            sw,
-                            sh,
-                        );
+                        menu::render_title(&render_device, &view, surface_format, sw, sh);
                     }
                     GameScreen::Combat => {
                         // Always render the combat frame
@@ -573,25 +558,12 @@ fn main() -> Result<(), String> {
 
                         // Render HUD (unless paused — we dim instead)
                         if !game_state.paused {
-                            hud_renderer.render(
-                                &font,
-                                &game_state,
-                                &render_device,
-                                &view,
-                                sw,
-                                sh,
-                            );
+                            hud_renderer.render(&font, &game_state, &render_device, &view, sw, sh);
                         }
 
                         // Pause overlay (semi-transparent dim + text)
                         if game_state.paused {
-                            hud_renderer.render_pause_overlay(
-                                &font,
-                                &render_device,
-                                &view,
-                                sw,
-                                sh,
-                            );
+                            hud_renderer.render_pause_overlay(&font, &render_device, &view, sw, sh);
                         }
                     }
                     GameScreen::AfterAction => {

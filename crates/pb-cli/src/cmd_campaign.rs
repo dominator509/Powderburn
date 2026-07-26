@@ -84,8 +84,8 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     // Load the campaign save
-    let save_raw = std::fs::read(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw =
+        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
     let mut save: pb_content::schema::SaveFileData =
         pb_save::format::deserialize_save(&save_raw)
@@ -181,7 +181,7 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
             let actor = build_actor(
                 comp_id,
                 companion_id,
-                4, // default sequence
+                4,  // default sequence
                 15, // default HP
                 10, // default Sand
                 default_pos,
@@ -206,7 +206,7 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
             let (_, _, cmd) = &entries[entry_idx];
 
             // Skip journal entries for actors who are already dead
-            let alive = state.actors.get(&cmd.actor_id).map_or(false, |a| a.alive);
+            let alive = state.actors.get(&cmd.actor_id).is_some_and(|a| a.alive);
             if !alive {
                 entry_idx += 1;
                 continue;
@@ -253,12 +253,16 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let dead_companions: Vec<String> = state
         .actors
         .values()
-        .filter(|a| !a.alive && (a.name.starts_with("c_") || {
-            // Also detect companions registered in the companion roster
-            scenario.actors.iter().any(|ad| {
-                ad.id == a.name && ad.is_companion
-            })
-        }))
+        .filter(|a| {
+            !a.alive
+                && (a.name.starts_with("c_") || {
+                    // Also detect companions registered in the companion roster
+                    scenario
+                        .actors
+                        .iter()
+                        .any(|ad| ad.id == a.name && ad.is_companion)
+                })
+        })
         .map(|a| a.name.clone())
         .collect();
 
@@ -299,7 +303,7 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
 
             let chosen_line = format!("{} fell in battle", display_name);
             chain.add_entry(
-                companion_name,  // Use companion_id as name for LF-05 compatibility
+                companion_name, // Use companion_id as name for LF-05 compatibility
                 "Companion",
                 &nation,
                 &scenario.date,
@@ -310,35 +314,41 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
 
         // Convert chain entries back to save format
         for entry in &chain.entries {
-            save.ledger_entries.push(pb_content::schema::LedgerEntryData {
-                index: entry.index,
-                prev_hash: entry.prev_hash.iter().fold(String::with_capacity(64), |mut s, b| {
-                    use std::fmt::Write;
-                    write!(s, "{:02x}", b).ok();
-                    s
-                }),
-                name: entry.name.clone(),
-                role: entry.role.clone(),
-                place: entry.place.clone(),
-                date: entry.date.clone(),
-                chosen_line: entry.chosen_line.clone(),
-                written_by: entry.written_by.clone(),
-                hash: entry.hash.iter().fold(String::with_capacity(64), |mut s, b| {
-                    use std::fmt::Write;
-                    write!(s, "{:02x}", b).ok();
-                    s
-                }),
-            });
+            save.ledger_entries
+                .push(pb_content::schema::LedgerEntryData {
+                    index: entry.index,
+                    prev_hash: entry.prev_hash.iter().fold(
+                        String::with_capacity(64),
+                        |mut s, b| {
+                            use std::fmt::Write;
+                            write!(s, "{:02x}", b).ok();
+                            s
+                        },
+                    ),
+                    name: entry.name.clone(),
+                    role: entry.role.clone(),
+                    place: entry.place.clone(),
+                    date: entry.date.clone(),
+                    chosen_line: entry.chosen_line.clone(),
+                    written_by: entry.written_by.clone(),
+                    hash: entry
+                        .hash
+                        .iter()
+                        .fold(String::with_capacity(64), |mut s, b| {
+                            use std::fmt::Write;
+                            write!(s, "{:02x}", b).ok();
+                            s
+                        }),
+                });
         }
 
         // Update ledger_head_hash
         let head = chain.head_hash();
-        save.ledger_head_hash =
-            head.iter().fold(String::with_capacity(64), |mut s, b| {
-                use std::fmt::Write;
-                write!(s, "{:02x}", b).ok();
-                s
-            });
+        save.ledger_head_hash = head.iter().fold(String::with_capacity(64), |mut s, b| {
+            use std::fmt::Write;
+            write!(s, "{:02x}", b).ok();
+            s
+        });
     }
 
     // Write the updated save file
@@ -371,9 +381,8 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
         // Reload the save to get the updated flags (may have changed due to choice/deaths)
         let save_raw2 = std::fs::read(campaign_path)
             .map_err(|e| format!("cannot read campaign file: {0}", e))?;
-        let save2: pb_content::schema::SaveFileData =
-            pb_save::format::deserialize_save(&save_raw2)
-                .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+        let save2: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw2)
+            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
         let available2 = next_missions(&graph, &save2.campaign_flags, &save2.campaign_flags);
         for mission_id in &available2 {
@@ -400,12 +409,11 @@ pub fn run_campaign_audit(args: &Args) -> Result<(), String> {
         .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
-    let save_raw = std::fs::read(campaign_path)
-        .map_err(|e| format!("cannot read campaign file: {0}", e))?;
+    let save_raw =
+        std::fs::read(campaign_path).map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData =
-        pb_save::format::deserialize_save(&save_raw)
-            .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+    let save: pb_content::schema::SaveFileData = pb_save::format::deserialize_save(&save_raw)
+        .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Build ledger chain
     let mut chain = LedgerChain::new();

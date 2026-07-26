@@ -36,7 +36,11 @@ pub fn run_capture(args: &Args) -> Result<(), String> {
         .map_err(|e| format!("failed to create headless device: {}", e))?;
 
     let meta = rt
-        .block_on(pb_render::capture::capture_frame(device, &config, &output_path))
+        .block_on(pb_render::capture::capture_frame(
+            device,
+            &config,
+            &output_path,
+        ))
         .map_err(|e| format!("capture failed: {}", e))?;
 
     println!("{}{}", output::CAPTURE_OK, meta.checksum);

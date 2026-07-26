@@ -42,7 +42,14 @@ fn called_shot_to_gunarm_full_pipeline() {
         .actors
         .insert(target, make_actor(target, TileXY::new(5, 0)));
 
-    let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm), true, 0);
+    let result = resolve_shot(
+        &state,
+        shooter,
+        target,
+        Some(HitLocationType::GunArm),
+        true,
+        0,
+    );
     assert!(result.is_ok(), "Shot should resolve without error");
 
     let events = result.unwrap();

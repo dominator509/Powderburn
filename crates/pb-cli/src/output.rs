@@ -88,10 +88,18 @@ pub fn format_event(event: &Event, state: &SimState) -> String {
 
     match event {
         Event::HitLocation { actor, location } => {
-            format!("event: HitLocation actor={} location={}", name(actor), location)
+            format!(
+                "event: HitLocation actor={} location={}",
+                name(actor),
+                location
+            )
         }
         Event::DamageApplied { actor, damage } => {
-            format!("event: DamageApplied actor={} damage={}", name(actor), damage)
+            format!(
+                "event: DamageApplied actor={} damage={}",
+                name(actor),
+                damage
+            )
         }
         Event::WoundApplied { actor, wound } => {
             format!("event: WoundApplied actor={} wound={}", name(actor), wound)

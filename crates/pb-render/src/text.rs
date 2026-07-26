@@ -101,14 +101,14 @@ impl BitmapFont {
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &img,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * w),
                 rows_per_image: Some(h),
@@ -145,7 +145,7 @@ impl BitmapFont {
     /// Returns `None` for characters outside ASCII 32–126.
     pub fn char_uv(&self, c: char) -> Option<[[f32; 2]; 2]> {
         let code = c as u8;
-        if code < FIRST_CHAR || code >= LAST_CHAR {
+        if !(FIRST_CHAR..LAST_CHAR).contains(&code) {
             return None;
         }
         let idx = code - FIRST_CHAR;
@@ -168,6 +168,7 @@ impl BitmapFont {
     /// * `scale` – multiplier for glyph size (1.0 → 8×8 px).
     /// * `color` – tint applied to each glyph (RGBA, 0–1).
     /// * `screen_w`, `screen_h` – viewport dimensions for NDC conversion.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_text(
         &self,
         text: &str,
@@ -268,28 +269,27 @@ impl TextRenderer {
             source: wgpu::ShaderSource::Wgsl(TEXT_SHADER_SOURCE.into()),
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("text bind group layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("text bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("text bind group"),
@@ -407,16 +407,8 @@ impl TextRenderer {
             return;
         }
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&mesh.vertices),
-        );
-        queue.write_buffer(
-            &self.index_buffer,
-            0,
-            bytemuck::cast_slice(&mesh.indices),
-        );
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);

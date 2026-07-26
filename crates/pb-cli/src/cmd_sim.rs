@@ -70,7 +70,7 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
             let (_, _, cmd) = &entries[entry_idx];
 
             // Skip journal entries for actors who are already dead
-            let alive = state.actors.get(&cmd.actor_id).map_or(false, |a| a.alive);
+            let alive = state.actors.get(&cmd.actor_id).is_some_and(|a| a.alive);
             if !alive {
                 entry_idx += 1;
                 continue;
@@ -99,11 +99,12 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
                         println!("suspended at tick {0}", state.tick.0);
                         if args.emit_hash {
                             let h = compute_state_hash(&state);
-                            let hex: String = h.iter().fold(String::with_capacity(64), |mut s, b| {
-                                use std::fmt::Write;
-                                write!(s, "{0:02x}", b).ok();
-                                s
-                            });
+                            let hex: String =
+                                h.iter().fold(String::with_capacity(64), |mut s, b| {
+                                    use std::fmt::Write;
+                                    write!(s, "{0:02x}", b).ok();
+                                    s
+                                });
                             println!("{0}{1}", output::STATE_HASH_FORMAT, hex);
                         }
                         return Ok(());
@@ -153,13 +154,17 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
 }
 
 fn run_sim_resume(resume_path: &Path, args: &Args) -> Result<(), String> {
-    let raw = std::fs::read(resume_path)
-        .map_err(|e| format!("cannot read resume file '{0}': {1}", resume_path.display(), e))?;
+    let raw = std::fs::read(resume_path).map_err(|e| {
+        format!(
+            "cannot read resume file '{0}': {1}",
+            resume_path.display(),
+            e
+        )
+    })?;
 
     if raw.starts_with(b"PBSV") {
         // Binary PBSV format — deserialize as SaveFileData
-        let save =
-            deserialize_save(&raw).map_err(|e| format!("save deserialize error: {0}", e))?;
+        let save = deserialize_save(&raw).map_err(|e| format!("save deserialize error: {0}", e))?;
 
         let hash = save.ledger_head_hash.clone();
         let _tick = save.written_at_tick;
@@ -194,7 +199,8 @@ fn run_sim_resume(resume_path: &Path, args: &Args) -> Result<(), String> {
         }
     } else {
         // Legacy text format — fallback parsing
-        let data = String::from_utf8(raw).map_err(|_| "resume file is not valid UTF-8".to_string())?;
+        let data =
+            String::from_utf8(raw).map_err(|_| "resume file is not valid UTF-8".to_string())?;
 
         let mut saved_tick: Option<u64> = None;
         let mut saved_hash: Option<String> = None;
@@ -225,10 +231,11 @@ fn run_sim_resume(resume_path: &Path, args: &Args) -> Result<(), String> {
 }
 
 /// Parse a 64-character hex string into a 32-byte array.
+#[allow(clippy::unwrap_used)]
 fn hex_to_bytes(s: &str) -> [u8; 32] {
     let mut out = [0u8; 32];
     for i in 0..32 {
-        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("valid hex in save file");
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
     }
     out
 }
@@ -271,15 +278,15 @@ pub fn run_replay(args: &Args) -> Result<(), String> {
         register_actor(&mut state, actor_id, actor);
     }
 
-    let entries = parse_journal(journal_path)
-        .map_err(|e| format!("journal parse error: {0}", e))?;
+    let entries =
+        parse_journal(journal_path).map_err(|e| format!("journal parse error: {0}", e))?;
 
     // Dead-actor-aware replay
     let mut entry_idx = 0;
     while entry_idx < entries.len() {
         let (_, _, cmd) = &entries[entry_idx];
 
-        let alive = state.actors.get(&cmd.actor_id).map_or(false, |a| a.alive);
+        let alive = state.actors.get(&cmd.actor_id).is_some_and(|a| a.alive);
         if !alive {
             entry_idx += 1;
             continue;

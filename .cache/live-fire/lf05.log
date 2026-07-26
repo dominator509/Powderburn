@@ -1,0 +1,43 @@
+event: ShotHit actor=e_enemy_02 target=c_whitehorse hit=true
+event: HitLocation actor=c_whitehorse location=OffArm
+event: DamageApplied actor=c_whitehorse damage=14
+event: WoundApplied actor=c_whitehorse wound=Broken
+event: WeaponDropped actor=c_whitehorse item=colt_army_1860
+event: SmokeDeposited tile=(14, 6) density=3
+event: ShotHit actor=e_enemy_01 target=c_whitehorse hit=true
+event: HitLocation actor=c_whitehorse location=Legs
+event: DamageApplied actor=c_whitehorse damage=16
+event: WoundApplied actor=c_whitehorse wound=Broken
+event: SmokeDeposited tile=(14, 5) density=3
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+event: ActorKilled actor=c_whitehorse
+event: CompanionKilled id=c_whitehorse
+ledger-entries: 1
+outcome: DEFEAT

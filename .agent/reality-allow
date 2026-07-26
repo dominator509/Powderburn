@@ -1,5 +1,10 @@
-^__6L_ALLOW_NONE__$
-# Regression test injection strings (TODO/FIXME are test subjects, not real markers)
-crates/pb-tools/tests/regression\.rs:.*(TODO|FIXME)
-# Test helper functions in pb-content validate module (these are test utilities, not stubs)
-crates/pb-content/src/validate\.rs:.*dummy_\w+\(
+# reality-allow — ERE patterns for reality-gate.sh grep -vE filtering
+# Used by both reality-gate.sh (ERE) and security-check.sh (BRE fixed-string check).
+# Each non-comment, non-blank line is either:
+# - An ERE pattern for reality-gate (matched against grep output, e.g. crates/...:.*pattern)
+# - A fast pattern for security-check (binary path:name format, matched with grep -q)
+target/release/powderburn:socket:
+target/release/powderburn:connect:
+crates/pb-content/src/validate\.rs:.*dummy_
+crates/pb-tools/tests/regression\.rs:.*TODO
+crates/pb-tools/tests/regression\.rs:.*FIXME

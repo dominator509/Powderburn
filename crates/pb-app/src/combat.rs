@@ -106,13 +106,10 @@ fn parse_stance(s: &str) -> Stance {
 
 /// Initialize combat: load content, create SimState, put game into combat
 /// screen.
-pub fn init_combat(
-    game_state: &mut GameState,
-    content_root: &Path,
-) -> Result<(), String> {
+pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<(), String> {
     // Load content
-    let content: Content = load::load_all(content_root)
-        .map_err(|e| format!("content load failed: {e}"))?;
+    let content: Content =
+        load::load_all(content_root).map_err(|e| format!("content load failed: {e}"))?;
 
     // Pick the first scenario (or m01_elk_creek if available)
     let scenario_id = if content.scenarios.contains_key("scn_m01_elk_creek") {
@@ -208,8 +205,13 @@ pub fn render_combat_frame(
 
     // ── Smoke overlay ───────────────────────────────────────────────────
     let smoke_tiles = build_smoke_grid(game_state);
-    let smoke_system =
-        SmokeSystem::new(render_device, GRID_COLS, GRID_ROWS, &smoke_tiles, &camera_bytes);
+    let smoke_system = SmokeSystem::new(
+        render_device,
+        GRID_COLS,
+        GRID_ROWS,
+        &smoke_tiles,
+        &camera_bytes,
+    );
 
     // ── Overlay (hovered tile, selected actor highlight) ────────────────
     let overlay_tiles = build_overlay_tiles(game_state);
@@ -220,11 +222,12 @@ pub fn render_combat_frame(
     let sprite_system = SpriteSystem::new(render_device, &sprites, &camera_bytes);
 
     // ── Command encoder & render pass ───────────────────────────────────
-    let mut encoder = render_device
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("combat encoder"),
-        });
+    let mut encoder =
+        render_device
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("combat encoder"),
+            });
 
     {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -254,7 +257,9 @@ pub fn render_combat_frame(
         sprite_system.render(&mut rpass);
     }
 
-    render_device.queue.submit(std::iter::once(encoder.finish()));
+    render_device
+        .queue
+        .submit(std::iter::once(encoder.finish()));
 }
 
 /// Handle a mouse click during combat.
@@ -313,16 +318,16 @@ pub fn handle_combat_click(game_state: &mut GameState) -> Result<(), String> {
             }
             // Clicking empty tile while selected → could add move-to later
         }
-        InteractionPhase::Targeting { actor: selected_id, action: player_action } => {
+        InteractionPhase::Targeting {
+            actor: selected_id,
+            action: player_action,
+        } => {
             // Check if the clicked tile has a valid enemy target
             if let Some((&target_id, target_actor)) = actor_at {
                 if target_id != selected_id && target_actor.alive && !is_ally(target_actor) {
                     // Valid target! Keep the phase and let execute_player_action read it
-                    game_state.message = format!(
-                        "Executing {:?} on {}",
-                        player_action,
-                        target_actor.name
-                    );
+                    game_state.message =
+                        format!("Executing {:?} on {}", player_action, target_actor.name);
 
                     // Execute the player action
                     execute_player_action(game_state)?;
@@ -403,8 +408,10 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
         .collect::<Vec<_>>()
         .join("; ");
     gs.message = if summary.is_empty() {
-        format!("Action executed (AP remaining: {:?})",
-            sim.actors.get(&actor_id).map(|a| a.ap.0).unwrap_or(0))
+        format!(
+            "Action executed (AP remaining: {:?})",
+            sim.actors.get(&actor_id).map(|a| a.ap.0).unwrap_or(0)
+        )
     } else {
         summary
     };
@@ -485,12 +492,10 @@ fn play_sfx_from_events(audio: &mut Option<pb_audio::AudioSystem>, events: &[Eve
 
 /// Run AI for all alive enemies in the sim.
 ///
-/// For each alive enemy, finds the nearest player character and attempts a
-/// SnapShot. If that fails (AP/reason), falls back to Hold.
-///
-/// TODO: Use `pb_ai::utility::decide_action` properly once the ActorId
-/// mapping issue is resolved in the AI pipeline (the AI uses 1-based
-/// index IDs that don't match sim ActorIds).
+/// Uses `pb_ai::utility::decide_action` to generate, score, and select the
+/// best action for each enemy. AI target IDs (1-based slice indices) are
+/// mapped back to real simulation `ActorId`s via `resolve_ai_target_id`.
+/// Falls back to `Hold` if no player targets exist or if the action fails.
 pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
     let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
 
@@ -536,8 +541,7 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
                 player_states.iter().map(|(_, a)| a.clone()).collect();
 
             // Use the AI to decide
-            let mut ai_cmd =
-                pb_ai::utility::decide_action(&actor, &enemy_side, &player_only);
+            let mut ai_cmd = pb_ai::utility::decide_action(&actor, &enemy_side, &player_only);
             ai_cmd.actor_id = *eid;
 
             // Fix target IDs: map from 1-based index back to real ActorId
@@ -552,7 +556,10 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
         };
 
         // Check if this is a shooting action (before cmd is moved)
-        let is_fire = matches!(cmd.action, Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(..));
+        let is_fire = matches!(
+            cmd.action,
+            Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(..)
+        );
 
         // Execute the AI decision
         match step(sim, cmd) {
@@ -633,10 +640,7 @@ pub fn check_victory_conditions(gs: &mut GameState) {
 
 /// Map ActorIds returned by `pb_ai::utility::decide_action` (1-based indices
 /// into the enemies slice) back to real ActorIds from the simulation state.
-fn resolve_ai_target_id(
-    action: Action,
-    player_states: &[(ActorId, ActorState)],
-) -> Action {
+fn resolve_ai_target_id(action: Action, player_states: &[(ActorId, ActorState)]) -> Action {
     // Given a fake 1-based index from the AI, find the real ActorId.
     let real_id = |fake: ActorId| -> ActorId {
         let idx = fake.0.saturating_sub(1) as usize;
@@ -672,8 +676,8 @@ fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
         .as_ref()
         .map(|sim| {
             sim.actors
-                .iter()
-                .map(|(_, a)| (a.position.x, a.position.y))
+                .values()
+                .map(|a| (a.position.x, a.position.y))
                 .collect()
         })
         .unwrap_or_default();
@@ -691,9 +695,9 @@ fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
             });
 
             let dead_actor_at = game_state.sim.as_ref().is_some_and(|sim| {
-                sim.actors.iter().any(|(_, a)| {
-                    a.position.x == x as i16 && a.position.y == y as i16 && !a.alive
-                })
+                sim.actors
+                    .iter()
+                    .any(|(_, a)| a.position.x == x as i16 && a.position.y == y as i16 && !a.alive)
             });
 
             let elevation: i32 = if actor_at { 1 } else { 0 };

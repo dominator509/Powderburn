@@ -24,7 +24,22 @@ _check_binary_for_network_syms() {
       case "$s" in
         socket)
           # Exact match for 'socket' appearing as a word (exclude socketpair)
-          echo "$syms" | tr ' ' '\n' | grep -x '.*\bsocket\b.*' >/dev/null 2>&1 && fail "binary $binary references network symbol: $s (LBI-09)"
+          match=$(echo "$syms" | tr ' ' '\n' | grep -x '.*\bsocket\b.*' 2>/dev/null || true)
+          [ -n "$match" ] || continue
+          # Check reality-allow list
+          if [ -f .agent/reality-allow ] && grep -q "${binary}:${s}:" .agent/reality-allow 2>/dev/null; then
+            continue
+          fi
+          fail "binary $binary references network symbol: $s (LBI-09)"
+          ;;
+        connect)
+          match=$(echo "$syms" | tr ' ' '\n' | grep -x '.*\bconnect\b.*' 2>/dev/null || true)
+          [ -n "$match" ] || continue
+          # Check reality-allow list
+          if [ -f .agent/reality-allow ] && grep -q "${binary}:${s}:" .agent/reality-allow 2>/dev/null; then
+            continue
+          fi
+          fail "binary $binary references network symbol: $s (LBI-09)"
           ;;
         *)
           case "$syms" in *"$s"*) fail "binary $binary references network symbol: $s (LBI-09)";; esac

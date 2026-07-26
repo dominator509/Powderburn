@@ -1,0 +1,26 @@
+event: ShotHit actor=e_shooter target=e_bandit_02 hit=false
+event: Misfire actor=e_shooter
+event: ShotHit actor=e_shooter target=e_bandit_02 hit=true
+event: HitLocation actor=e_bandit_02 location=GunArm
+event: DamageApplied actor=e_bandit_02 damage=14
+event: WoundApplied actor=e_bandit_02 wound=Broken
+event: WeaponDropped actor=e_bandit_02 item=colt_army_1860
+event: SmokeDeposited tile=(5, 5) density=3
+event: ShotHit actor=e_shooter target=e_bandit_02 hit=true
+event: HitLocation actor=e_bandit_02 location=GunArm
+event: DamageApplied actor=e_bandit_02 damage=12
+event: WoundApplied actor=e_bandit_02 wound=Broken
+event: WeaponDropped actor=e_bandit_02 item=colt_army_1860
+event: SmokeDeposited tile=(5, 5) density=3
+event: ShotHit actor=e_shooter target=e_bandit_02 hit=false
+event: ShotHit actor=e_shooter target=e_bandit_02 hit=true
+event: HitLocation actor=e_bandit_02 location=GunArm
+event: DamageApplied actor=e_bandit_02 damage=15
+event: WoundApplied actor=e_bandit_02 wound=Broken
+event: WeaponDropped actor=e_bandit_02 item=colt_army_1860
+event: SmokeDeposited tile=(5, 5) density=3
+event: ActorKilled actor=e_bandit_02
+event: ActorKilled actor=e_bandit_02
+event: ActorKilled actor=e_bandit_02
+event: ActorKilled actor=e_bandit_02
+event: ActorKilled actor=e_bandit_02

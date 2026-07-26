@@ -24,6 +24,7 @@ pub enum PlayerAction {
     SnapShot,
     AimedShot,
     CalledShot(HitLocationType),
+    #[allow(dead_code)]
     Move,
     Reload,
     Hold,

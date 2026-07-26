@@ -100,7 +100,7 @@ pub fn action_cost(action: &Action, actor: &ActorState) -> pb_core::ids::Ap {
         Action::FanHammer(_) => Ap(6),
         Action::CapAndBallReload => Ap(8),
         Action::ClearJam => Ap(4),
-        Action::DrawBead(_) => Ap(2),   // minimum cost; remaining AP consumed in execution
+        Action::DrawBead(_) => Ap(2), // minimum cost; remaining AP consumed in execution
         Action::Rally(_) => Ap(3),
         Action::Loot(_) => Ap(2),
     }
@@ -139,9 +139,14 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
         Action::Move(target) => Ok(execute_move(state, cmd.actor_id, target)),
         Action::SnapShot(target) => Ok(execute_shot(state, cmd.actor_id, target, false, None, 0)),
         Action::AimedShot(target) => Ok(execute_shot(state, cmd.actor_id, target, true, None, 0)),
-        Action::CalledShot(target, loc) => {
-            Ok(execute_shot(state, cmd.actor_id, target, true, Some(loc), 0))
-        }
+        Action::CalledShot(target, loc) => Ok(execute_shot(
+            state,
+            cmd.actor_id,
+            target,
+            true,
+            Some(loc),
+            0,
+        )),
         Action::Reload => Ok(execute_reload(state, cmd.actor_id)),
         Action::Hold => Ok(vec![]), // Hold emits no events
         Action::Bandage(target) => Ok(execute_bandage(state, cmd.actor_id, target)),
@@ -157,7 +162,7 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
         Action::ClearJam => Ok(vec![]),         // stub
         Action::DrawBead(target) => Ok(execute_draw_bead(state, cmd.actor_id, target)),
         Action::Rally(target) => Ok(execute_rally(state, cmd.actor_id, target)),
-        Action::Loot(_target) => Ok(vec![]),    // no-op for now
+        Action::Loot(_target) => Ok(vec![]), // no-op for now
     }
 }
 
@@ -183,11 +188,11 @@ fn execute_shot(
     extra_penalty: i32,
 ) -> Vec<Event> {
     // Use the full shot pipeline
-    let events = match crate::shot::resolve_shot(state, actor_id, target, called, aimed, extra_penalty)
-    {
-        Ok(evts) => evts,
-        Err(_) => return vec![],
-    };
+    let events =
+        match crate::shot::resolve_shot(state, actor_id, target, called, aimed, extra_penalty) {
+            Ok(evts) => evts,
+            Err(_) => return vec![],
+        };
 
     // Apply damage, wounds, and death to the target actor based on events
     let mut damage = 0i32;
@@ -195,13 +200,19 @@ fn execute_shot(
     let mut had_hit = false;
     for ev in &events {
         match ev {
-            Event::DamageApplied { actor: _, damage: d } => {
+            Event::DamageApplied {
+                actor: _,
+                damage: d,
+            } => {
                 damage = *d;
             }
             Event::WoundApplied { actor: _, wound: w } => {
                 wound = Some(*w);
             }
-            Event::HitLocation { actor: _, location: _ } => {
+            Event::HitLocation {
+                actor: _,
+                location: _,
+            } => {
                 had_hit = true;
             }
             _ => {}
@@ -223,11 +234,17 @@ fn execute_shot(
     }
 
     // After resolve_shot, check if the target died and add appropriate events.
-    let target_now_dead = state.actors.get(&target).map_or(false, |a| !a.alive);
-    let had_death_event = events.iter().any(|e| matches!(e, Event::ActorKilled { .. }));
+    let target_now_dead = state.actors.get(&target).is_some_and(|a| !a.alive);
+    let had_death_event = events
+        .iter()
+        .any(|e| matches!(e, Event::ActorKilled { .. }));
     if target_now_dead && !had_death_event {
         let mut extended = events.clone();
-        let name = state.actors.get(&target).map(|a| a.name.clone()).unwrap_or_default();
+        let name = state
+            .actors
+            .get(&target)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
         extended.push(Event::ActorKilled { actor: target });
         if name.starts_with("c_") {
             extended.push(Event::CompanionKilled { id: name });
@@ -250,8 +267,7 @@ fn execute_bandage(_state: &mut SimState, _actor_id: ActorId, _target: ActorId) 
 
 /// Execute a melee action — applies 1d6+3 damage to the target.
 fn execute_melee(state: &mut SimState, actor_id: ActorId, target: ActorId) -> Vec<Event> {
-    let events = crate::shot::resolve_melee(state, actor_id, target);
-    events
+    crate::shot::resolve_melee(state, actor_id, target)
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +275,11 @@ fn execute_melee(state: &mut SimState, actor_id: ActorId, target: ActorId) -> Ve
 // ---------------------------------------------------------------------------
 
 /// Execute a stance change.
-fn execute_stance_change(state: &mut SimState, actor_id: ActorId, new_stance: Stance) -> Vec<Event> {
+fn execute_stance_change(
+    state: &mut SimState,
+    actor_id: ActorId,
+    new_stance: Stance,
+) -> Vec<Event> {
     if let Some(actor) = state.actors.get_mut(&actor_id) {
         actor.stance = new_stance;
     }
@@ -272,7 +292,7 @@ fn execute_fan_hammer(state: &mut SimState, actor_id: ActorId, target: ActorId) 
     for _ in 0..3 {
         let events = execute_shot(state, actor_id, target, false, None, -25);
         // Stop fanning if target dies
-        let target_dead = state.actors.get(&target).map_or(true, |a| !a.alive);
+        let target_dead = state.actors.get(&target).is_none_or(|a| !a.alive);
         all_events.extend(events);
         if target_dead {
             break;

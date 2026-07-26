@@ -1,0 +1,2 @@
+render: adapter = llvmpipe (LLVM 20.1.2, 256 bits) (Gl)
+capture: ok a918c7be378ea8f2934c299a2c1e236035dd7ba9c9765b53a0f9c402c6574c9c

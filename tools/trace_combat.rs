@@ -16,8 +16,13 @@ fn actor_data_id(id: &str) -> pb_core::ids::ActorId {
 fn main() {
     // Print all actor IDs
     let names = [
-        "e_ally_01", "e_ally_02", "e_enemy_01", "e_enemy_02",
-        "e_shooter", "e_target", "c_whitehorse",
+        "e_ally_01",
+        "e_ally_02",
+        "e_enemy_01",
+        "e_enemy_02",
+        "e_shooter",
+        "e_target",
+        "c_whitehorse",
     ];
     for name in &names {
         let id = actor_data_id(name);
@@ -27,7 +32,10 @@ fn main() {
     // Load content
     let content = pb_content::load::load_all(Path::new("content")).expect("content load failed");
     let scenario_id = "prov_full_battle";
-    let scenario = content.scenarios.get(scenario_id).expect("scenario not found");
+    let scenario = content
+        .scenarios
+        .get(scenario_id)
+        .expect("scenario not found");
 
     let seed = 1867u64;
     let mut state = pb_sim::state::SimState::new(seed, hash_scenario_id(scenario_id));
@@ -71,7 +79,11 @@ fn main() {
 
             // Determine action based on actor
             let action = if actor_id == ally_02 || actor_id == ally_01 {
-                let target = if actor_id == ally_02 { enemy_02 } else { enemy_01 };
+                let target = if actor_id == ally_02 {
+                    enemy_02
+                } else {
+                    enemy_01
+                };
                 // Check if target is alive
                 let target_alive = state.actors.get(&target).is_some_and(|a| a.alive);
                 if target_alive {

@@ -1,0 +1,5 @@
+E-HIST-001: fixture alters scenario 'm2' which is used by a HISTORICAL_FIXED campaign node.
+E-HIST-001: fixture alters scenario 'm3' which is used by a HISTORICAL_FIXED campaign node.
+E-HIST-001: fixture alters scenario 'prov_full_battle' which is used by a HISTORICAL_FIXED campaign node.
+E-HIST-001: fixture alters scenario 'prov_full_battle' which is used by a HISTORICAL_FIXED campaign node.
+ERROR: 4 historical violation(s) detected

@@ -387,7 +387,11 @@ fn check_anachronisms(content: &Content, out: &mut Vec<Diagnostic>) {
                             format!(
                                 "actor `{}` in scenario `{}` (dated {}) is equipped with \
                                  `{}` which was not available until {}",
-                                actor.id, scenario.id, scenario.date, wid, weapon.first_year_available,
+                                actor.id,
+                                scenario.id,
+                                scenario.date,
+                                wid,
+                                weapon.first_year_available,
                             ),
                         ));
                     }
@@ -403,7 +407,11 @@ fn check_anachronisms(content: &Content, out: &mut Vec<Diagnostic>) {
                             format!(
                                 "actor `{}` in scenario `{}` (dated {}) is equipped with \
                                  `{}` which was not available until {}",
-                                actor.id, scenario.id, scenario.date, wid, weapon.first_year_available,
+                                actor.id,
+                                scenario.id,
+                                scenario.date,
+                                wid,
+                                weapon.first_year_available,
                             ),
                         ));
                     }

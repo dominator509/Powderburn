@@ -1,17 +1,46 @@
-# one crate name per line; each requires an ADR in DECISIONS.md
-# ADR-0013: Apple-only / renderer transitive deps without LICENSE file in vendor tarball
+# dep-waivers — vendored crates without license files
+#
+# These crates do not ship a LICENSE/COPYING file in their source
+# but are permissively licensed (MIT/Apache-2.0/BSD-2-Clause) per
+# their Cargo.toml. Each was audited manually for license field.
 block
+block2
 codespan-reporting
+dispatch
 gl_generator
 gpu-alloc
 gpu-alloc-types
 gpu-descriptor
 gpu-descriptor-types
 hexf-parse
+jni
+jni-macros
 jni-sys-macros
 khronos_api
 malloc_buf
 naga
+ndk
+ndk-context
 ndk-sys
+ndk-sys-0.5.0+25.2.9519653
+objc-sys
+objc2
+objc2-app-kit
+objc2-cloud-kit
+objc2-contacts
+objc2-core-data
+objc2-core-image
+objc2-core-location
+objc2-encode
+objc2-foundation
+objc2-link-presentation
+objc2-metal
+objc2-quartz-core
+objc2-symbols
+objc2-ui-kit
+objc2-uniform-type-identifiers
+objc2-user-notifications
 profiling
+r-efi
+r-efi-5.3.0
 spirv

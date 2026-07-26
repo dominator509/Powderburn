@@ -43,7 +43,11 @@ mod tests {
         let data = b"hello world";
         let h = hash_state(data);
         let expected_hex = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
-        let actual_hex: String = h.iter().map(|b| format!("{0:02x}", b)).collect();
+        let mut actual_hex = String::with_capacity(64);
+        for b in &h {
+            use std::fmt::Write;
+            write!(actual_hex, "{0:02x}", b).unwrap();
+        }
         assert_eq!(actual_hex, expected_hex);
     }
 }
