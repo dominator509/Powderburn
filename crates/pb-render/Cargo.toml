@@ -16,3 +16,4 @@ workspace = true
     image.workspace = true
     sha2.workspace = true
     bytemuck.workspace = true
+    winit = { workspace = true, optional = true }

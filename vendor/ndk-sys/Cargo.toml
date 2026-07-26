@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.60"
 name = "ndk-sys"
-version = "0.5.0+25.2.9519653"
+version = "0.6.0+11769913"
 authors = ["The Rust Windowing contributors"]
 description = "FFI bindings for the Android NDK"
 homepage = "https://github.com/rust-mobile/ndk"
@@ -25,7 +25,6 @@ keywords = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rust-mobile/ndk"
-resolver = "1"
 
 [package.metadata.docs.rs]
 rustdoc-args = [
@@ -46,5 +45,6 @@ version = "0.3.0"
 audio = []
 bitmap = []
 media = []
+nativewindow = []
 sync = []
 test = []

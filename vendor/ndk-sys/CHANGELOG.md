@@ -1,5 +1,10 @@
 # Unreleased
 
+# 0.6.0 (2024-04-26)
+
+- Generate against upstream NDK build `11769913`. (#471)
+- Add `nativewindow` feature to link against `libnativewindow`. (#465)
+
 # 0.5.0 (2023-10-15)
 
 - **Breaking:** Regenerate against NDK `25.2.9519653` with `rust-bindgen 0.66.0`. (#324, #370)
