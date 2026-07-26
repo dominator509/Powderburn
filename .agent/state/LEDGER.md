@@ -29,3 +29,5 @@
 2026-07-26T03:35:43Z | forge | EP-003 | MILESTONE_PASS | M2-M7 all milestones complete
 2026-07-26T03:36:09Z | forge | EP-003 | NODE_DONE | 7 milestones complete: schema, rules data, validator, campaign graph, save/ledger, loader faithfulness, mod sandbox
 2026-07-26T03:36:26Z | forge | EP-004 | LEASE | forge starting EP-004 service layer
+2026-07-26T03:49:18Z | forge | EP-004 | MILESTONE_PASS | M1-M6 all milestones complete
+2026-07-26T03:49:18Z | forge | EP-004 | NODE_DONE | 6 milestones: CLI surface, journal/sim/replay, campaign commands, pbtool, contract tests, replay server

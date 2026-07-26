@@ -53,8 +53,10 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
             })?;
             let path = entry.path();
             if path.extension().map_or(false, |ext| ext == "ron") {
-                let companion: CompanionData = load_single_ron(&path)?;
-                content.companions.insert(companion.id.clone(), companion);
+                let companions: Vec<CompanionData> = load_ron_file(&path)?;
+                for c in companions {
+                    content.companions.insert(c.id.clone(), c);
+                }
             }
         }
     }
