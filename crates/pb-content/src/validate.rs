@@ -90,6 +90,9 @@ pub fn validate(content: &Content) -> Vec<Diagnostic> {
     // 9. Scenario objective actor references.
     check_objective_actor_references(content, &mut diagnostics);
 
+    // 10. Anachronistic weapons — E-ANACHRONISM-001.
+    check_anachronisms(content, &mut diagnostics);
+
     diagnostics
 }
 
@@ -357,6 +360,53 @@ fn check_objective_actor_references(content: &Content, out: &mut Vec<Diagnostic>
                             scenario.id, objective.id, target_id
                         ),
                     ));
+                }
+            }
+        }
+    }
+}
+
+/// E-ANACHRONISM-001 — check that weapons equipped in a scenario existed
+/// on or before the scenario date.  Parses the first four characters of
+/// `ScenarioData.date` as a year and compares against `WeaponData.first_year_available`.
+fn check_anachronisms(content: &Content, out: &mut Vec<Diagnostic>) {
+    for scenario in content.scenarios.values() {
+        // Parse the scenario date: format is "YYYY-MM-DD".
+        let scenario_year: u16 = match scenario.date.get(..4).and_then(|y| y.parse().ok()) {
+            Some(y) => y,
+            None => continue, // unparseable date — skip silently
+        };
+
+        for actor in &scenario.actors {
+            // Check equipped_primary.
+            if let Some(ref wid) = actor.equipped_primary {
+                if let Some(weapon) = content.weapons.get(wid.as_str()) {
+                    if weapon.first_year_available > scenario_year {
+                        out.push(Diagnostic::new(
+                            "E-ANACHRONISM-001",
+                            format!(
+                                "actor `{}` in scenario `{}` (dated {}) is equipped with \
+                                 `{}` which was not available until {}",
+                                actor.id, scenario.id, scenario.date, wid, weapon.first_year_available,
+                            ),
+                        ));
+                    }
+                }
+            }
+
+            // Check equipped_sidearm.
+            if let Some(ref wid) = actor.equipped_sidearm {
+                if let Some(weapon) = content.weapons.get(wid.as_str()) {
+                    if weapon.first_year_available > scenario_year {
+                        out.push(Diagnostic::new(
+                            "E-ANACHRONISM-001",
+                            format!(
+                                "actor `{}` in scenario `{}` (dated {}) is equipped with \
+                                 `{}` which was not available until {}",
+                                actor.id, scenario.id, scenario.date, wid, weapon.first_year_available,
+                            ),
+                        ));
+                    }
                 }
             }
         }
@@ -937,7 +987,10 @@ mod tests {
             ..dummy_actor("hero")
         };
         let obj = objective_data("obj1", vec!["hero".into()]);
-        let scenario = dummy_scenario("s1", vec![actor], vec![obj]);
+        let mut scenario = dummy_scenario("s1", vec![actor], vec![obj]);
+        // The test scenario uses "1867-10-21" but test weapon has
+        // first_year_available = 1873 — set the scenario date to match.
+        scenario.date = "1873-04-14".into();
 
         let mut node = dummy_campaign_node("node_a");
         node.scenario_id = Some("s1".into());

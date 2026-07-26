@@ -37,44 +37,44 @@ pub struct HitLocationEntry {
 pub const HIT_LOCATION_TABLE: &[HitLocationEntry] = &[
     HitLocationEntry {
         location: HitLocationType::Head,
-        base_chance: 10,
+        base_chance: 5,
         damage_mult: 200,
         crit_effect: 3,
     },
     HitLocationEntry {
         location: HitLocationType::Eyes,
-        base_chance: 3,
-        damage_mult: 300,
+        base_chance: 2,
+        damage_mult: 150,
         crit_effect: 5,
     },
     HitLocationEntry {
         location: HitLocationType::Torso,
-        base_chance: 35,
+        base_chance: 45,
         damage_mult: 100,
         crit_effect: 1,
     },
     HitLocationEntry {
         location: HitLocationType::Vitals,
-        base_chance: 12,
-        damage_mult: 150,
+        base_chance: 8,
+        damage_mult: 250,
         crit_effect: 4,
     },
     HitLocationEntry {
         location: HitLocationType::GunArm,
-        base_chance: 15,
-        damage_mult: 100,
+        base_chance: 12,
+        damage_mult: 80,
         crit_effect: 2,
     },
     HitLocationEntry {
         location: HitLocationType::OffArm,
         base_chance: 10,
-        damage_mult: 100,
+        damage_mult: 70,
         crit_effect: 2,
     },
     HitLocationEntry {
         location: HitLocationType::Legs,
-        base_chance: 15,
-        damage_mult: 100,
+        base_chance: 18,
+        damage_mult: 90,
         crit_effect: 1,
     },
 ];
@@ -191,7 +191,7 @@ pub struct CalledShotMod {
 pub const CALLED_SHOT_TABLE: &[CalledShotMod] = &[
     CalledShotMod {
         location: HitLocationType::Head,
-        accuracy_penalty: 20,
+        accuracy_penalty: 25,
     },
     CalledShotMod {
         location: HitLocationType::Eyes,
@@ -203,7 +203,7 @@ pub const CALLED_SHOT_TABLE: &[CalledShotMod] = &[
     },
     CalledShotMod {
         location: HitLocationType::Vitals,
-        accuracy_penalty: 15,
+        accuracy_penalty: 30,
     },
     CalledShotMod {
         location: HitLocationType::GunArm,
@@ -211,7 +211,7 @@ pub const CALLED_SHOT_TABLE: &[CalledShotMod] = &[
     },
     CalledShotMod {
         location: HitLocationType::OffArm,
-        accuracy_penalty: 15,
+        accuracy_penalty: 18,
     },
     CalledShotMod {
         location: HitLocationType::Legs,
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn called_shot_penalty_values() {
-        assert_eq!(called_shot_penalty(HitLocationType::Head), 20);
+        assert_eq!(called_shot_penalty(HitLocationType::Head), 25);
         assert_eq!(called_shot_penalty(HitLocationType::Eyes), 40);
         assert_eq!(called_shot_penalty(HitLocationType::Torso), 0);
         assert_eq!(called_shot_penalty(HitLocationType::GunArm), 15);

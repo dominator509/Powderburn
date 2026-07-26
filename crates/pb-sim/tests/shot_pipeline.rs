@@ -53,6 +53,7 @@ fn called_shot_to_gunarm_full_pipeline() {
     // 2: DamageApplied
     // 3: WoundApplied(wound=Broken)
     // 4: WeaponDropped
+    // 5: SmokeDeposited(tile=(0,0), density=3)
 
     let event_types: Vec<&str> = events
         .iter()
@@ -62,6 +63,7 @@ fn called_shot_to_gunarm_full_pipeline() {
             Event::DamageApplied { .. } => "DamageApplied",
             Event::WoundApplied { .. } => "WoundApplied",
             Event::WeaponDropped { .. } => "WeaponDropped",
+            Event::SmokeDeposited { .. } => "SmokeDeposited",
             _ => "Other",
         })
         .collect();
@@ -74,6 +76,7 @@ fn called_shot_to_gunarm_full_pipeline() {
             "DamageApplied",
             "WoundApplied",
             "WeaponDropped",
+            "SmokeDeposited",
         ],
         "Event sequence mismatch: {:?}",
         event_types
@@ -121,6 +124,15 @@ fn called_shot_to_gunarm_full_pipeline() {
         Event::WeaponDropped {
             actor: target,
             item: "colt_army_1860".to_string(),
+        }
+    );
+
+    // Event 5: SmokeDeposited at shooter position (0,0), density 3
+    assert_eq!(
+        events[5],
+        Event::SmokeDeposited {
+            tile: TileXY::new(0, 0),
+            density: 3,
         }
     );
 }

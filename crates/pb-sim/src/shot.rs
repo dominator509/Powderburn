@@ -190,7 +190,14 @@ pub fn resolve_shot(
         }
     }
 
-    // Note: Smoke deposit (stage 9) and fouling (stage 10) are stubs for now.
+    // --- Stage 9: Smoke deposit ---
+    if let Some(shooter_actor) = state.actors.get(&shooter) {
+        let shooter_pos = shooter_actor.position;
+        events.push(Event::SmokeDeposited {
+            tile: shooter_pos,
+            density: 3,
+        });
+    }
 
     Ok(events)
 }

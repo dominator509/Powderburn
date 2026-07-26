@@ -33,7 +33,7 @@
             stance: "Standing",
             wounds: [],
             inventory: [],
-            equipped_primary: Some("winchester_1873"),
+            equipped_primary: Some("winchester_1866"),
             equipped_sidearm: None,
             marks: [],
             ways: [],

@@ -109,7 +109,7 @@
             stance: "Standing",
             wounds: [],
             inventory: [],
-            equipped_primary: Some("springfield_1873"),
+            equipped_primary: Some("spencer_1860"),
             equipped_sidearm: Some("colt_army_1860"),
             marks: [],
             ways: [],

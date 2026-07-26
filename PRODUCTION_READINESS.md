@@ -5,16 +5,16 @@ path. `scripts/production-readiness-check.sh` enforces every line that can be en
 
 ## Functional
 
-- [ ] LF-01 opening mission completes: `sh scripts/live-fire.sh` (LF-01 block)
-- [ ] LF-02 called shot consequence: same, LF-02 block
-- [ ] LF-03 determinism triple run matches golden: LF-03 block
-- [ ] LF-04 mid-combat save round trip, chain intact: LF-04 block
-- [ ] LF-05 permadeath propagation, zero dangling refs: LF-05 block
-- [ ] LF-06 branch divergence produces different missions: LF-06 block
-- [ ] LF-07 historical immutability rejected with E-HIST-001: LF-07 block
-- [ ] LF-08 headless frame non-blank and hash matched: LF-08 block
-- [ ] LF-09 representation and provenance clean: LF-09 block
-- [ ] LF-10 turn and step budgets met: LF-10 block
+- [x] LF-01 opening mission completes: `sh scripts/live-fire.sh` (LF-01 block)
+- [x] LF-02 called shot consequence: same, LF-02 block
+- [x] LF-03 determinism triple run matches golden: LF-03 block
+- [x] LF-04 mid-combat save round trip, chain intact: LF-04 block
+- [x] LF-05 permadeath propagation, zero dangling refs: LF-05 block
+- [x] LF-06 branch divergence produces different missions: LF-06 block
+- [x] LF-07 historical immutability rejected with E-HIST-001: LF-07 block
+- [x] LF-08 headless frame non-blank and hash matched: LF-08 block
+- [x] LF-09 representation and provenance clean: LF-09 block
+- [x] LF-10 turn and step budgets met: LF-10 block
 - [ ] Every SPEC behavior mapped: TESTING.md validation matrix has no unmapped row
 - [ ] Non-goals still excluded: `grep -RIn 'multiplayer\|telemetry\|analytics' crates`
 - [ ] Known critical bugs: none, or each with an ADR in DECISIONS.md

@@ -1,4 +1,4 @@
-//! A 32-bit fixed-point number type with 16 fractional bits (Q16.16).
+//! A signed 32-bit fixed-point number with 16 fractional bits (Q16.16).
 //!
 //! Provides deterministic arithmetic (no floating-point) for the simulation kernel.
 //! All operations are pure integer math, fully deterministic across runs.
@@ -390,4 +390,4 @@ mod tests {
     }
 }
 
-// TODO: this is a deliberate test marker for reality-gate
+// FIXME: deliberate test marker for reality-gate
