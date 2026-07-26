@@ -18,6 +18,8 @@ workspace = true
     pb-save = { path = "../pb-save" }
     pb-render = { path = "../pb-render" }
     pb-audio = { path = "../pb-audio" }
+    serde = { workspace = true }
+    ron = { workspace = true }
 
 [[bin]]
 name = "pbcli"

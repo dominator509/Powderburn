@@ -62,6 +62,8 @@ dependencies = [
  "pb-rules",
  "pb-save",
  "pb-sim",
+ "ron",
+ "serde",
 ]
 
 [[package]]
