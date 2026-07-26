@@ -39,17 +39,16 @@ pub async fn capture_frame(
 
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Build camera
+    // Create camera
     let camera = crate::camera::IsoCamera::new(config.width, config.height);
     let camera_bytes = camera.ortho_matrix_bytes();
 
-    // Build tile system - a 16x12 grid of isometric tiles
+    // Build tile system - a 16x12 grid
     let cols = 16u32;
     let rows = 12u32;
     let mut tiles = Vec::new();
     for y in 0..rows {
         for x in 0..cols {
-            // Green grass tiles with some variation
             let shade = 0.3 + ((x + y) % 3) as f32 * 0.1;
             let elevation = if (x + y) % 4 == 0 { 1 } else { 0 };
             tiles.push(crate::tiles::TileVisual::new(0.2, shade, 0.15, elevation));
@@ -57,14 +56,38 @@ pub async fn capture_frame(
     }
     let tile_system = crate::tiles::TileSystem::new(&device, cols, rows, &tiles, &camera_bytes);
 
-    // Build sprite system with a few colored sprites
+    // Build sprites
     let sprites = vec![
-        crate::sprites::SpriteInstance::new(0.0, 0.0, 2.0), // player unit (white)
-        crate::sprites::SpriteInstance::new(3.0, 2.0, 2.0), // enemy unit
-        crate::sprites::SpriteInstance::new(-2.0, 4.0, 2.0), // neutral unit
-        crate::sprites::SpriteInstance::new(1.0, -3.0, 2.0), // another unit
+        crate::sprites::SpriteInstance::new(0.0, 0.0, 2.0),
+        crate::sprites::SpriteInstance::new(3.0, 2.0, 2.0),
+        crate::sprites::SpriteInstance::new(-2.0, 4.0, 2.0),
+        crate::sprites::SpriteInstance::new(1.0, -3.0, 2.0),
     ];
     let sprite_system = crate::sprites::SpriteSystem::new(&device, &sprites, &camera_bytes);
+
+    // Build smoke overlay - simulate some smoke density near the center
+    let mut smoke_tiles = Vec::new();
+    for y in 0..rows {
+        for x in 0..cols {
+            let dist = ((x as i32 - 8).abs() + (y as i32 - 6).abs()) as u8;
+            let density = if dist < 3 { (4 - dist) as u8 } else if dist < 5 { 1 } else { 0 };
+            smoke_tiles.push(crate::smoke::SmokeTile::new(density));
+        }
+    }
+    let smoke_system = crate::smoke::SmokeSystem::new(&device, cols, rows, &smoke_tiles, &camera_bytes);
+
+    // Build overlay highlights - simulate movement range and attackable tiles
+    let overlay_tiles = vec![
+        (7u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 2 }),
+        (8u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 3 }),
+        (9u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 4 }),
+        (8u32, 6u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 2 }),
+        (9u32, 6u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 3 }),
+        (8u32, 7u32, crate::overlay::OverlayTileKind::Attackable { hit_chance: 65 }),
+        (9u32, 7u32, crate::overlay::OverlayTileKind::Attackable { hit_chance: 45 }),
+        (10u32, 6u32, crate::overlay::OverlayTileKind::Cover { hard: true }),
+    ];
+    let overlay_system = crate::overlay::OverlaySystem::new(&device, &overlay_tiles, &camera_bytes);
 
     // Create buffer to read back
     let buffer_size = (config.width * config.height * 4) as u64;
@@ -105,6 +128,12 @@ pub async fn capture_frame(
 
         // Draw tiles first (back to front is handled by z-order in vertex data)
         tile_system.render(&mut rpass);
+
+        // Draw smoke overlay (semi-transparent, above terrain)
+        smoke_system.render(&mut rpass);
+
+        // Draw overlay highlights (movement range, attackable targets)
+        overlay_system.render(&mut rpass);
 
         // Draw sprites on top
         sprite_system.render(&mut rpass);

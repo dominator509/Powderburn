@@ -6,6 +6,8 @@
 pub mod camera;
 pub mod capture;
 pub mod device;
+pub mod overlay;
+pub mod smoke;
 pub mod sprites;
 pub mod tiles;
 
