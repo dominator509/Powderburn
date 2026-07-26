@@ -18,33 +18,37 @@ pub const MAX_NEST_DEPTH: u32 = 64;
 pub fn load_mod(root: &Path) -> Result<Content, ModError> {
     // Canonicalize the mod root to check path confinement
     let canonical_root = root.canonicalize().map_err(|e| {
-        ModError::new("E-MOD-PATH", format!("cannot access mod directory {}: {}", root.display(), e))
+        ModError::new(
+            "E-MOD-PATH",
+            format!("cannot access mod directory {}: {}", root.display(), e),
+        )
     })?;
 
     // Walk all files in the mod directory
     walk_mod_files(&canonical_root, &canonical_root)?;
 
     // Try loading content from the mod directory
-    let content = crate::load::load_all(root).map_err(|e| {
-        ModError::new("E-MOD-PATH", format!("failed to load mod content: {}", e))
-    })?;
+    let content = crate::load::load_all(root)
+        .map_err(|e| ModError::new("E-MOD-PATH", format!("failed to load mod content: {}", e)))?;
 
     Ok(content)
 }
 
 /// Walk files in the mod tree, checking for path escapes and executables.
 fn walk_mod_files(dir: &Path, root: &Path) -> Result<(), ModError> {
-    for entry in fs::read_dir(dir).map_err(|e| {
-        ModError::new("E-MOD-PATH", format!("cannot read mod directory: {}", e))
-    })? {
-        let entry = entry.map_err(|e| {
-            ModError::new("E-MOD-PATH", format!("directory entry error: {}", e))
-        })?;
+    for entry in fs::read_dir(dir)
+        .map_err(|e| ModError::new("E-MOD-PATH", format!("cannot read mod directory: {}", e)))?
+    {
+        let entry = entry
+            .map_err(|e| ModError::new("E-MOD-PATH", format!("directory entry error: {}", e)))?;
         let path = entry.path();
 
         // Check path confinement: path must be under the mod root
         let canonical = path.canonicalize().map_err(|e| {
-            ModError::new("E-MOD-PATH", format!("cannot resolve path {}: {}", path.display(), e))
+            ModError::new(
+                "E-MOD-PATH",
+                format!("cannot resolve path {}: {}", path.display(), e),
+            )
         })?;
         if !canonical.starts_with(root) {
             return Err(ModError::new(
@@ -70,7 +74,10 @@ fn check_not_executable(path: &Path) -> Result<(), ModError> {
     {
         use std::os::unix::fs::PermissionsExt;
         let metadata = fs::metadata(path).map_err(|e| {
-            ModError::new("E-MOD-EXEC", format!("cannot read metadata for {}: {}", path.display(), e))
+            ModError::new(
+                "E-MOD-EXEC",
+                format!("cannot read metadata for {}: {}", path.display(), e),
+            )
         })?;
         let mode = metadata.permissions().mode();
         if mode & 0o111 != 0 {
@@ -83,7 +90,10 @@ fn check_not_executable(path: &Path) -> Result<(), ModError> {
 
     // Check for ELF, PE, or shebang magic bytes
     let data = fs::read(path).map_err(|e| {
-        ModError::new("E-MOD-EXEC", format!("cannot read {}: {}", path.display(), e))
+        ModError::new(
+            "E-MOD-EXEC",
+            format!("cannot read {}: {}", path.display(), e),
+        )
     })?;
 
     if data.len() >= 4 {

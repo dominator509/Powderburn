@@ -18,7 +18,10 @@ pub fn validate_content(content_root: &Path) -> Result<(), String> {
         println!("{}", output::PBM_VALIDATE_OK);
     } else {
         for d in &diags {
-            eprintln!("{}: {} (file: {:?}, line: {:?})", d.code, d.message, d.file, d.line);
+            eprintln!(
+                "{}: {} (file: {:?}, line: {:?})",
+                d.code, d.message, d.file, d.line
+            );
         }
         return Err(format!("{} diagnostics found", diags.len()));
     }

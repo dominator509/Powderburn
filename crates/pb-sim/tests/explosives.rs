@@ -14,18 +14,8 @@ fn dynamite_scatter_within_bounds_over_1000_throws() {
         let (landing, _fuse) = throw_dynamite(seed, 1, 100, 5, TileXY::new(50, 50));
         let dx = (landing.x as i32) - 50;
         let dy = (landing.y as i32) - 50;
-        assert!(
-            dx.abs() <= 3,
-            "seed {} dx={} exceeds bounds",
-            seed,
-            dx
-        );
-        assert!(
-            dy.abs() <= 3,
-            "seed {} dy={} exceeds bounds",
-            seed,
-            dy
-        );
+        assert!(dx.abs() <= 3, "seed {} dx={} exceeds bounds", seed, dx);
+        assert!(dy.abs() <= 3, "seed {} dy={} exceeds bounds", seed, dy);
     }
 }
 

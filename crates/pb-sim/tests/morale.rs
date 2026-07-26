@@ -165,15 +165,15 @@ fn combat_sand_scenario() {
 fn morale_state_boundary_values() {
     // max_sand = 100
     assert_eq!(morale_state(60, 100), MoraleState::Rattled); // exactly 60% is Rattled
-    assert_eq!(morale_state(25, 100), MoraleState::Broken);  // exactly 25% is Broken
+    assert_eq!(morale_state(25, 100), MoraleState::Broken); // exactly 25% is Broken
 
     // max_sand = 10
     // Steady: > 6 (60%). Rattled: 3-6. Broken: 1-2. Routed: 0.
     // Note: 6/10 = exactly 60% in Fix32, not > 60%, so Rattled.
     assert_eq!(morale_state(6, 10), MoraleState::Rattled);
-    assert_eq!(morale_state(7, 10), MoraleState::Steady);    // 7/10 = 70% > 60%
-    assert_eq!(morale_state(3, 10), MoraleState::Rattled);   // 3/10 = 30%, > 25%
-    assert_eq!(morale_state(2, 10), MoraleState::Broken);    // 2/10 = 20%, <= 25%
-    assert_eq!(morale_state(1, 10), MoraleState::Broken);    // 1/10 = 10%, <= 25%
+    assert_eq!(morale_state(7, 10), MoraleState::Steady); // 7/10 = 70% > 60%
+    assert_eq!(morale_state(3, 10), MoraleState::Rattled); // 3/10 = 30%, > 25%
+    assert_eq!(morale_state(2, 10), MoraleState::Broken); // 2/10 = 20%, <= 25%
+    assert_eq!(morale_state(1, 10), MoraleState::Broken); // 1/10 = 10%, <= 25%
     assert_eq!(morale_state(0, 10), MoraleState::Routed);
 }

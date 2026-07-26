@@ -61,12 +61,12 @@ pub fn parse_journal(path: &Path) -> Result<Vec<(u64, u32, Command)>, JournalErr
             )));
         }
 
-        let tick: u64 = parts[0]
-            .parse()
-            .map_err(|e| JournalError::Parse(format!("line {}: invalid tick: {}", line_no + 1, e)))?;
-        let actor_id: u32 = parts[1]
-            .parse()
-            .map_err(|e| JournalError::Parse(format!("line {}: invalid actor_id: {}", line_no + 1, e)))?;
+        let tick: u64 = parts[0].parse().map_err(|e| {
+            JournalError::Parse(format!("line {}: invalid tick: {}", line_no + 1, e))
+        })?;
+        let actor_id: u32 = parts[1].parse().map_err(|e| {
+            JournalError::Parse(format!("line {}: invalid actor_id: {}", line_no + 1, e))
+        })?;
         let cmd_name = parts[2];
 
         let action = parse_action(cmd_name, &parts[3..], line_no)?;
@@ -153,10 +153,20 @@ fn parse_xy(args: &[&str], cmd: &str, line_no: usize) -> Result<(i16, i16), Jour
         }
         // Fall back to positional: first two args as x,y
         let xv: i16 = args[0].parse().map_err(|e| {
-            JournalError::Parse(format!("line {}: {} invalid position arg: {}", line_no + 1, cmd, e))
+            JournalError::Parse(format!(
+                "line {}: {} invalid position arg: {}",
+                line_no + 1,
+                cmd,
+                e
+            ))
         })?;
         let yv: i16 = args[1].parse().map_err(|e| {
-            JournalError::Parse(format!("line {}: {} invalid position arg: {}", line_no + 1, cmd, e))
+            JournalError::Parse(format!(
+                "line {}: {} invalid position arg: {}",
+                line_no + 1,
+                cmd,
+                e
+            ))
         })?;
         Ok((xv, yv))
     } else {
@@ -173,7 +183,12 @@ fn parse_target(args: &[&str], cmd: &str, line_no: usize) -> Result<ActorId, Jou
     for a in args {
         if let Some(val) = a.strip_prefix("target=") {
             let id: u32 = val.parse().map_err(|e| {
-                JournalError::Parse(format!("line {}: {} invalid target: {}", line_no + 1, cmd, e))
+                JournalError::Parse(format!(
+                    "line {}: {} invalid target: {}",
+                    line_no + 1,
+                    cmd,
+                    e
+                ))
             })?;
             return Ok(ActorId(id));
         }

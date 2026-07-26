@@ -148,10 +148,7 @@ fn check_duplicate_ids(content: &Content, out: &mut Vec<Diagnostic>) {
                 .collect();
             out.push(Diagnostic::new(
                 "E-DUP-ID",
-                format!(
-                    "duplicate ID across collections: {}",
-                    ids.join(", ")
-                ),
+                format!("duplicate ID across collections: {}", ids.join(", ")),
             ));
         }
     }
@@ -250,10 +247,7 @@ fn check_actor_structure(content: &Content, out: &mut Vec<Diagnostic>) {
             if actor.id.is_empty() {
                 out.push(Diagnostic::new(
                     "E-STRUCT",
-                    format!(
-                        "actor in scenario `{}` has empty id",
-                        scenario.id
-                    ),
+                    format!("actor in scenario `{}` has empty id", scenario.id),
                 ));
             }
         }
@@ -351,8 +345,7 @@ fn check_faction_and_archetype(content: &Content, out: &mut Vec<Diagnostic>) {
 /// actually exist in the scenario's actor list.
 fn check_objective_actor_references(content: &Content, out: &mut Vec<Diagnostic>) {
     for scenario in content.scenarios.values() {
-        let actor_ids: BTreeSet<&str> =
-            scenario.actors.iter().map(|a| a.id.as_str()).collect();
+        let actor_ids: BTreeSet<&str> = scenario.actors.iter().map(|a| a.id.as_str()).collect();
 
         for objective in &scenario.objectives {
             for target_id in &objective.actor_ids {
@@ -380,7 +373,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::schema::{
-        ActorData, Attributes, CompanionData, CampaignNodeData, DiceRoll, ItemStack, MapData,
+        ActorData, Attributes, CampaignNodeData, CompanionData, DiceRoll, ItemStack, MapData,
         ObjectiveData, ScenarioData, TileXYData, WeaponData,
     };
 
@@ -432,7 +425,11 @@ mod tests {
         WeaponData {
             id: id.into(),
             display_name: id.into(),
-            damage_dice: DiceRoll { count: 2, sides: 6, bonus: 0 },
+            damage_dice: DiceRoll {
+                count: 2,
+                sides: 6,
+                bonus: 0,
+            },
             accuracy: 0,
             range_bands: [5, 15, 30, 50],
             ap_override: BTreeMap::new(),
@@ -448,7 +445,11 @@ mod tests {
         }
     }
 
-    fn dummy_scenario(id: &str, actors: Vec<ActorData>, objectives: Vec<ObjectiveData>) -> ScenarioData {
+    fn dummy_scenario(
+        id: &str,
+        actors: Vec<ActorData>,
+        objectives: Vec<ObjectiveData>,
+    ) -> ScenarioData {
         ScenarioData {
             id: id.into(),
             display_name: "Test".into(),
@@ -494,8 +495,13 @@ mod tests {
             community: None,
             sources: vec!["core".into()],
             attributes: Attributes {
-                grit: 5, nerve: 5, wind: 5, hands: 5,
-                eyes: 5, savvy: 5, luck: 5,
+                grit: 5,
+                nerve: 5,
+                wind: 5,
+                hands: 5,
+                eyes: 5,
+                savvy: 5,
+                luck: 5,
             },
             starting_weapons: vec![],
             arc_anchor: "test".into(),
@@ -519,7 +525,11 @@ mod tests {
     #[test]
     fn empty_content_is_valid() {
         let result = validate(&empty_content());
-        assert!(result.is_empty(), "empty content should be valid: {:?}", result);
+        assert!(
+            result.is_empty(),
+            "empty content should be valid: {:?}",
+            result
+        );
     }
 
     // ------------------------------------------------------------------
@@ -529,18 +539,16 @@ mod tests {
     #[test]
     fn duplicate_id_across_collections() {
         let mut content = empty_content();
-        content
-            .scenarios
-            .insert("shared_id".into(), dummy_scenario("shared_id", vec![], vec![]));
+        content.scenarios.insert(
+            "shared_id".into(),
+            dummy_scenario("shared_id", vec![], vec![]),
+        );
         content
             .weapons
             .insert("shared_id".into(), dummy_weapon("shared_id"));
 
         let result = validate(&content);
-        let diags: Vec<&Diagnostic> = result
-            .iter()
-            .filter(|d| d.code == "E-DUP-ID")
-            .collect();
+        let diags: Vec<&Diagnostic> = result.iter().filter(|d| d.code == "E-DUP-ID").collect();
 
         assert_eq!(diags.len(), 1, "should find one duplicate ID group");
         assert!(diags[0].message.contains("shared_id"));
@@ -566,7 +574,11 @@ mod tests {
 
         let diags = validate(&content);
         let dup_diags: Vec<&Diagnostic> = diags.iter().filter(|d| d.code == "E-DUP-ID").collect();
-        assert!(dup_diags.is_empty(), "no duplicates expected: {:?}", dup_diags);
+        assert!(
+            dup_diags.is_empty(),
+            "no duplicates expected: {:?}",
+            dup_diags
+        );
     }
 
     // ------------------------------------------------------------------
@@ -585,7 +597,8 @@ mod tests {
             .insert("s1".into(), dummy_scenario("s1", vec![actor], vec![]));
 
         let diags = validate(&content);
-        let ref_diags: Vec<&Diagnostic> = diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
+        let ref_diags: Vec<&Diagnostic> =
+            diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
         assert_eq!(ref_diags.len(), 1);
         assert!(ref_diags[0].message.contains("nonexistent_gun"));
     }
@@ -605,7 +618,8 @@ mod tests {
             .insert("s1".into(), dummy_scenario("s1", vec![actor], vec![]));
 
         let diags = validate(&content);
-        let ref_diags: Vec<&Diagnostic> = diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
+        let ref_diags: Vec<&Diagnostic> =
+            diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
         assert_eq!(ref_diags.len(), 1);
         assert!(ref_diags[0].message.contains("ghost_gun"));
     }
@@ -622,16 +636,27 @@ mod tests {
             ..dummy_actor("p1")
         };
         let mut content = empty_content();
-        content.weapons.insert("winchester_73".into(), dummy_weapon("winchester_73"));
-        content.weapons.insert("colt_peacemaker".into(), dummy_weapon("colt_peacemaker"));
-        content.weapons.insert("knife".into(), dummy_weapon("knife"));
+        content
+            .weapons
+            .insert("winchester_73".into(), dummy_weapon("winchester_73"));
+        content
+            .weapons
+            .insert("colt_peacemaker".into(), dummy_weapon("colt_peacemaker"));
+        content
+            .weapons
+            .insert("knife".into(), dummy_weapon("knife"));
         content
             .scenarios
             .insert("s1".into(), dummy_scenario("s1", vec![actor], vec![]));
 
         let diags = validate(&content);
-        let ref_diags: Vec<&Diagnostic> = diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
-        assert!(ref_diags.is_empty(), "known weapons should not produce errors: {:?}", ref_diags);
+        let ref_diags: Vec<&Diagnostic> =
+            diags.iter().filter(|d| d.code == "E-REF-WEAPON").collect();
+        assert!(
+            ref_diags.is_empty(),
+            "known weapons should not produce errors: {:?}",
+            ref_diags
+        );
     }
 
     // ------------------------------------------------------------------
@@ -644,9 +669,7 @@ mod tests {
         node.companion_gates.push("ghost_companion".into());
 
         let mut content = empty_content();
-        content
-            .campaign_nodes
-            .insert("node_a".into(), node);
+        content.campaign_nodes.insert("node_a".into(), node);
 
         let diags = validate(&content);
         let ref_diags: Vec<&Diagnostic> = diags
@@ -663,10 +686,10 @@ mod tests {
         node.companion_gates.push("elena".into());
 
         let mut content = empty_content();
-        content.companions.insert("elena".into(), dummy_companion("elena"));
         content
-            .campaign_nodes
-            .insert("node_a".into(), node);
+            .companions
+            .insert("elena".into(), dummy_companion("elena"));
+        content.campaign_nodes.insert("node_a".into(), node);
 
         let diags = validate(&content);
         let ref_diags: Vec<&Diagnostic> = diags
@@ -686,9 +709,7 @@ mod tests {
         node.scenario_id = Some("missing_scenario".into());
 
         let mut content = empty_content();
-        content
-            .campaign_nodes
-            .insert("node_a".into(), node);
+        content.campaign_nodes.insert("node_a".into(), node);
 
         let diags = validate(&content);
         let ref_diags: Vec<&Diagnostic> = diags
@@ -708,9 +729,7 @@ mod tests {
         content
             .scenarios
             .insert("s1".into(), dummy_scenario("s1", vec![], vec![]));
-        content
-            .campaign_nodes
-            .insert("node_a".into(), node);
+        content.campaign_nodes.insert("node_a".into(), node);
 
         let diags = validate(&content);
         let ref_diags: Vec<&Diagnostic> = diags
@@ -736,13 +755,9 @@ mod tests {
             .insert("s1".into(), dummy_scenario("s1", vec![actor], vec![]));
 
         let diags = validate(&content);
-        let struct_diags: Vec<&Diagnostic> = diags
-            .iter()
-            .filter(|d| d.code == "E-STRUCT")
-            .collect();
-        let has_empty_id = struct_diags
-            .iter()
-            .any(|d| d.message.contains("empty id"));
+        let struct_diags: Vec<&Diagnostic> =
+            diags.iter().filter(|d| d.code == "E-STRUCT").collect();
+        let has_empty_id = struct_diags.iter().any(|d| d.message.contains("empty id"));
         assert!(has_empty_id, "should report empty actor id");
     }
 
@@ -793,9 +808,9 @@ mod tests {
         content.weapons.insert("bad_wpn".into(), wpn);
 
         let diags = validate(&content);
-        let has_bands_diag = diags
-            .iter()
-            .any(|d| d.message.contains("range_bands") && d.message.contains("not strictly ascending"));
+        let has_bands_diag = diags.iter().any(|d| {
+            d.message.contains("range_bands") && d.message.contains("not strictly ascending")
+        });
         assert!(has_bands_diag);
     }
 
@@ -924,8 +939,12 @@ mod tests {
 
         let mut content = empty_content();
         content.scenarios.insert("s1".into(), scenario);
-        content.weapons.insert("rifle".into(), dummy_weapon("rifle"));
-        content.companions.insert("elena".into(), dummy_companion("elena"));
+        content
+            .weapons
+            .insert("rifle".into(), dummy_weapon("rifle"));
+        content
+            .companions
+            .insert("elena".into(), dummy_companion("elena"));
         content.campaign_nodes.insert("node_a".into(), node);
 
         let diags = validate(&content);
@@ -945,9 +964,7 @@ mod tests {
         content
             .scenarios
             .insert(String::new(), dummy_scenario("", vec![], vec![]));
-        content
-            .weapons
-            .insert(String::new(), dummy_weapon(""));
+        content.weapons.insert(String::new(), dummy_weapon(""));
 
         // Actor with empty fields.
         let broken_actor = ActorData {
@@ -962,17 +979,18 @@ mod tests {
             }],
             ..dummy_actor("")
         };
-        content
-            .scenarios
-            .get_mut("")
-            .map(|s| {
-                s.actors.push(broken_actor);
-            });
+        content.scenarios.get_mut("").map(|s| {
+            s.actors.push(broken_actor);
+        });
 
         // Weapon with invalid dice and range bands.
         let mut bad_wpn = dummy_weapon("bad");
         bad_wpn.range_bands = [0, 0, 0, 0];
-        bad_wpn.damage_dice = DiceRoll { count: 0, sides: 0, bonus: 0 };
+        bad_wpn.damage_dice = DiceRoll {
+            count: 0,
+            sides: 0,
+            bonus: 0,
+        };
         content.weapons.insert("bad".into(), bad_wpn);
 
         // Campaign node referencing missing IDs.
@@ -984,6 +1002,9 @@ mod tests {
         // Should not panic.
         let diags = validate(&content);
         // We expect many diagnostics — just confirm no panic.
-        assert!(!diags.is_empty(), "edge case content should have diagnostics");
+        assert!(
+            !diags.is_empty(),
+            "edge case content should have diagnostics"
+        );
     }
 }

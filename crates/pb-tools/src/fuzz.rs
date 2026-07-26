@@ -85,11 +85,15 @@ pub fn run_fuzz(content_root: &Path, iters: usize, seed: u64) {
 
     for i in 0..iters {
         // Generate a random byte sequence of length 1..=256
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let len = 1 + (state >> 56) as usize % 256;
         let mut buf = Vec::with_capacity(len);
         for _ in 0..len {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             buf.push((state >> 40) as u8);
         }
 

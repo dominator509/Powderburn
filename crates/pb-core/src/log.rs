@@ -34,7 +34,11 @@ impl Level {
     }
 
     fn from_env() -> Self {
-        match std::env::var("PB_LOG").unwrap_or_default().to_lowercase().as_str() {
+        match std::env::var("PB_LOG")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
             "error" => Level::Error,
             "warn" => Level::Warn,
             "debug" => Level::Debug,
@@ -55,7 +59,12 @@ pub struct LogEvent {
 
 impl LogEvent {
     pub fn new(level: Level, module: &'static str, event: &'static str) -> Self {
-        Self { level, module, event, fields: Vec::new() }
+        Self {
+            level,
+            module,
+            event,
+            fields: Vec::new(),
+        }
     }
 
     pub fn field(mut self, key: &'static str, value: String) -> Self {
@@ -115,8 +124,14 @@ fn iso_now() -> String {
     let mut y = 1970i64;
     let mut d = days as i64;
     loop {
-        let diy = if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) { 366 } else { 365 };
-        if d < diy { break; }
+        let diy = if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+            366
+        } else {
+            365
+        };
+        if d < diy {
+            break;
+        }
         d -= diy;
         y += 1;
     }
@@ -134,7 +149,15 @@ fn iso_now() -> String {
         d -= md;
     }
 
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d as u32 + 1, hours, mins, secs_rem)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        y,
+        m,
+        d as u32 + 1,
+        hours,
+        mins,
+        secs_rem
+    )
 }
 
 fn log_writer() -> &'static Mutex<Box<dyn Write + Send>> {
@@ -181,8 +204,8 @@ mod tests {
 
     #[test]
     fn test_log_event_creation() {
-        let event = LogEvent::new(Level::Info, "test", "test_event")
-            .field("key", "value".to_string());
+        let event =
+            LogEvent::new(Level::Info, "test", "test_event").field("key", "value".to_string());
         event.log();
     }
 }

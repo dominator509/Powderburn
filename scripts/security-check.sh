@@ -58,7 +58,7 @@ fi
 if [ -f crates/pb-core/src/redact.rs ]; then
   grep -q 'fn redact_path' crates/pb-core/src/redact.rs || fail "redact.rs missing redact_path function"
   grep -q 'fn redact_user' crates/pb-core/src/redact.rs || fail "redact.rs missing redact_user function"
-  grep -q '#\[cfg\(test\)\]' crates/pb-core/src/redact.rs || fail "redact.rs missing test module"
+  grep -q '#\[cfg(test)\]' crates/pb-core/src/redact.rs || fail "redact.rs missing test module"
 else
   fail "crates/pb-core/src/redact.rs does not exist (SECURITY.md section 8)"
 fi

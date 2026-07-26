@@ -3,8 +3,8 @@
 
 #![forbid(unsafe_code)]
 
-pub mod validate;
-pub mod golden;
-pub mod image;
 pub mod atlas;
 pub mod fuzz;
+pub mod golden;
+pub mod image;
+pub mod validate;

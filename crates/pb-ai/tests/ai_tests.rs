@@ -3,9 +3,7 @@
 //! M5: Tests that bounded candidate generation, integer scoring, and
 //! deterministic tie-breaking all work correctly.
 
-use pb_ai::utility::{
-    generate_candidates, score_candidate, select_best, AiCandidate,
-};
+use pb_ai::utility::{generate_candidates, score_candidate, select_best, AiCandidate};
 use pb_core::event::HitLocationType;
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap};
@@ -56,7 +54,11 @@ fn ties_break_by_index() {
 
     let best = select_best(candidates).expect("should have a best candidate");
     // All three have the same score (100); tie-break by index → first (Hold) wins.
-    assert_eq!(best.action, Action::Hold, "tie-break by index should pick the first candidate");
+    assert_eq!(
+        best.action,
+        Action::Hold,
+        "tie-break by index should pick the first candidate"
+    );
 }
 
 /// Test that the AI picks shooting over holding when enemies exist.
@@ -81,7 +83,10 @@ fn ai_picks_shooting_over_holding() {
     assert!(
         matches!(
             best.action,
-            Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(_, _) | Action::Melee(_)
+            Action::SnapShot(_)
+                | Action::AimedShot(_)
+                | Action::CalledShot(_, _)
+                | Action::Melee(_)
         ),
         "expected a combat action when enemies are present, but got {:?}",
         best.action
@@ -126,7 +131,10 @@ fn bounded_candidate_generation() {
         .filter(|c| {
             matches!(
                 c.action,
-                Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(_, _) | Action::Melee(_)
+                Action::SnapShot(_)
+                    | Action::AimedShot(_)
+                    | Action::CalledShot(_, _)
+                    | Action::Melee(_)
             )
         })
         .count();
@@ -153,10 +161,15 @@ fn generate_candidates_empty_enemies() {
     let enemies: Vec<ActorState> = vec![];
 
     let candidates = generate_candidates(&actor, &allies, &enemies);
-    assert!(!candidates.is_empty(), "should still generate movement and generic candidates");
+    assert!(
+        !candidates.is_empty(),
+        "should still generate movement and generic candidates"
+    );
 
     // Should include movement candidates and generic actions
-    let has_move = candidates.iter().any(|c| matches!(c.action, Action::Move(_)));
+    let has_move = candidates
+        .iter()
+        .any(|c| matches!(c.action, Action::Move(_)));
     let has_hold = candidates.iter().any(|c| c.action == Action::Hold);
     assert!(has_move, "should include movement candidates");
     assert!(has_hold, "should include Hold");

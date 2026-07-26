@@ -70,22 +70,61 @@ pub async fn capture_frame(
     for y in 0..rows {
         for x in 0..cols {
             let dist = ((x as i32 - 8).abs() + (y as i32 - 6).abs()) as u8;
-            let density = if dist < 3 { (4 - dist) as u8 } else if dist < 5 { 1 } else { 0 };
+            let density = if dist < 3 {
+                (4 - dist) as u8
+            } else if dist < 5 {
+                1
+            } else {
+                0
+            };
             smoke_tiles.push(crate::smoke::SmokeTile::new(density));
         }
     }
-    let smoke_system = crate::smoke::SmokeSystem::new(&device, cols, rows, &smoke_tiles, &camera_bytes);
+    let smoke_system =
+        crate::smoke::SmokeSystem::new(&device, cols, rows, &smoke_tiles, &camera_bytes);
 
     // Build overlay highlights - simulate movement range and attackable tiles
     let overlay_tiles = vec![
-        (7u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 2 }),
-        (8u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 3 }),
-        (9u32, 5u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 4 }),
-        (8u32, 6u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 2 }),
-        (9u32, 6u32, crate::overlay::OverlayTileKind::Movable { ap_cost: 3 }),
-        (8u32, 7u32, crate::overlay::OverlayTileKind::Attackable { hit_chance: 65 }),
-        (9u32, 7u32, crate::overlay::OverlayTileKind::Attackable { hit_chance: 45 }),
-        (10u32, 6u32, crate::overlay::OverlayTileKind::Cover { hard: true }),
+        (
+            7u32,
+            5u32,
+            crate::overlay::OverlayTileKind::Movable { ap_cost: 2 },
+        ),
+        (
+            8u32,
+            5u32,
+            crate::overlay::OverlayTileKind::Movable { ap_cost: 3 },
+        ),
+        (
+            9u32,
+            5u32,
+            crate::overlay::OverlayTileKind::Movable { ap_cost: 4 },
+        ),
+        (
+            8u32,
+            6u32,
+            crate::overlay::OverlayTileKind::Movable { ap_cost: 2 },
+        ),
+        (
+            9u32,
+            6u32,
+            crate::overlay::OverlayTileKind::Movable { ap_cost: 3 },
+        ),
+        (
+            8u32,
+            7u32,
+            crate::overlay::OverlayTileKind::Attackable { hit_chance: 65 },
+        ),
+        (
+            9u32,
+            7u32,
+            crate::overlay::OverlayTileKind::Attackable { hit_chance: 45 },
+        ),
+        (
+            10u32,
+            6u32,
+            crate::overlay::OverlayTileKind::Cover { hard: true },
+        ),
     ];
     let overlay_system = crate::overlay::OverlaySystem::new(&device, &overlay_tiles, &camera_bytes);
 

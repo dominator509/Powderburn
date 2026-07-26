@@ -55,14 +55,26 @@ pub struct TileVisual {
 impl TileVisual {
     pub fn new(r: f32, g: f32, b: f32, elevation: i32) -> Self {
         Self {
-            r, g, b, a: 1.0, visible: true, elevation,
+            r,
+            g,
+            b,
+            a: 1.0,
+            visible: true,
+            elevation,
         }
     }
 }
 
 /// The tile quad index buffer shared across all tiles.
 fn quad_indices(start_vertex: u32) -> [u32; 6] {
-    [start_vertex, start_vertex + 1, start_vertex + 2, start_vertex + 2, start_vertex + 3, start_vertex]
+    [
+        start_vertex,
+        start_vertex + 1,
+        start_vertex + 2,
+        start_vertex + 2,
+        start_vertex + 3,
+        start_vertex,
+    ]
 }
 
 /// System for rendering a grid of isometric tiles.
@@ -97,7 +109,10 @@ impl TileSystem {
         for y in 0..rows {
             for x in 0..cols {
                 let idx = (y * cols + x) as usize;
-                let tile = tiles.get(idx).copied().unwrap_or(TileVisual::new(0.3, 0.5, 0.3, 0));
+                let tile = tiles
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(TileVisual::new(0.3, 0.5, 0.3, 0));
                 if !tile.visible {
                     continue;
                 }
@@ -124,47 +139,49 @@ impl TileSystem {
         let num_indices = indices.len() as u32;
 
         // Create vertex buffer
-        let vertex_buffer = device.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        let vertex_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("tile vertex buffer"),
                 contents: bytemuck::cast_slice(&vertices),
                 usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
+            });
 
         // Create index buffer
-        let index_buffer = device.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        let index_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("tile index buffer"),
                 contents: bytemuck::cast_slice(&indices),
                 usage: wgpu::BufferUsages::INDEX,
-            }
-        );
+            });
 
         // Create uniform buffer
-        let uniform_buffer = device.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        let uniform_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("tile uniform"),
                 contents: camera_matrix_bytes,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+            });
 
         // Create bind group
         let bind_group_layout =
-            device.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("tile bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+            device
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("tile bind group layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                });
 
         let bind_group = device.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("tile bind group"),
@@ -176,62 +193,66 @@ impl TileSystem {
         });
 
         // Shaders
-        let shader = device.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("tile shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("../shaders/tile.wgsl").into(),
-            ),
-        });
+        let shader = device
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("tile shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/tile.wgsl").into()),
+            });
 
         // Pipeline layout
         let pipeline_layout =
-            device.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("tile pipeline layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
+            device
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("tile pipeline layout"),
+                    bind_group_layouts: &[&bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
         // Render pipeline
-        let pipeline = device.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("tile pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[TileVertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::OVER,
-                        alpha: wgpu::BlendComponent::OVER,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = device
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("tile pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[TileVertex::desc()],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent::OVER,
+                            alpha: wgpu::BlendComponent::OVER,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            });
 
         Self {
             vertex_buffer,

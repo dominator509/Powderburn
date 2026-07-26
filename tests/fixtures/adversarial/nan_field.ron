@@ -1,0 +1,19 @@
+[
+    (
+        id: "test_weapon",
+        display_name: "Test Weapon with NaN Field",
+        damage_dice: (count: 1, sides: 8, bonus: 2),
+        accuracy: 1.5,
+        range_bands: (5, 15, 25, 40),
+        ap_override: {},
+        capacity: 6,
+        reload_class: "CapAndBall",
+        fouling_rate: 3,
+        base_misfire: 4,
+        smoke_output: 1,
+        two_handed: false,
+        first_year_available: 1860,
+        historical_note: "This weapon has a float (1.5) where accuracy expects an integer, causing a parse error.",
+        sources: ["adversarial"],
+    ),
+]

@@ -39,15 +39,7 @@ pub fn throw_dynamite(
     target: TileXY,
 ) -> (TileXY, u64) {
     // Scatter displacement: up to 3 tiles in both x and y
-    let dx = PbRng::draw(
-        seed,
-        scenario_id,
-        tick,
-        actor_id,
-        StreamTag::Scatter,
-        -3,
-        3,
-    );
+    let dx = PbRng::draw(seed, scenario_id, tick, actor_id, StreamTag::Scatter, -3, 3);
     let dy = PbRng::draw(
         seed,
         scenario_id,
@@ -128,18 +120,8 @@ mod tests {
             let (tile, _) = throw_dynamite(seed, 1, 100, 5, TileXY::new(50, 50));
             let dx = (tile.x as i32) - 50;
             let dy = (tile.y as i32) - 50;
-            assert!(
-                dx.abs() <= 3,
-                "seed {} dx={} exceeds 3",
-                seed,
-                dx
-            );
-            assert!(
-                dy.abs() <= 3,
-                "seed {} dy={} exceeds 3",
-                seed,
-                dy
-            );
+            assert!(dx.abs() <= 3, "seed {} dx={} exceeds 3", seed, dx);
+            assert!(dy.abs() <= 3, "seed {} dy={} exceeds 3", seed, dy);
         }
     }
 

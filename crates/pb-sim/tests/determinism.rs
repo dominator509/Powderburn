@@ -7,13 +7,13 @@
 //!   3. Create ANOTHER fresh scenario, apply same journal, capture hash3.
 //!   4. Assert all three hashes are identical and not all-zeros.
 
-use pb_sim::action::{Action, Command, step};
+use pb_sim::action::{step, Action, Command};
 use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
 use pb_sim::hash::compute_state_hash;
 use pb_sim::state::SimState;
 
-use pb_core::ids::ActorId;
 use pb_core::geom::TileXY;
+use pb_core::ids::ActorId;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,42 +69,102 @@ fn build_journal() -> Vec<Command> {
 
     // Round 1 (ticks 0, 0, 0, 0)
     let r1 = vec![
-        Command { actor_id: a2, action: Action::SnapShot(e1) },  // 1. Ally2 snap Enemy1
-        Command { actor_id: e2, action: Action::SnapShot(a1) },  // 2. Enemy2 snap Ally1
-        Command { actor_id: a1, action: Action::SnapShot(e1) },  // 3. Ally1 snap Enemy1
-        Command { actor_id: e1, action: Action::Move(TileXY::new(14, 5)) }, // 4. Enemy1 moves
+        Command {
+            actor_id: a2,
+            action: Action::SnapShot(e1),
+        }, // 1. Ally2 snap Enemy1
+        Command {
+            actor_id: e2,
+            action: Action::SnapShot(a1),
+        }, // 2. Enemy2 snap Ally1
+        Command {
+            actor_id: a1,
+            action: Action::SnapShot(e1),
+        }, // 3. Ally1 snap Enemy1
+        Command {
+            actor_id: e1,
+            action: Action::Move(TileXY::new(14, 5)),
+        }, // 4. Enemy1 moves
     ];
 
     // Round 2 (ticks 72, 76, 80, 84)
     let r2 = vec![
-        Command { actor_id: a2, action: Action::SnapShot(e2) },  // 5. Ally2 snap Enemy2
-        Command { actor_id: e2, action: Action::SnapShot(a2) },  // 6. Enemy2 snap Ally2
-        Command { actor_id: a1, action: Action::SnapShot(e1) },  // 7. Ally1 snap Enemy1
-        Command { actor_id: e1, action: Action::SnapShot(a1) },  // 8. Enemy1 snap Ally1
+        Command {
+            actor_id: a2,
+            action: Action::SnapShot(e2),
+        }, // 5. Ally2 snap Enemy2
+        Command {
+            actor_id: e2,
+            action: Action::SnapShot(a2),
+        }, // 6. Enemy2 snap Ally2
+        Command {
+            actor_id: a1,
+            action: Action::SnapShot(e1),
+        }, // 7. Ally1 snap Enemy1
+        Command {
+            actor_id: e1,
+            action: Action::SnapShot(a1),
+        }, // 8. Enemy1 snap Ally1
     ];
 
     // Round 3 (ticks 144, 152, 160, 168)
     let r3 = vec![
-        Command { actor_id: a2, action: Action::CalledShot(e1, pb_core::event::HitLocationType::GunArm) },
-        Command { actor_id: e2, action: Action::SnapShot(a1) },
-        Command { actor_id: a1, action: Action::CalledShot(e1, pb_core::event::HitLocationType::Head) },
-        Command { actor_id: e1, action: Action::SnapShot(a2) },
+        Command {
+            actor_id: a2,
+            action: Action::CalledShot(e1, pb_core::event::HitLocationType::GunArm),
+        },
+        Command {
+            actor_id: e2,
+            action: Action::SnapShot(a1),
+        },
+        Command {
+            actor_id: a1,
+            action: Action::CalledShot(e1, pb_core::event::HitLocationType::Head),
+        },
+        Command {
+            actor_id: e1,
+            action: Action::SnapShot(a2),
+        },
     ];
 
     // Round 4 (ticks 216, 228, 240, 252)
     let r4 = vec![
-        Command { actor_id: a2, action: Action::AimedShot(e1) },
-        Command { actor_id: e2, action: Action::Move(TileXY::new(14, 6)) },
-        Command { actor_id: a1, action: Action::AimedShot(e2) },
-        Command { actor_id: e1, action: Action::SnapShot(a2) },
+        Command {
+            actor_id: a2,
+            action: Action::AimedShot(e1),
+        },
+        Command {
+            actor_id: e2,
+            action: Action::Move(TileXY::new(14, 6)),
+        },
+        Command {
+            actor_id: a1,
+            action: Action::AimedShot(e2),
+        },
+        Command {
+            actor_id: e1,
+            action: Action::SnapShot(a2),
+        },
     ];
 
     // Round 5 (ticks 288, 304, 320, 336)
     let r5 = vec![
-        Command { actor_id: a2, action: Action::SnapShot(e1) },
-        Command { actor_id: e2, action: Action::SnapShot(a1) },
-        Command { actor_id: a1, action: Action::Hold },
-        Command { actor_id: e1, action: Action::Hold },
+        Command {
+            actor_id: a2,
+            action: Action::SnapShot(e1),
+        },
+        Command {
+            actor_id: e2,
+            action: Action::SnapShot(a1),
+        },
+        Command {
+            actor_id: a1,
+            action: Action::Hold,
+        },
+        Command {
+            actor_id: e1,
+            action: Action::Hold,
+        },
     ];
 
     let mut journal = Vec::new();
@@ -205,10 +265,10 @@ fn determinism_different_journal_different_hash() {
 /// when called with the same seed, scenario, tick, and actor.
 #[test]
 fn called_shot_determinism_same_result_twice() {
-    use pb_sim::shot::resolve_shot;
     use pb_core::event::HitLocationType;
-    use pb_core::ids::Ap;
     use pb_core::geom::Facing;
+    use pb_core::ids::Ap;
+    use pb_sim::shot::resolve_shot;
     use pb_sim::state::{ActorState, Stance};
 
     let seed: u64 = 42;
@@ -263,6 +323,9 @@ fn called_shot_determinism_same_result_twice() {
     // Both calls must produce identical results
     assert!(result_a.is_ok());
     assert!(result_b.is_ok());
-    assert_eq!(result_a.unwrap(), result_b.unwrap(),
-        "Called shot resolve_shot must be deterministic: same inputs → same events");
+    assert_eq!(
+        result_a.unwrap(),
+        result_b.unwrap(),
+        "Called shot resolve_shot must be deterministic: same inputs → same events"
+    );
 }

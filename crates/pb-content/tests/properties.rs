@@ -41,7 +41,15 @@ fn load_and_validate_known_good_content() {
     if !diagnostics.is_empty() {
         let msg: Vec<String> = diagnostics
             .iter()
-            .map(|d| format!("  [{}] {} ({}:{})", d.code, d.message, d.file.as_deref().unwrap_or("?"), d.line.map_or(0, |l| l as i32)))
+            .map(|d| {
+                format!(
+                    "  [{}] {} ({}:{})",
+                    d.code,
+                    d.message,
+                    d.file.as_deref().unwrap_or("?"),
+                    d.line.map_or(0, |l| l as i32)
+                )
+            })
             .collect();
         panic!(
             "Content validation failed with {} diagnostic(s):\n{}",
@@ -198,10 +206,7 @@ fn campaign_nodes_have_unique_ids() {
 
     // Verify all IDs are non-empty and unique (BTreeMap enforces this)
     for (node_id, node) in &content.campaign_nodes {
-        assert!(
-            !node_id.is_empty(),
-            "Campaign node has empty id"
-        );
+        assert!(!node_id.is_empty(), "Campaign node has empty id");
         assert!(
             !node.kind.is_empty(),
             "Campaign node '{}' has empty kind",

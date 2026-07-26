@@ -36,10 +36,7 @@ impl SmokeSystem {
 
     /// Return the smoke density at a given tile, or 0 if no smoke is present.
     pub fn density_at(&self, tile: TileXY) -> u32 {
-        self.volumes
-            .get(&tile)
-            .map(|s| s.density)
-            .unwrap_or(0)
+        self.volumes.get(&tile).map(|s| s.density).unwrap_or(0)
     }
 }
 
@@ -104,11 +101,7 @@ pub fn decay_smoke(system: &mut SmokeSystem, elapsed_ticks: u64) {
 /// Smoke drifts 1 tile per 120 ticks along `wind_direction`.
 /// The original tile's smoke is moved, and if the destination already has
 /// smoke the densities are merged.
-pub fn drift_smoke(
-    system: &mut SmokeSystem,
-    wind_direction: Facing,
-    elapsed_ticks: u64,
-) {
+pub fn drift_smoke(system: &mut SmokeSystem, wind_direction: Facing, elapsed_ticks: u64) {
     let shifts = (elapsed_ticks / 120) as u32;
     if shifts == 0 {
         return;
@@ -133,9 +126,7 @@ pub fn drift_smoke(
             tiles_remaining: 0,
         });
         entry.density = entry.density.saturating_add(smoke.density);
-        entry.tiles_remaining = entry
-            .tiles_remaining
-            .saturating_add(smoke.tiles_remaining);
+        entry.tiles_remaining = entry.tiles_remaining.saturating_add(smoke.tiles_remaining);
     }
 }
 
@@ -496,7 +487,11 @@ mod tests {
     #[test]
     fn can_see_through_smoke_true_when_clear() {
         let sys = SmokeSystem::new();
-        assert!(can_see_through_smoke(&sys, TileXY::new(0, 0), TileXY::new(5, 0)));
+        assert!(can_see_through_smoke(
+            &sys,
+            TileXY::new(0, 0),
+            TileXY::new(5, 0)
+        ));
     }
 
     // -----------------------------------------------------------------------

@@ -3,22 +3,27 @@
 use std::path::Path;
 use std::time::Instant;
 
-use pb_sim::action::Action;
-use pb_sim::clock::{advance_to_next_actor, register_actor, build_actor};
-use pb_sim::state::SimState;
 use pb_content::load::load_all;
 use pb_content::schema::ActorData;
+use pb_sim::action::Action;
+use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
+use pb_sim::state::SimState;
 
 use crate::args::Args;
 use crate::output;
 
 /// Run the `bench turn` subcommand.
 pub fn run_bench(args: &Args) -> Result<(), String> {
-    let content_root = args.content_root.as_deref().unwrap_or_else(|| Path::new("content"));
+    let content_root = args
+        .content_root
+        .as_deref()
+        .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     let scenario_id = args.bench_scenario.as_deref().unwrap_or("prov_full_battle");
-    let scenario = content.scenarios.get(scenario_id)
+    let scenario = content
+        .scenarios
+        .get(scenario_id)
         .ok_or_else(|| format!("scenario '{}' not found", scenario_id))?;
 
     let iterations = args.iterations.unwrap_or(10) as usize;

@@ -107,7 +107,8 @@ fn determinism_lint_fires_on_float_in_kernel() {
     let original = read_file(&target_file);
 
     // Inject a float constant at the end of the file
-    let injection = "\n// deliberate float injection for LBI-02 test\nconst _TEST_FLOAT: f32 = 1.0;\n";
+    let injection =
+        "\n// deliberate float injection for LBI-02 test\nconst _TEST_FLOAT: f32 = 1.0;\n";
     let modified = format!("{}{}", original, injection);
     write_file(&target_file, &modified);
 
@@ -182,8 +183,7 @@ fn format_check_catches_formatting_violations() {
         assert!(
             !success,
             "format-check.sh should have failed with formatting violation.\nstdout: {}\nstderr: {}",
-            stdout,
-            stderr
+            stdout, stderr
         );
     } else {
         // Alternative: add unexpected line breaks
@@ -197,8 +197,7 @@ fn format_check_catches_formatting_violations() {
         assert!(
             !success,
             "format-check.sh should have failed with formatting violation.\nstdout: {}\nstderr: {}",
-            stdout,
-            stderr
+            stdout, stderr
         );
     }
 }
@@ -234,8 +233,7 @@ fn reality_gate_catches_todo_markers() {
     assert!(
         !success,
         "reality-gate.sh should have failed with TODO marker injection.\nstdout: {}\nstderr: {}",
-        stdout,
-        stderr
+        stdout, stderr
     );
 
     assert!(
@@ -265,7 +263,6 @@ fn reality_gate_catches_fixme_markers() {
     assert!(
         !success,
         "reality-gate.sh should have failed with FIXME marker injection.\nstdout: {}\nstderr: {}",
-        stdout,
-        stderr
+        stdout, stderr
     );
 }

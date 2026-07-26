@@ -203,7 +203,11 @@ mod tests {
     fn draw_negative_range() {
         for _ in 0..1000 {
             let val = PbRng::draw(999, 3, 200, 8, StreamTag::Misfire, -100, -1);
-            assert!(val >= -100 && val <= -1, "val {} out of range [-100, -1]", val);
+            assert!(
+                val >= -100 && val <= -1,
+                "val {} out of range [-100, -1]",
+                val
+            );
         }
     }
 

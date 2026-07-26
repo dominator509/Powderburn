@@ -1,21 +1,22 @@
 //! pbtool — POWDERBURN developer toolkit.
-//! Subcommands: validate, golden, image, atlas.
+//! Subcommands: validate, golden, image, atlas, fuzz.
 
 #![forbid(unsafe_code)]
 
 use std::path::Path;
 
-mod validate;
+mod atlas;
+mod fuzz;
 mod golden;
 mod image;
-mod atlas;
+mod validate;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
         eprintln!("Usage: pbtool <subcommand> [options]");
-        eprintln!("Subcommands: validate, golden, image, atlas");
+        eprintln!("Subcommands: validate, golden, image, atlas, fuzz");
         std::process::exit(1);
     }
 
@@ -26,9 +27,10 @@ fn main() {
         "golden" => run_golden(&args[2..]),
         "image" => run_image(&args[2..]),
         "atlas" => run_atlas(&args[2..]),
+        "fuzz" => run_fuzz_command(&args[2..]),
         _ => {
             eprintln!("ERROR: unknown subcommand '{}'", subcommand);
-            eprintln!("Subcommands: validate, golden, image, atlas");
+            eprintln!("Subcommands: validate, golden, image, atlas, fuzz");
             std::process::exit(1);
         }
     };
@@ -75,10 +77,7 @@ fn run_golden(args: &[String]) -> Result<(), String> {
 
     match sub {
         "refresh" => golden::golden_refresh(golden_path),
-        _ => Err(format!(
-            "unknown golden subcommand '{}'",
-            sub
-        )),
+        _ => Err(format!("unknown golden subcommand '{}'", sub)),
     }
 }
 
@@ -99,7 +98,10 @@ fn run_image(args: &[String]) -> Result<(), String> {
 /// Dispatch atlas sub-subcommands.
 fn run_atlas(args: &[String]) -> Result<(), String> {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("pack");
-    let output_dir = args.get(1).map(|s| Path::new(s)).unwrap_or_else(|| Path::new("atlas"));
+    let output_dir = args
+        .get(1)
+        .map(|s| Path::new(s))
+        .unwrap_or_else(|| Path::new("atlas"));
 
     match sub {
         "pack" => {
@@ -107,5 +109,105 @@ fn run_atlas(args: &[String]) -> Result<(), String> {
             atlas::atlas_pack(output_dir, &input_files)
         }
         _ => Err(format!("unknown atlas subcommand '{}'", sub)),
+    }
+}
+
+/// Simple arg-parsing helper: get a `--flag` value from a slice of args.
+fn get_flag(args: &[String], name: &str) -> Option<String> {
+    let prefix = format!("--{}=", name);
+    for a in args {
+        if let Some(val) = a.strip_prefix(&prefix) {
+            return Some(val.to_string());
+        }
+        if a == &format!("--{}", name) {
+            // Value is the next argument
+        }
+    }
+    // Also check positional after --flag
+    let mut iter = args.iter();
+    while let Some(a) = iter.next() {
+        if a == &format!("--{}", name) {
+            return iter.next().cloned();
+        }
+    }
+    None
+}
+
+/// Dispatch `pbtool fuzz` subcommands.
+///
+/// Usage:
+///   pbtool fuzz content  --target <dir> --iters <n> --seed <n>
+///   pbtool fuzz save     --target <dir> --iters <n> --seed <n>
+///   pbtool fuzz journal  --target <dir> --iters <n> --seed <n>
+fn run_fuzz_command(args: &[String]) -> Result<(), String> {
+    let sub = args
+        .first()
+        .map(|s| s.as_str())
+        .ok_or_else(|| "fuzz requires a subcommand: content, save, or journal".to_string())?;
+
+    // Look for --target value: either --target=<path> or --target <path>
+    let target = get_flag(&args[1..], "target").unwrap_or_else(|| {
+        // Fallback: first non-flag arg after subcommand is the target path
+        args.get(1)
+            .filter(|s| !s.starts_with('-'))
+            .cloned()
+            .unwrap_or_else(|| ".".to_string())
+    });
+    let iters: usize = get_flag(&args[1..], "iters")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000);
+    let seed: u64 = get_flag(&args[1..], "seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(42);
+
+    let target_path = Path::new(&target);
+
+    match sub {
+        "content" => {
+            eprintln!("[pbtool fuzz content]");
+
+            if target_path.exists() {
+                eprintln!("  target: {}", target_path.display());
+            } else {
+                eprintln!("  target: {} (not found, generating synthetic data only)", target_path.display());
+            }
+            eprintln!("  iters:  {}", iters);
+            eprintln!("  seed:   {}", seed);
+
+            fuzz::run_fuzz(target_path, iters, seed);
+            Ok(())
+        }
+        "save" => {
+            eprintln!("[pbtool fuzz save]");
+
+            if target_path.exists() {
+                eprintln!("  target: {}", target_path.display());
+            } else {
+                eprintln!("  target: {} (not found, generating synthetic data only)", target_path.display());
+            }
+            eprintln!("  iters:  {}", iters);
+            eprintln!("  seed:   {}", seed);
+
+            fuzz::run_fuzz(target_path, iters, seed);
+            Ok(())
+        }
+        "journal" => {
+            eprintln!("[pbtool fuzz journal]");
+
+            if target_path.exists() {
+                eprintln!("  target: {}", target_path.display());
+            } else {
+                eprintln!("  target: {} (not found, generating synthetic data only)", target_path.display());
+            }
+            eprintln!("  iters:  {}", iters);
+            eprintln!("  seed:   {}", seed);
+
+            fuzz::run_fuzz(target_path, iters, seed);
+            Ok(())
+        }
+        _ => Err(format!(
+            "unknown fuzz subcommand '{}'. Usage: pbtool fuzz <content|save|journal> [--target <dir>] [--iters <n>] [--seed <n>]",
+            sub
+        )),
     }
 }

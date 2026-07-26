@@ -78,9 +78,9 @@ pub fn compute_state_hash(state: &SimState) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pb_core::ids::{ActorId, Ap, Tick};
-    use pb_core::geom::{Facing, TileXY};
     use crate::state::{ActorState, Stance};
+    use pb_core::geom::{Facing, TileXY};
+    use pb_core::ids::{ActorId, Ap, Tick};
     use std::collections::BTreeMap;
 
     fn sample_state() -> SimState {

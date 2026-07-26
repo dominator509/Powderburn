@@ -49,7 +49,10 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
     let companions_dir = root.join("companions");
     if companions_dir.is_dir() {
         for entry in fs::read_dir(&companions_dir).map_err(|e| {
-            ContentError::new("E-CONTENT-001", format!("cannot read companions dir: {}", e))
+            ContentError::new(
+                "E-CONTENT-001",
+                format!("cannot read companions dir: {}", e),
+            )
         })? {
             let entry = entry.map_err(|e| {
                 ContentError::new("E-CONTENT-001", format!("dir entry error: {}", e))
@@ -90,12 +93,20 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
 fn load_ron_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Vec<T>, ContentError> {
     let data = read_file_with_limits(path)?;
     let parsed: Vec<T> = ron::from_str(&data).map_err(|e| {
-        ContentError::new("E-CONTENT-001", format!("parse error in {}: {}", path.display(), e))
+        ContentError::new(
+            "E-CONTENT-001",
+            format!("parse error in {}: {}", path.display(), e),
+        )
     })?;
     if parsed.len() > MAX_RECORDS_PER_FILE {
         return Err(ContentError::new(
             "E-CONTENT-001",
-            format!("{}: {} records exceeds limit of {}", path.display(), parsed.len(), MAX_RECORDS_PER_FILE),
+            format!(
+                "{}: {} records exceeds limit of {}",
+                path.display(),
+                parsed.len(),
+                MAX_RECORDS_PER_FILE
+            ),
         ));
     }
     Ok(parsed)
@@ -105,7 +116,10 @@ fn load_ron_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Vec<T>, 
 fn load_single_ron<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, ContentError> {
     let data = read_file_with_limits(path)?;
     let parsed: T = ron::from_str(&data).map_err(|e| {
-        ContentError::new("E-CONTENT-001", format!("parse error in {}: {}", path.display(), e))
+        ContentError::new(
+            "E-CONTENT-001",
+            format!("parse error in {}: {}", path.display(), e),
+        )
     })?;
     Ok(parsed)
 }
@@ -113,17 +127,28 @@ fn load_single_ron<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Con
 /// Read a file, checking size limits.
 fn read_file_with_limits(path: &Path) -> Result<String, ContentError> {
     let metadata = fs::metadata(path).map_err(|e| {
-        ContentError::new("E-CONTENT-001", format!("cannot read {}: {}", path.display(), e))
+        ContentError::new(
+            "E-CONTENT-001",
+            format!("cannot read {}: {}", path.display(), e),
+        )
     })?;
     let file_size = metadata.len();
     if file_size > MAX_CONTENT_FILE_BYTES {
         return Err(ContentError::new(
             "E-CONTENT-001",
-            format!("{}: file size {} exceeds limit of {}", path.display(), file_size, MAX_CONTENT_FILE_BYTES),
+            format!(
+                "{}: file size {} exceeds limit of {}",
+                path.display(),
+                file_size,
+                MAX_CONTENT_FILE_BYTES
+            ),
         ));
     }
     fs::read_to_string(path).map_err(|e| {
-        ContentError::new("E-CONTENT-001", format!("cannot read {}: {}", path.display(), e))
+        ContentError::new(
+            "E-CONTENT-001",
+            format!("cannot read {}: {}", path.display(), e),
+        )
     })
 }
 
@@ -138,7 +163,10 @@ pub fn validate_references(content: &Content) -> Vec<Diagnostic> {
             if let Some(&existing) = seen_ids.get(actor.id.as_str()) {
                 diags.push(Diagnostic {
                     code: "E-CONTENT-003".into(),
-                    message: format!("duplicate actor id {} in scenario {} (also in {})", actor.id, sid, existing),
+                    message: format!(
+                        "duplicate actor id {} in scenario {} (also in {})",
+                        actor.id, sid, existing
+                    ),
                     file: Some(format!("scenarios/{}.ron", sid)),
                     line: None,
                 });

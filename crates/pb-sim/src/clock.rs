@@ -5,9 +5,9 @@
 
 #![forbid(unsafe_code)]
 
-use pb_core::ids::{ActorId, Ap, Tick};
-use pb_core::geom::{Facing, TileXY};
 use crate::state::{ActorState, SimState, Stance};
+use pb_core::geom::{Facing, TileXY};
+use pb_core::ids::{ActorId, Ap, Tick};
 
 /// Compute the turn length (in ticks) for an actor with the given sequence.
 ///
@@ -48,15 +48,11 @@ pub fn advance_to_next_actor(state: &mut SimState) -> Option<ActorId> {
     let selected = state
         .sequence_clock
         .iter()
-        .filter(|(id, _)| {
-            state
-                .actors
-                .get(id)
-                .map_or(false, |a| a.alive)
-        })
+        .filter(|(id, _)| state.actors.get(id).map_or(false, |a| a.alive))
         .min_by(|(id_a, tick_a), (id_b, tick_b)| {
             // Primary: smallest next_act_at
-            tick_a.cmp(tick_b)
+            tick_a
+                .cmp(tick_b)
                 // Secondary: Sequence descending
                 .then_with(|| {
                     let seq_a = state.actors.get(id_a).map(|a| a.sequence).unwrap_or(0);
@@ -144,7 +140,7 @@ mod tests {
     #[test]
     fn turn_length_clamps() {
         assert_eq!(turn_length(-10), 96); // 100-(-40)=140 clamp to 96
-        assert_eq!(turn_length(13), 50);  // 100-52=48 clamp to 50
+        assert_eq!(turn_length(13), 50); // 100-52=48 clamp to 50
     }
 
     #[test]

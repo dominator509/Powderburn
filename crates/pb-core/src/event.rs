@@ -11,8 +11,8 @@
 
 use core::fmt;
 
-use crate::ids::ActorId;
 use crate::geom::TileXY;
+use crate::ids::ActorId;
 
 /// Which hit location was struck during a called shot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -113,7 +113,11 @@ impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Event::HitLocation { actor, location } => {
-                write!(f, "event: HitLocation actor={} location={}", actor, location)
+                write!(
+                    f,
+                    "event: HitLocation actor={} location={}",
+                    actor, location
+                )
             }
             Event::DamageApplied { actor, damage } => {
                 write!(f, "event: DamageApplied actor={} damage={}", actor, damage)
@@ -128,7 +132,11 @@ impl fmt::Display for Event {
                 write!(f, "event: Misfire actor={}", actor)
             }
             Event::ShotHit { actor, target, hit } => {
-                write!(f, "event: ShotHit actor={} target={} hit={}", actor, target, hit)
+                write!(
+                    f,
+                    "event: ShotHit actor={} target={} hit={}",
+                    actor, target, hit
+                )
             }
             Event::ActorKilled { actor } => {
                 write!(f, "event: ActorKilled actor={}", actor)
@@ -187,7 +195,10 @@ mod tests {
             actor: ActorId(42),
             location: HitLocationType::Head,
         };
-        assert_eq!(e.to_string(), "event: HitLocation actor=ActorId(42) location=Head");
+        assert_eq!(
+            e.to_string(),
+            "event: HitLocation actor=ActorId(42) location=Head"
+        );
     }
 
     #[test]
@@ -196,7 +207,10 @@ mod tests {
             actor: ActorId(7),
             damage: 15,
         };
-        assert_eq!(e.to_string(), "event: DamageApplied actor=ActorId(7) damage=15");
+        assert_eq!(
+            e.to_string(),
+            "event: DamageApplied actor=ActorId(7) damage=15"
+        );
     }
 
     #[test]
@@ -205,7 +219,10 @@ mod tests {
             actor: ActorId(3),
             wound: WoundType::Bleeding,
         };
-        assert_eq!(e.to_string(), "event: WoundApplied actor=ActorId(3) wound=Bleeding");
+        assert_eq!(
+            e.to_string(),
+            "event: WoundApplied actor=ActorId(3) wound=Bleeding"
+        );
     }
 
     #[test]
@@ -275,10 +292,7 @@ mod tests {
         let e = Event::CompanionKilled {
             id: "companion_wyatt".to_string(),
         };
-        assert_eq!(
-            e.to_string(),
-            "event: CompanionKilled id=companion_wyatt"
-        );
+        assert_eq!(e.to_string(), "event: CompanionKilled id=companion_wyatt");
     }
 
     // -----------------------------------------------------------------------

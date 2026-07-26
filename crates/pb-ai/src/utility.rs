@@ -180,11 +180,7 @@ pub fn select_best(candidates: Vec<AiCandidate>) -> Option<AiCandidate> {
 /// `ActorState` not by ID.  Production callers should replace it.
 ///
 /// If `candidates` is empty, returns `Hold`.
-pub fn decide_action(
-    actor: &ActorState,
-    allies: &[ActorState],
-    enemies: &[ActorState],
-) -> Command {
+pub fn decide_action(actor: &ActorState, allies: &[ActorState], enemies: &[ActorState]) -> Command {
     // We need an ActorId for the Command.  Since ActorState doesn't carry one,
     // we use ActorId(0) as a formal placeholder.  Callers with a SimState
     // should look up the real ID.
@@ -370,7 +366,11 @@ fn compute_cover_gained(
             let dest_min_dist = min_enemy_distance(dest, enemies);
             let gain = dest_min_dist - current_min_dist;
             // Clamp to [0, 5]
-            if gain > 0 { core::cmp::min(gain, 5_i16) as i32 } else { 0 }
+            if gain > 0 {
+                core::cmp::min(gain, 5_i16) as i32
+            } else {
+                0
+            }
         }
         _ => 0,
     }
@@ -399,7 +399,11 @@ fn compute_flanking_gained(
                         && dest_to_enemy.0 != 0)
                         || (current_to_enemy.1.signum() != dest_to_enemy.1.signum()
                             && dest_to_enemy.1 != 0);
-                    if flanking { 1 } else { 0 }
+                    if flanking {
+                        1
+                    } else {
+                        0
+                    }
                 }
                 None => 0,
             }
@@ -411,11 +415,7 @@ fn compute_flanking_gained(
 /// Compute sand risk: how exposed is the actor at the candidate state.
 /// Counts enemies within max range of the actor at the candidate position.
 /// Returns 0..MAX_TARGET_CANDIDATES.
-fn compute_sand_risk(
-    candidate: &AiCandidate,
-    actor: &ActorState,
-    enemies: &[ActorState],
-) -> i32 {
+fn compute_sand_risk(candidate: &AiCandidate, actor: &ActorState, enemies: &[ActorState]) -> i32 {
     let pos = match candidate.action {
         Action::Move(dest) => dest,
         _ => actor.position,
@@ -474,11 +474,7 @@ fn nearest_alive_enemy(pos: TileXY, enemies: &[ActorState]) -> Option<(ActorId, 
 ///
 /// The `ActorId` is assumed to be (index_in_slice + 1) as assigned by
 /// `select_targets`.
-fn distance_to_enemy_by_id(
-    target_id: ActorId,
-    actor: &ActorState,
-    enemies: &[ActorState],
-) -> i16 {
+fn distance_to_enemy_by_id(target_id: ActorId, actor: &ActorState, enemies: &[ActorState]) -> i16 {
     let idx = (target_id.0.saturating_sub(1)) as usize;
     enemies
         .get(idx)
@@ -495,14 +491,7 @@ mod tests {
 
     /// Helper to create an actor at a given position with the given id label
     /// in its name.
-    fn make_actor(
-        x: i16,
-        y: i16,
-        hp: i32,
-        ap_val: i16,
-        alive: bool,
-        name: &str,
-    ) -> ActorState {
+    fn make_actor(x: i16, y: i16, hp: i32, ap_val: i16, alive: bool, name: &str) -> ActorState {
         ActorState {
             ap: Ap(ap_val),
             position: TileXY::new(x, y),
@@ -528,8 +517,16 @@ mod tests {
         let candidates = generate_candidates(&actor, &allies, &enemies);
 
         // Count movement candidates
-        let move_count = candidates.iter().filter(|c| matches!(c.action, Action::Move(_))).count();
-        assert!(move_count <= MAX_MOVEMENT_CANDIDATES, "move count {} > max {}", move_count, MAX_MOVEMENT_CANDIDATES);
+        let move_count = candidates
+            .iter()
+            .filter(|c| matches!(c.action, Action::Move(_)))
+            .count();
+        assert!(
+            move_count <= MAX_MOVEMENT_CANDIDATES,
+            "move count {} > max {}",
+            move_count,
+            MAX_MOVEMENT_CANDIDATES
+        );
     }
 
     #[test]
@@ -538,7 +535,16 @@ mod tests {
         let allies = vec![];
         // Create more than MAX_TARGET_CANDIDATES enemies
         let enemies: Vec<ActorState> = (0..10)
-            .map(|i| make_actor(5 + i as i16, 5 + i as i16, 10 + i as i32, 10, true, &format!("Enemy{}", i)))
+            .map(|i| {
+                make_actor(
+                    5 + i as i16,
+                    5 + i as i16,
+                    10 + i as i32,
+                    10,
+                    true,
+                    &format!("Enemy{}", i),
+                )
+            })
             .collect();
 
         let candidates = generate_candidates(&actor, &allies, &enemies);
@@ -549,14 +555,21 @@ mod tests {
             .filter(|c| {
                 matches!(
                     c.action,
-                    Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(_, _) | Action::Melee(_)
+                    Action::SnapShot(_)
+                        | Action::AimedShot(_)
+                        | Action::CalledShot(_, _)
+                        | Action::Melee(_)
                 )
             })
             .count();
 
         // At most 6 targets × 4 actions = 24 target-based candidates
-        assert!(target_action_count <= MAX_TARGET_CANDIDATES * 4,
-            "target action count {} > max {}", target_action_count, MAX_TARGET_CANDIDATES * 4);
+        assert!(
+            target_action_count <= MAX_TARGET_CANDIDATES * 4,
+            "target action count {} > max {}",
+            target_action_count,
+            MAX_TARGET_CANDIDATES * 4
+        );
     }
 
     #[test]
@@ -570,7 +583,10 @@ mod tests {
         assert!(
             matches!(
                 cmd.action,
-                Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(_, _) | Action::Melee(_)
+                Action::SnapShot(_)
+                    | Action::AimedShot(_)
+                    | Action::CalledShot(_, _)
+                    | Action::Melee(_)
             ),
             "expected a combat action but got {:?}",
             cmd.action
@@ -665,7 +681,11 @@ mod tests {
 
         for c in &candidates {
             if let Action::Move(pos) = c.action {
-                assert_ne!(pos, TileXY::new(1, 0), "movement candidate should not land on ally tile");
+                assert_ne!(
+                    pos,
+                    TileXY::new(1, 0),
+                    "movement candidate should not land on ally tile"
+                );
             }
         }
     }

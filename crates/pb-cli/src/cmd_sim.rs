@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
+use pb_content::load::load_all;
+use pb_content::schema::ActorData;
 use pb_sim::action::{step, Command};
 use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
 use pb_sim::hash::compute_state_hash;
 use pb_sim::state::SimState;
-use pb_content::load::load_all;
-use pb_content::schema::ActorData;
 
 use crate::args::Args;
 use crate::journal::parse_journal;
@@ -16,11 +16,16 @@ use crate::output;
 
 /// Run the `sim` subcommand.
 pub fn run_sim(args: &Args) -> Result<(), String> {
-    let content_root = args.content_root.as_deref().unwrap_or_else(|| Path::new("content"));
+    let content_root = args
+        .content_root
+        .as_deref()
+        .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     let scenario_id = args.scenario.as_deref().unwrap_or("prov_called_shot");
-    let scenario = content.scenarios.get(scenario_id)
+    let scenario = content
+        .scenarios
+        .get(scenario_id)
         .ok_or_else(|| format!("scenario '{}' not found", scenario_id))?;
 
     // Set up seed
@@ -45,8 +50,8 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
 
     // If we have a journal, apply commands
     if let Some(journal_path) = &args.journal {
-        let entries = parse_journal(journal_path)
-            .map_err(|e| format!("journal parse error: {}", e))?;
+        let entries =
+            parse_journal(journal_path).map_err(|e| format!("journal parse error: {}", e))?;
 
         for (_, _, cmd) in &entries {
             // Advance to next actor
@@ -114,14 +119,21 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
 
 /// Run the `replay` subcommand: load journal, run sim, compare hash.
 pub fn run_replay(args: &Args) -> Result<(), String> {
-    let journal_path = args.journal.as_deref()
+    let journal_path = args
+        .journal
+        .as_deref()
         .ok_or_else(|| "replay requires --journal".to_string())?;
 
-    let content_root = args.content_root.as_deref().unwrap_or_else(|| Path::new("content"));
+    let content_root = args
+        .content_root
+        .as_deref()
+        .unwrap_or_else(|| Path::new("content"));
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     let scenario_id = args.scenario.as_deref().unwrap_or("prov_called_shot");
-    let scenario = content.scenarios.get(scenario_id)
+    let scenario = content
+        .scenarios
+        .get(scenario_id)
         .ok_or_else(|| format!("scenario '{}' not found", scenario_id))?;
 
     let seed = args.seed.unwrap_or(42);
@@ -142,8 +154,7 @@ pub fn run_replay(args: &Args) -> Result<(), String> {
     }
 
     // Parse journal
-    let entries = parse_journal(journal_path)
-        .map_err(|e| format!("journal parse error: {}", e))?;
+    let entries = parse_journal(journal_path).map_err(|e| format!("journal parse error: {}", e))?;
 
     // Apply commands
     for (_, _, cmd) in &entries {

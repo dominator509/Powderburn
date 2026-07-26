@@ -51,8 +51,7 @@ fn hex_to_bytes(s: &str) -> [u8; 32] {
     assert_eq!(s.len(), 64, "hex string must be 64 chars");
     let mut out = [0u8; 32];
     for i in 0..32 {
-        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-            .expect("valid hex");
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("valid hex");
     }
     out
 }
@@ -268,7 +267,11 @@ fn ledger_chain_verifies_and_fails_on_mutation() {
 fn empty_chain_round_trip() {
     let chain = LedgerChain::new();
     assert!(chain.verify_chain(), "empty chain verifies");
-    assert_eq!(chain.head_hash(), [0u8; 32], "empty chain head is all zeros");
+    assert_eq!(
+        chain.head_hash(),
+        [0u8; 32],
+        "empty chain head is all zeros"
+    );
 
     let save = make_save(&chain);
     let serialized = serialize_save(&save).expect("serialize empty save");

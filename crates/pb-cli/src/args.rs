@@ -77,7 +77,10 @@ impl Args {
 
         let mut i = 1; // skip program name
         while i < raw.len() {
-            let arg = raw[i].to_str().ok_or_else(|| format!("non-UTF-8 argument at position {}", i))?.to_string();
+            let arg = raw[i]
+                .to_str()
+                .ok_or_else(|| format!("non-UTF-8 argument at position {}", i))?
+                .to_string();
 
             match arg.as_str() {
                 "--content-root" | "-C" => {
@@ -93,7 +96,11 @@ impl Args {
                 "--scenario" | "-s" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--scenario requires a value")?;
-                    scenario = Some(val.to_str().ok_or("--scenario value not UTF-8")?.to_string());
+                    scenario = Some(
+                        val.to_str()
+                            .ok_or("--scenario value not UTF-8")?
+                            .to_string(),
+                    );
                 }
                 "--output" | "-o" => {
                     i += 1;
@@ -113,7 +120,11 @@ impl Args {
                 "--seed" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--seed requires a value")?;
-                    let s: u64 = val.to_str().ok_or("--seed value not UTF-8")?.parse().map_err(|e| format!("invalid seed: {}", e))?;
+                    let s: u64 = val
+                        .to_str()
+                        .ok_or("--seed value not UTF-8")?
+                        .parse()
+                        .map_err(|e| format!("invalid seed: {}", e))?;
                     seed = Some(s);
                 }
                 "--emit-hash" => {
@@ -125,7 +136,11 @@ impl Args {
                 "--suspend-at-tick" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--suspend-at-tick requires a value")?;
-                    let t: u64 = val.to_str().ok_or("not UTF-8")?.parse().map_err(|e| format!("invalid tick: {}", e))?;
+                    let t: u64 = val
+                        .to_str()
+                        .ok_or("not UTF-8")?
+                        .parse()
+                        .map_err(|e| format!("invalid tick: {}", e))?;
                     suspend_at_tick = Some(t);
                 }
                 "--expect" => {
@@ -136,7 +151,11 @@ impl Args {
                 "--iterations" | "-n" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--iterations requires a value")?;
-                    let n: u64 = val.to_str().ok_or("not UTF-8")?.parse().map_err(|e| format!("invalid iterations: {}", e))?;
+                    let n: u64 = val
+                        .to_str()
+                        .ok_or("not UTF-8")?
+                        .parse()
+                        .map_err(|e| format!("invalid iterations: {}", e))?;
                     iterations = Some(n);
                 }
                 "--bench-scenario" => {

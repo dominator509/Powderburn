@@ -6,11 +6,11 @@
 #![forbid(unsafe_code)]
 
 use pb_core::event::{Event, HitLocationType};
-use pb_core::ids::ActorId;
 use pb_core::geom::TileXY;
+use pb_core::ids::ActorId;
 use pb_rng::{PbRng, StreamTag};
 
-use crate::state::{ActorState, SimState, SimError};
+use crate::state::{ActorState, SimError, SimState};
 
 /// The kind of action an actor can perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,10 +141,7 @@ fn execute_shot(
     _called: Option<HitLocationType>,
 ) -> Vec<Event> {
     // Check target exists
-    let target_alive = state
-        .actors
-        .get(&target)
-        .map_or(false, |a| a.alive);
+    let target_alive = state.actors.get(&target).map_or(false, |a| a.alive);
 
     if !target_alive {
         return vec![];
@@ -168,15 +165,7 @@ fn execute_shot(
 
     if hit {
         // Simple location roll
-        let loc_roll = PbRng::draw(
-            seed,
-            scenario,
-            tick,
-            actor_num,
-            StreamTag::Damage,
-            0,
-            99,
-        );
+        let loc_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::Damage, 0, 99);
         let location = if loc_roll < 10 {
             HitLocationType::Head
         } else if loc_roll < 13 {
@@ -245,9 +234,9 @@ fn execute_melee(_state: &mut SimState, _actor_id: ActorId, _target: ActorId) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pb_core::ids::Ap;
-    use pb_core::geom::Facing;
     use crate::state::Stance;
+    use pb_core::geom::Facing;
+    use pb_core::ids::Ap;
 
     fn make_actor() -> ActorState {
         ActorState {
@@ -282,7 +271,10 @@ mod tests {
     fn action_cost_called_shot() {
         let actor = make_actor();
         assert_eq!(
-            action_cost(&Action::CalledShot(ActorId(1), HitLocationType::Head), &actor),
+            action_cost(
+                &Action::CalledShot(ActorId(1), HitLocationType::Head),
+                &actor
+            ),
             Ap(5)
         );
     }
@@ -303,20 +295,14 @@ mod tests {
     fn action_cost_move_adjacent() {
         let actor = make_actor();
         let target = TileXY::new(1, 0);
-        assert_eq!(
-            action_cost(&Action::Move(target), &actor),
-            Ap(1)
-        );
+        assert_eq!(action_cost(&Action::Move(target), &actor), Ap(1));
     }
 
     #[test]
     fn action_cost_move_sprint() {
         let actor = make_actor();
         let target = TileXY::new(2, 0);
-        assert_eq!(
-            action_cost(&Action::Move(target), &actor),
-            Ap(4)
-        );
+        assert_eq!(action_cost(&Action::Move(target), &actor), Ap(4));
     }
 
     #[test]
@@ -390,9 +376,6 @@ mod tests {
             actor_id: id,
             action: Action::Hold,
         };
-        assert_eq!(
-            step(&mut state, cmd).unwrap_err(),
-            SimError::ActorDead(id)
-        );
+        assert_eq!(step(&mut state, cmd).unwrap_err(), SimError::ActorDead(id));
     }
 }

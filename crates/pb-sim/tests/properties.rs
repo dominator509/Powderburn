@@ -158,18 +158,9 @@ fn state_hash_is_deterministic_across_calls() {
         let hash1 = compute_state_hash(&state);
         let hash2 = compute_state_hash(&state);
 
-        assert_eq!(
-            hash1, hash2,
-            "seed {}: state hash not deterministic",
-            seed
-        );
+        assert_eq!(hash1, hash2, "seed {}: state hash not deterministic", seed);
 
-        assert_ne!(
-            hash1,
-            [0u8; 32],
-            "seed {}: state hash is all zeros",
-            seed
-        );
+        assert_ne!(hash1, [0u8; 32], "seed {}: state hash is all zeros", seed);
     }
 }
 
@@ -211,13 +202,13 @@ fn shot_hit_chance_in_bounds() {
             // Penalty for called shot location, ranges from 15 to 55
             let loc_idx = rng.next_i32(0, 6);
             match loc_idx {
-                0 => 30,  // Head
-                1 => 55,  // Eyes
-                2 => 0,   // Torso (no penalty)
-                3 => 25,  // Vitals
-                4 => 15,  // GunArm
-                5 => 15,  // OffArm
-                _ => 10,  // Legs
+                0 => 30, // Head
+                1 => 55, // Eyes
+                2 => 0,  // Torso (no penalty)
+                3 => 25, // Vitals
+                4 => 15, // GunArm
+                5 => 15, // OffArm
+                _ => 10, // Legs
             }
         } else {
             0

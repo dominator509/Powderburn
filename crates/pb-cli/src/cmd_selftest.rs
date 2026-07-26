@@ -2,17 +2,17 @@
 
 use std::path::Path;
 
+use pb_content::load::load_all;
+use pb_core::event::{Event, HitLocationType, WoundType};
 use pb_core::fix32::Fix32;
 use pb_core::geom::{Facing, TileXY};
-use pb_core::ids::{ActorId, Ap, Tick};
 use pb_core::hash::hash_state;
-use pb_core::event::{Event, HitLocationType, WoundType};
+use pb_core::ids::{ActorId, Ap, Tick};
 use pb_rng::{PbRng, StreamTag};
-use pb_sim::action::{Action, action_cost};
-use pb_sim::hash::compute_state_hash;
-use pb_sim::state::{SimState, ActorState, Stance};
 use pb_rules::tables::weapon_entry;
-use pb_content::load::load_all;
+use pb_sim::action::{action_cost, Action};
+use pb_sim::hash::compute_state_hash;
+use pb_sim::state::{ActorState, SimState, Stance};
 
 use crate::args::Args;
 use crate::output;

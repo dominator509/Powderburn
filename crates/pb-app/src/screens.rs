@@ -64,10 +64,7 @@ impl Screen {
             // Quit is final
             (Screen::Quit, _) => Err("cannot transition from Quit".to_string()),
 
-            _ => Err(format!(
-                "illegal transition: {:?} -> {:?}",
-                self, target
-            )),
+            _ => Err(format!("illegal transition: {:?} -> {:?}", self, target)),
         }
     }
 }

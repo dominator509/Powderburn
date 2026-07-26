@@ -59,10 +59,22 @@ impl IsoCamera {
         let rcp_d = 1.0 / (far - near);
 
         [
-            2.0 * rcp_w, 0.0, 0.0, 0.0,
-            0.0, 2.0 * rcp_h, 0.0, 0.0,
-            0.0, 0.0, -2.0 * rcp_d, 0.0,
-            -(right + left) * rcp_w, -(top + bottom) * rcp_h, -(far + near) * rcp_d, 1.0,
+            2.0 * rcp_w,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0 * rcp_h,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -2.0 * rcp_d,
+            0.0,
+            -(right + left) * rcp_w,
+            -(top + bottom) * rcp_h,
+            -(far + near) * rcp_d,
+            1.0,
         ]
     }
 

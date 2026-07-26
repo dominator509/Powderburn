@@ -21,7 +21,7 @@ use pb_core::ids::ActorId;
 use pb_rng::{PbRng, StreamTag};
 use pb_rules::tables;
 
-use crate::state::{SimState, SimError};
+use crate::state::{SimError, SimState};
 
 /// Resolve a shot from `shooter` at `target`.
 ///
@@ -54,7 +54,15 @@ pub fn resolve_shot(
     let scenario = state.scenario_id;
     let tick = state.tick.0;
 
-    let misfire_roll = PbRng::draw(rng_seed, scenario, tick, shooter.0, StreamTag::Misfire, 0, 99);
+    let misfire_roll = PbRng::draw(
+        rng_seed,
+        scenario,
+        tick,
+        shooter.0,
+        StreamTag::Misfire,
+        0,
+        99,
+    );
     // Default weapon misfire = 5 (Colt Army)
     if misfire_roll < 5 {
         return Ok(vec![Event::Misfire { actor: shooter }]);
@@ -98,8 +106,15 @@ pub fn resolve_shot(
         loc
     } else {
         // Random location
-        let loc_roll =
-            PbRng::draw(rng_seed, scenario, tick, shooter.0, StreamTag::Damage, 0, 99);
+        let loc_roll = PbRng::draw(
+            rng_seed,
+            scenario,
+            tick,
+            shooter.0,
+            StreamTag::Damage,
+            0,
+            99,
+        );
         tables::select_hit_location(loc_roll).unwrap_or(HitLocationType::Torso)
     };
 
@@ -116,7 +131,15 @@ pub fn resolve_shot(
     // --- Stage 6: Damage roll ---
     // Base damage for Colt Army: 14
     let base_damage = 14;
-    let damage_roll = PbRng::draw(rng_seed, scenario, tick, shooter.0, StreamTag::Damage, 1, 10);
+    let damage_roll = PbRng::draw(
+        rng_seed,
+        scenario,
+        tick,
+        shooter.0,
+        StreamTag::Damage,
+        1,
+        10,
+    );
     let raw_damage = base_damage + damage_roll;
     // Apply location multiplier (percent)
     let final_damage = (raw_damage * dmg_mult) / 100;
@@ -175,10 +198,10 @@ pub fn resolve_shot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{ActorState, Stance};
+    use pb_core::geom::Facing;
     use pb_core::geom::TileXY;
     use pb_core::ids::Ap;
-    use pb_core::geom::Facing;
-    use crate::state::{ActorState, Stance};
 
     fn make_actor(id: ActorId, pos: TileXY) -> ActorState {
         ActorState {
@@ -203,16 +226,23 @@ mod tests {
         let mut state = SimState::new(5, 1);
         let shooter = ActorId(1);
         let target = ActorId(2);
-        state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
-        state.actors.insert(target, make_actor(target, TileXY::new(5, 0)));
+        state
+            .actors
+            .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+        state
+            .actors
+            .insert(target, make_actor(target, TileXY::new(5, 0)));
 
         let result = resolve_shot(&state, shooter, target, None).unwrap();
         // First event should be ShotHit (not Misfire) — with seed=5 it should hit
-        assert_eq!(result[0], Event::ShotHit {
-            actor: shooter,
-            target,
-            hit: true,
-        });
+        assert_eq!(
+            result[0],
+            Event::ShotHit {
+                actor: shooter,
+                target,
+                hit: true,
+            }
+        );
     }
 
     #[test]
@@ -221,26 +251,43 @@ mod tests {
         let mut state = SimState::new(5, 1);
         let shooter = ActorId(1);
         let target = ActorId(2);
-        state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
-        state.actors.insert(target, make_actor(target, TileXY::new(5, 0)));
+        state
+            .actors
+            .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+        state
+            .actors
+            .insert(target, make_actor(target, TileXY::new(5, 0)));
 
         let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm)).unwrap();
 
         // Verify we get enough events
-        assert!(result.len() >= 3, "Expected at least 3 events, got {}: {:?}", result.len(), result);
+        assert!(
+            result.len() >= 3,
+            "Expected at least 3 events, got {}: {:?}",
+            result.len(),
+            result
+        );
 
         // First event must be ShotHit
-        assert_eq!(result[0], Event::ShotHit {
-            actor: shooter,
-            target,
-            hit: true,
-        }, "First event should be ShotHit with hit=true");
+        assert_eq!(
+            result[0],
+            Event::ShotHit {
+                actor: shooter,
+                target,
+                hit: true,
+            },
+            "First event should be ShotHit with hit=true"
+        );
 
         // Second event must be HitLocation(GunArm) for a called shot
-        assert_eq!(result[1], Event::HitLocation {
-            actor: target,
-            location: HitLocationType::GunArm,
-        }, "Second event should be HitLocation(GunArm)");
+        assert_eq!(
+            result[1],
+            Event::HitLocation {
+                actor: target,
+                location: HitLocationType::GunArm,
+            },
+            "Second event should be HitLocation(GunArm)"
+        );
     }
 
     #[test]
@@ -250,7 +297,9 @@ mod tests {
         let target = ActorId(2);
         let mut t = make_actor(target, TileXY::new(5, 0));
         t.alive = false;
-        state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+        state
+            .actors
+            .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
         state.actors.insert(target, t);
 
         let result = resolve_shot(&state, shooter, target, None).unwrap();

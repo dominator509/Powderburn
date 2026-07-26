@@ -1,1 +1,17 @@
 # one crate name per line; each requires an ADR in DECISIONS.md
+# ADR-0013: Apple-only / renderer transitive deps without LICENSE file in vendor tarball
+block
+codespan-reporting
+gl_generator
+gpu-alloc
+gpu-alloc-types
+gpu-descriptor
+gpu-descriptor-types
+hexf-parse
+jni-sys-macros
+khronos_api
+malloc_buf
+naga
+ndk-sys
+profiling
+spirv

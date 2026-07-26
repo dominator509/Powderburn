@@ -7,8 +7,7 @@ use std::path::Path;
 
 /// Run `pbtool image stats`.
 pub fn image_stats(image_path: &Path) -> Result<(), String> {
-    let data = fs::read(image_path)
-        .map_err(|e| format!("cannot read image file: {}", e))?;
+    let data = fs::read(image_path).map_err(|e| format!("cannot read image file: {}", e))?;
 
     // Parse PNG dimensions from header
     // PNG format: 8-byte magic, then IHDR chunk (4-byte length, "IHDR", 4-byte width, 4-byte height)

@@ -2,8 +2,8 @@
 //! See SPEC-002 section 5 for campaign flags and SPEC-000 section 5.4 for structure.
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use crate::schema::{CampaignNodeData, Content};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A campaign graph that can be traversed.
 #[derive(Debug, Clone)]
@@ -49,7 +49,10 @@ pub fn compute_reachable(
         };
 
         // Check companion gates: if a gated companion is dead, this node may be blocked
-        let _companion_blocked = node.companion_gates.iter().any(|g| dead_set.contains(g.as_str()));
+        let _companion_blocked = node
+            .companion_gates
+            .iter()
+            .any(|g| dead_set.contains(g.as_str()));
 
         // For now, we still traverse but mark the limitation
         for unlocked in &node.unlocks {
@@ -96,11 +99,7 @@ pub fn check_permadeath_propagation(
 }
 
 /// Get the next mission in the campaign progression.
-pub fn next_missions(
-    graph: &CampaignGraph,
-    flags: &[String],
-    completed: &[String],
-) -> Vec<String> {
+pub fn next_missions(graph: &CampaignGraph, flags: &[String], completed: &[String]) -> Vec<String> {
     let flag_set: BTreeSet<&str> = flags.iter().map(|s| s.as_str()).collect();
     let completed_set: BTreeSet<&str> = completed.iter().map(|s| s.as_str()).collect();
     let mut available = Vec::new();
@@ -110,8 +109,8 @@ pub fn next_missions(
             continue;
         }
         // Check all required flags are met
-        let requires_met = node.requires.is_empty()
-            || node.requires.iter().all(|r| flag_set.contains(r.as_str()));
+        let requires_met =
+            node.requires.is_empty() || node.requires.iter().all(|r| flag_set.contains(r.as_str()));
         // Check at least one unlocker is completed
         let _unlocked = completed_set.contains(id.as_str())
             || node.requires.is_empty()

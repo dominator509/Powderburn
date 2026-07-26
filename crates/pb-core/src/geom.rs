@@ -12,7 +12,9 @@ use core::fmt;
 /// Uses signed 16-bit coordinates, sufficient for maps up to 32767 tiles in
 /// each direction.  The Chebyshev distance metric matches the 8-directional
 /// movement model used by the tactical engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct TileXY {
     pub x: i16,
     pub y: i16,
@@ -119,7 +121,9 @@ impl fmt::Display for TileXY {
 /// The eight cardinal and intercardinal facings.
 ///
 /// Ordering corresponds to clockwise rotation starting from North.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Facing {
     North,
     NorthEast,

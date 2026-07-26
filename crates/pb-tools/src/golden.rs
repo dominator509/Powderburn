@@ -17,13 +17,18 @@ pub fn golden_refresh(golden_path: &Path) -> Result<(), String> {
     let has_changes = output.lines().any(|l| !l.is_empty());
 
     if has_changes {
-        return Err("git tree is not clean; commit or stash changes before refreshing golden hashes".to_string());
+        return Err(
+            "git tree is not clean; commit or stash changes before refreshing golden hashes"
+                .to_string(),
+        );
     }
 
     // Look for golden hash files and refresh them
     let golden_dir = golden_path.join("golden");
     if golden_dir.exists() && golden_dir.is_dir() {
-        for entry in fs::read_dir(&golden_dir).map_err(|e| format!("cannot read golden dir: {}", e))? {
+        for entry in
+            fs::read_dir(&golden_dir).map_err(|e| format!("cannot read golden dir: {}", e))?
+        {
             let entry = entry.map_err(|e| format!("dir entry error: {}", e))?;
             let path = entry.path();
             if path.is_file() {

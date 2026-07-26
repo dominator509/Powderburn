@@ -51,10 +51,22 @@ fn round_trip_preserves_all_data() {
     let content_hash = [0xBBu8; 32];
 
     let mut chain = LedgerChain::new();
-    chain.add_entry("Billy the Kid", "Outlaw", "Lincoln County", "1878-07-14",
-                     "I'll die before I surrender.", "System");
-    chain.add_entry("Pat Garrett", "Sheriff", "Lincoln County", "1878-07-14",
-                     "The law always catches up.", "System");
+    chain.add_entry(
+        "Billy the Kid",
+        "Outlaw",
+        "Lincoln County",
+        "1878-07-14",
+        "I'll die before I surrender.",
+        "System",
+    );
+    chain.add_entry(
+        "Pat Garrett",
+        "Sheriff",
+        "Lincoln County",
+        "1878-07-14",
+        "The law always catches up.",
+        "System",
+    );
 
     let head = chain.head_hash();
 
@@ -105,8 +117,14 @@ fn flipped_byte_fails_chain_verification() {
     let content_hash = [0xBBu8; 32];
 
     let mut chain = LedgerChain::new();
-    chain.add_entry("John Doe", "Cowboy", "Dodge City", "1875-06-01",
-                     "A man's gotta do what a man's gotta do.", "System");
+    chain.add_entry(
+        "John Doe",
+        "Cowboy",
+        "Dodge City",
+        "1875-06-01",
+        "A man's gotta do what a man's gotta do.",
+        "System",
+    );
 
     let head = chain.head_hash();
 
@@ -252,18 +270,34 @@ fn ledger_chain_builds_correctly() {
 
     // Empty chain
     assert!(chain.verify_chain(), "empty chain should verify");
-    assert_eq!(chain.head_hash(), [0u8; 32], "empty chain head should be all zeros");
+    assert_eq!(
+        chain.head_hash(),
+        [0u8; 32],
+        "empty chain head should be all zeros"
+    );
     assert_eq!(chain.entries.len(), 0);
 
     // Single entry
-    chain.add_entry("Test User", "Tester", "Testville", "1870-01-01",
-                     "This is a test.", "System");
+    chain.add_entry(
+        "Test User",
+        "Tester",
+        "Testville",
+        "1870-01-01",
+        "This is a test.",
+        "System",
+    );
     assert!(chain.verify_chain(), "single-entry chain should verify");
     assert_ne!(chain.head_hash(), [0u8; 32], "head hash should not be zero");
 
     // Multiple entries
-    chain.add_entry("Second User", "Tester II", "Testville", "1870-01-02",
-                     "Second test entry.", "Player");
+    chain.add_entry(
+        "Second User",
+        "Tester II",
+        "Testville",
+        "1870-01-02",
+        "Second test entry.",
+        "Player",
+    );
     assert!(chain.verify_chain(), "two-entry chain should verify");
     assert_ne!(chain.head_hash(), [0u8; 32], "head hash should not be zero");
     assert_eq!(chain.entries.len(), 2);
@@ -301,8 +335,14 @@ fn write_and_read_round_trip() {
     let content_hash = [0x22u8; 32];
 
     let mut chain = LedgerChain::new();
-    chain.add_entry("Doc Holliday", "Dentist/Gambler", "Tombstone", "1881-10-26",
-                     "I'm your huckleberry.", "System");
+    chain.add_entry(
+        "Doc Holliday",
+        "Dentist/Gambler",
+        "Tombstone",
+        "1881-10-26",
+        "I'm your huckleberry.",
+        "System",
+    );
 
     let head = chain.head_hash();
 

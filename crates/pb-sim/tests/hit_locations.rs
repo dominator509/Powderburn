@@ -19,7 +19,15 @@ fn hit_location_distribution() {
     let iterations = 100_000;
 
     for i in 0..iterations {
-        let roll = PbRng::draw(seed, scenario, i as u64, 0, StreamTag::Damage, 0, total_weight - 1);
+        let roll = PbRng::draw(
+            seed,
+            scenario,
+            i as u64,
+            0,
+            StreamTag::Damage,
+            0,
+            total_weight - 1,
+        );
         let loc = tables::select_hit_location(roll).expect("valid location roll");
         *location_counts.entry(loc).or_insert(0) += 1;
     }

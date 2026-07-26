@@ -1,10 +1,10 @@
 use pb_core::event::{Event, HitLocationType, WoundType};
+use pb_core::geom::Facing;
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
-use pb_sim::shot::resolve_shot;
-use pb_sim::state::{SimState, ActorState, Stance};
 use pb_core::ids::Ap;
-use pb_core::geom::Facing;
+use pb_sim::shot::resolve_shot;
+use pb_sim::state::{ActorState, SimState, Stance};
 
 fn make_actor(id: ActorId, pos: TileXY) -> ActorState {
     ActorState {
@@ -33,8 +33,12 @@ fn called_shot_to_gunarm_full_pipeline() {
     let mut state = SimState::new(5, 1);
     let shooter = ActorId(1);
     let target = ActorId(2);
-    state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
-    state.actors.insert(target, make_actor(target, TileXY::new(5, 0)));
+    state
+        .actors
+        .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+    state
+        .actors
+        .insert(target, make_actor(target, TileXY::new(5, 0)));
 
     let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm));
     assert!(result.is_ok(), "Shot should resolve without error");
@@ -125,8 +129,12 @@ fn shot_out_of_range_still_resolves() {
     let mut state = SimState::new(42, 1);
     let shooter = ActorId(1);
     let target = ActorId(2);
-    state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
-    state.actors.insert(target, make_actor(target, TileXY::new(60, 0)));
+    state
+        .actors
+        .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+    state
+        .actors
+        .insert(target, make_actor(target, TileXY::new(60, 0)));
 
     let result = resolve_shot(&state, shooter, target, None);
     assert!(
@@ -143,7 +151,9 @@ fn shot_target_dead() {
     let target = ActorId(2);
     let mut t = make_actor(target, TileXY::new(5, 0));
     t.alive = false;
-    state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+    state
+        .actors
+        .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
     state.actors.insert(target, t);
 
     let result = resolve_shot(&state, shooter, target, None).unwrap();
@@ -159,8 +169,12 @@ fn shot_returns_shot_hit_event() {
     let mut state = SimState::new(0, 1);
     let shooter = ActorId(1);
     let target = ActorId(2);
-    state.actors.insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
-    state.actors.insert(target, make_actor(target, TileXY::new(10, 0)));
+    state
+        .actors
+        .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
+    state
+        .actors
+        .insert(target, make_actor(target, TileXY::new(10, 0)));
 
     let result = resolve_shot(&state, shooter, target, None).unwrap();
     assert!(!result.is_empty(), "Should not be empty");

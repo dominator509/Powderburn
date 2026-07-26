@@ -1,0 +1,3 @@
+log: info ts=2026-07-26T05:25:35Z mod=test event=test_event key=value
+log: info ts=2026-07-26T05:39:31Z mod=test event=test_event key=value
+log: info ts=2026-07-26T05:41:21Z mod=test event=test_event key=value

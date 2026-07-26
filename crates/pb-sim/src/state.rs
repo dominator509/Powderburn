@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use pb_core::event::{WoundType};
+use pb_core::event::WoundType;
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap, Tick};
 
@@ -82,11 +82,7 @@ impl SimState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimError {
     /// The actor does not have enough AP to perform the action.
-    InsufficientAp {
-        actor: ActorId,
-        have: Ap,
-        need: Ap,
-    },
+    InsufficientAp { actor: ActorId, have: Ap, need: Ap },
     /// The actor is not alive.
     ActorDead(ActorId),
     /// The actor was not found.

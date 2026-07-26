@@ -56,20 +56,20 @@ fn ap_economy_sequence_clock_counts() {
 
     let expected_a: u32 = {
         let tl = turn_length(2); // 92
-        // Acts at ticks < 600: 0, 92, 184, 276, 368, 460, 552
-        // 552 + 92 = 644 > 600, so 7 actions
+                                 // Acts at ticks < 600: 0, 92, 184, 276, 368, 460, 552
+                                 // 552 + 92 = 644 > 600, so 7 actions
         1 + (599u64 / tl) as u32
     };
 
     let expected_b: u32 = {
         let tl = turn_length(5); // 80
-        // 1 + floor(599 / 80) = 1 + 7 = 8
+                                 // 1 + floor(599 / 80) = 1 + 7 = 8
         1 + (599u64 / tl) as u32
     };
 
     let expected_c: u32 = {
         let tl = turn_length(9); // 64
-        // 1 + floor(599 / 64) = 1 + 9 = 10
+                                 // 1 + floor(599 / 64) = 1 + 9 = 10
         1 + (599u64 / tl) as u32
     };
 
@@ -104,7 +104,7 @@ fn ap_economy_sequence_clock_counts() {
 #[test]
 fn insufficient_ap_does_not_change_state() {
     use pb_core::ids::Ap;
-    use pb_sim::action::{Command, Action, step};
+    use pb_sim::action::{step, Action, Command};
     use pb_sim::state::SimError;
 
     let mut state = SimState::new(99, 1);
@@ -123,10 +123,7 @@ fn insufficient_ap_does_not_change_state() {
 
     let result = step(&mut state, cmd);
 
-    assert!(
-        result.is_err(),
-        "Expected InsufficientAp error but got Ok"
-    );
+    assert!(result.is_err(), "Expected InsufficientAp error but got Ok");
 
     match result.unwrap_err() {
         SimError::InsufficientAp { actor, have, need } => {

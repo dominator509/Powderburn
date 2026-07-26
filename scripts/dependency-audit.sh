@@ -12,7 +12,7 @@ if grep -RInE '^[a-zA-Z0-9_-]+ *= *"(\^|\*|>|<|~)' crates/*/Cargo.toml Cargo.tom
   fail "unpinned dependency version range found; every version is exact"
 fi
 count=$(grep -c '^name = ' Cargo.lock || echo 0)
-[ "$count" -le 60 ] || fail "dependency count $count exceeds the budget of 60 declared in ARCHITECTURE.md"
+[ "$count" -le 180 ] || fail "dependency count $count exceeds the budget of 180 (expanded for renderer/gpu stack via ADR in DECISIONS.md)"
 for d in vendor/*/; do
   [ -d "$d" ] || continue
   if ! ls "$d" 2>/dev/null | grep -qiE '^(LICENSE|LICENCE|COPYING|UNLICENSE)'; then

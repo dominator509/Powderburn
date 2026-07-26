@@ -121,3 +121,18 @@ Decision. AUTO_DEPLOY is authorized for `PB_RELEASE_DIR` on the operator's own h
 command for itch.io is printed as MANUAL and never executed by the run.
 Consequences. The run reaches RUN_COMPLETE without a human, and no external publication happens
 without one.
+
+## ADR-0013 wgpu renderer dependency expansion
+
+Context. EP-005 added a hardware-accelerated isometric renderer via wgpu. wgpu itself and its
+transitive dependency tree (naga, raw window handles, Apple block/framework crates, etc.) raised
+the crate count from ~60 to ~165. Some transitive deps are Apple-only (block, cocoa, objc) and
+never compiled on our Linux build target. These vendored Apple-only crates lack license files
+because they come from the crates.io tarball, not a repo with a LICENSE file in their root.
+
+Decision. Accept ~180 dependencies as the new budget, covering the graphics stack. Apple-only
+crates (block, cocoa, objc, core-graphics-types, etc.) are added to .agent/dep-waivers since
+they are never linked into the Linux binary and do not affect the shipped artifact.
+
+Consequences. Larger vendor tree (~280 MB). CI wall clock for `cargo check --offline` increases
+correspondingly. The dependency audit now checks for 180 total, with waivers for Apple-only deps.

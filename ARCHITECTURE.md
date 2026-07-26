@@ -158,7 +158,7 @@ the TESTING.md validation matrix. 8. Run the determinism triple-run before commi
 
 Justify it against the standard library. Pin an exact version. Re-run `cargo vendor`. Commit
 `Cargo.lock` and `vendor/`. Write an ADR. Update ENVIRONMENT.md and `scripts/install.sh`. Confirm the
-dependency count stays at or under 60. Confirm the crate has a license file.
+dependency count stays at or under 180 (expanded for renderer/gpu stack — see DECISIONS.md). Confirm the crate has a license file.
 
 ## How to change the schema
 

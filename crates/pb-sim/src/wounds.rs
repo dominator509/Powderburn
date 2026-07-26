@@ -50,10 +50,10 @@ pub fn wound_effects(wound: WoundType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::Stance;
+    use pb_core::geom::Facing;
     use pb_core::geom::TileXY;
     use pb_core::ids::Ap;
-    use pb_core::geom::Facing;
-    use crate::state::Stance;
 
     fn make_actor() -> ActorState {
         ActorState {
@@ -74,22 +74,34 @@ mod tests {
 
     #[test]
     fn head_wound_is_concussed() {
-        assert_eq!(wound_for_location(HitLocationType::Head), WoundType::Concussed);
+        assert_eq!(
+            wound_for_location(HitLocationType::Head),
+            WoundType::Concussed
+        );
     }
 
     #[test]
     fn eyes_wound_is_blinded() {
-        assert_eq!(wound_for_location(HitLocationType::Eyes), WoundType::Blinded);
+        assert_eq!(
+            wound_for_location(HitLocationType::Eyes),
+            WoundType::Blinded
+        );
     }
 
     #[test]
     fn torso_wound_is_bleeding() {
-        assert_eq!(wound_for_location(HitLocationType::Torso), WoundType::Bleeding);
+        assert_eq!(
+            wound_for_location(HitLocationType::Torso),
+            WoundType::Bleeding
+        );
     }
 
     #[test]
     fn gun_arm_wound_is_broken() {
-        assert_eq!(wound_for_location(HitLocationType::GunArm), WoundType::Broken);
+        assert_eq!(
+            wound_for_location(HitLocationType::GunArm),
+            WoundType::Broken
+        );
     }
 
     #[test]

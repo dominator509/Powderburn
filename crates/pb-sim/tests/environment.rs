@@ -6,7 +6,7 @@
 use pb_core::geom::{Facing, TileXY};
 use pb_sim::environment::{
     can_see_through_smoke, cover_accuracy_penalty, decay_smoke, deposit_smoke, smoke_penalty,
-    SmokeSystem, Cover,
+    Cover, SmokeSystem,
 };
 
 /// Two actors exchange fire in a corridor. After 400 ticks of accumulated

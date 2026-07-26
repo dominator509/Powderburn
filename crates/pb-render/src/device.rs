@@ -27,20 +27,29 @@ impl RenderDevice {
         });
 
         // List adapters
-        let adapters: Vec<wgpu::Adapter> = instance.enumerate_adapters(
-            wgpu::Backends::VULKAN | wgpu::Backends::GL,
-        );
+        let adapters: Vec<wgpu::Adapter> =
+            instance.enumerate_adapters(wgpu::Backends::VULKAN | wgpu::Backends::GL);
 
         // Pick a Vulkan adapter first (usually llvmpipe on headless), fall back to any
-        let adapter = adapters.into_iter().find(|a| {
-            let info = a.get_info();
-            info.backend == wgpu::Backend::Vulkan
-        }).or_else(|| {
-            instance.enumerate_adapters(wgpu::Backends::all()).into_iter().next()
-        }).ok_or_else(|| "no wgpu adapter available".to_string())?;
+        let adapter = adapters
+            .into_iter()
+            .find(|a| {
+                let info = a.get_info();
+                info.backend == wgpu::Backend::Vulkan
+            })
+            .or_else(|| {
+                instance
+                    .enumerate_adapters(wgpu::Backends::all())
+                    .into_iter()
+                    .next()
+            })
+            .ok_or_else(|| "no wgpu adapter available".to_string())?;
 
         let adapter_info = adapter.get_info();
-        println!("render: adapter = {} ({:?})", adapter_info.name, adapter_info.backend);
+        println!(
+            "render: adapter = {} ({:?})",
+            adapter_info.name, adapter_info.backend
+        );
 
         let device_descriptor = wgpu::DeviceDescriptor {
             label: Some("powderburn device"),
