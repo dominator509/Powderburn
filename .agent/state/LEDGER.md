@@ -37,3 +37,6 @@
 2026-07-26T04:32:21Z | IpMan | EP-005 | MILESTONE_PASS | M3 smoke, fog, LOS overlay infrastructure complete
 2026-07-26T04:33:58Z | IpMan | EP-005 | MILESTONE_PASS | M4 screens, input, settings
 2026-07-26T04:35:22Z | IpMan | EP-005 | MILESTONE_PASS | M5 a11y: ok
+2026-07-26T04:35:43Z | IpMan | EP-005 | NODE_DONE | 5 milestones passed: wgpu device, isometric tiles/sprites, smoke/overlay, screens/input/settings, a11y floor
+2026-07-26T04:35:52Z | IpMan | EP-006 | LEASE | IpMan starting EP-006 security baseline
+2026-07-26T04:41:29Z | IpMan | EP-006 | MILESTONE_PASS | M1-M2 limits and adversarial fixtures

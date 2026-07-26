@@ -16,7 +16,7 @@ use crate::format::deserialize_save;
 use crate::ledger::{LedgerChain, LedgerEntry};
 
 /// Maximum allowed save file size in bytes (32 MB).
-pub const MAX_SAVE_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_SAVE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Maximum allowed number of ledger entries.
 pub const MAX_LEDGER_ENTRIES: usize = 4096;
@@ -42,7 +42,7 @@ pub fn read(
 ) -> Result<SaveFileData, SaveError> {
     let raw = std::fs::read(path)?;
 
-    if raw.len() > MAX_SAVE_BYTES {
+    if raw.len() > MAX_SAVE_BYTES as usize {
         return Err(SaveError::Oversize);
     }
 

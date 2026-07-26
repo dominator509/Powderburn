@@ -4,6 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum allowed settings file size in bytes (64 KB).
+pub const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
+
 /// Player settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {

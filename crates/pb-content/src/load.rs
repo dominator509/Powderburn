@@ -7,10 +7,13 @@ use crate::schema::*;
 use crate::validate::Diagnostic;
 
 /// Maximum content file size in bytes.
-pub const MAX_CONTENT_FILE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_CONTENT_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Maximum records per content file.
 pub const MAX_RECORDS_PER_FILE: usize = 8192;
+
+/// Maximum nesting depth for content structures.
+pub const MAX_NEST_DEPTH: u32 = 64;
 
 /// Load all content from the content directory tree.
 pub fn load_all(root: &Path) -> Result<Content, ContentError> {
@@ -112,7 +115,7 @@ fn read_file_with_limits(path: &Path) -> Result<String, ContentError> {
     let metadata = fs::metadata(path).map_err(|e| {
         ContentError::new("E-CONTENT-001", format!("cannot read {}: {}", path.display(), e))
     })?;
-    let file_size = metadata.len() as usize;
+    let file_size = metadata.len();
     if file_size > MAX_CONTENT_FILE_BYTES {
         return Err(ContentError::new(
             "E-CONTENT-001",

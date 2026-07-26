@@ -229,7 +229,7 @@ fn file_exceeding_size_limit_returns_error() {
     let path = dir.join("oversize.pbsv");
 
     // Write a file that exceeds MAX_SAVE_BYTES (32 MB)
-    let oversized = vec![0u8; load::MAX_SAVE_BYTES + 1];
+    let oversized = vec![0u8; load::MAX_SAVE_BYTES as usize + 1];
     std::fs::write(&path, &oversized).expect("write oversized file failed");
 
     let ruleset_hash = [0u8; 32];

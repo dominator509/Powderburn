@@ -12,6 +12,7 @@ workspace = true
     pb-core = { path = "../pb-core" }
     pb-content = { path = "../pb-content" }
     pb-rules = { path = "../pb-rules" }
+    ron = { workspace = true }
 
 [[bin]]
 name = "pbtool"

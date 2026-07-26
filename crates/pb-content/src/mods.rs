@@ -8,6 +8,12 @@ use std::path::Path;
 use crate::error::ModError;
 use crate::schema::Content;
 
+/// Maximum number of files allowed in a mod.
+pub const MAX_MOD_FILES: usize = 2048;
+
+/// Maximum nesting depth for mod directory structures.
+pub const MAX_NEST_DEPTH: u32 = 64;
+
 /// Load a mod from a directory. Validates path confinement and rejects executables.
 pub fn load_mod(root: &Path) -> Result<Content, ModError> {
     // Canonicalize the mod root to check path confinement

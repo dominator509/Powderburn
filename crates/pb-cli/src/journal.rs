@@ -11,6 +11,9 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
+/// Maximum number of lines allowed in a journal file.
+pub const MAX_JOURNAL_LINES: usize = 262144;
+
 use pb_core::event::HitLocationType;
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;

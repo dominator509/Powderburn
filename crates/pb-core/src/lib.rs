@@ -6,5 +6,6 @@ pub mod ids;
 pub mod geom;
 pub mod event;
 pub mod hash;
+pub mod redact;
 
 pub use fix32::Fix32;

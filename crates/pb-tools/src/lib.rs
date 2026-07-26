@@ -7,3 +7,4 @@ pub mod validate;
 pub mod golden;
 pub mod image;
 pub mod atlas;
+pub mod fuzz;

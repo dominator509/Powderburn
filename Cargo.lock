@@ -845,6 +845,7 @@ dependencies = [
  "pb-content",
  "pb-core",
  "pb-rules",
+ "ron",
 ]
 
 [[package]]

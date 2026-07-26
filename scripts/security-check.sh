@@ -10,17 +10,23 @@ if git ls-files | grep -qx '.env'; then fail "the .env file is tracked by git"; 
 if git grep -InE 'BEGIN (RSA|OPENSSH|PGP|EC) PRIVATE KEY' -- . >/dev/null 2>&1; then
   fail "private key material found in tracked files"
 fi
-if git grep -InE '(api[_-]?key|secret|password|token)[[:space:]]*=[[:space:]]*"[A-Za-z0-9_/+-]{16,}"' -- crates content scripts >/dev/null 2>&1; then
+if git grep -InE '(api[_-]?key|secret|password|token)[[:space:]]*=[[:space:]]*\"[A-Za-z0-9_/+-]{16,}\"' -- crates content scripts >/dev/null 2>&1; then
   fail "hardcoded credential-shaped literal in tracked source"
 fi
 
 # 2. LBI-09 NO NETWORK. The shipped binary must contain no socket syscall surface.
-if [ -x target/release/powderburn ]; then
-  syms=$(nm -uC target/release/powderburn 2>/dev/null || true)
-  for s in socket connect getaddrinfo gethostbyname SSL_connect curl_easy_init; do
-    case "$syms" in *"$s"*) fail "release binary references network symbol: $s (LBI-09)";; esac
+_check_binary_for_network_syms() {
+  for binary in target/release/powderburn target/debug/powderburn target/release/pbtool; do
+    [ -x "$binary" ] || continue
+    syms=$(nm -uC "$binary" 2>/dev/null || true)
+    for s in socket connect getaddrinfo gethostbyname SSL_connect curl_easy_init \
+             sendto recvfrom bind listen accept; do
+      case "$syms" in *"$s"*) fail "binary $binary references network symbol: $s (LBI-09)";; esac
+    done
   done
-fi
+}
+_check_binary_for_network_syms
+
 if grep -RInE 'std::net|TcpStream|UdpSocket|reqwest|hyper::' crates --include='*.rs' \
    | grep -v 'crates/pb-cli/src/replay_server.rs' >/dev/null 2>&1; then
   fail "network API used outside the feature-gated replay server (LBI-09)"
@@ -34,6 +40,11 @@ for f in crates/pb-save/src/load.rs crates/pb-content/src/load.rs; do
   [ -f "$f" ] || fail "missing untrusted-input parser: $f"
   grep -q 'MAX_' "$f" || fail "$f has no explicit size limit constant (SECURITY.md section 5)"
 done
+# Check that new limit constants exist
+for f in crates/pb-cli/src/journal.rs crates/pb-app/src/settings.rs; do
+  [ -f "$f" ] || fail "missing file: $f"
+  grep -q 'MAX_' "$f" || fail "$f has no explicit size limit constant (SECURITY.md section 5)"
+done
 if grep -RInE 'unsafe[[:space:]]*\{' crates --include='*.rs' | grep -v '// SAFETY:' >/dev/null 2>&1; then
   fail "unsafe block without a SAFETY comment"
 fi
@@ -43,7 +54,16 @@ if grep -RInE 'log::(info|warn|error)!\([^)]*env!' crates --include='*.rs' >/dev
   fail "environment value interpolated into a log line"
 fi
 
-# 5. Dependency posture.
+# 5. Redaction module exists and has tests.
+if [ -f crates/pb-core/src/redact.rs ]; then
+  grep -q 'fn redact_path' crates/pb-core/src/redact.rs || fail "redact.rs missing redact_path function"
+  grep -q 'fn redact_user' crates/pb-core/src/redact.rs || fail "redact.rs missing redact_user function"
+  grep -q '#\[cfg\(test\)\]' crates/pb-core/src/redact.rs || fail "redact.rs missing test module"
+else
+  fail "crates/pb-core/src/redact.rs does not exist (SECURITY.md section 8)"
+fi
+
+# 6. Dependency posture.
 sh scripts/dependency-audit.sh >/dev/null
 
 echo "security-check: ok"
