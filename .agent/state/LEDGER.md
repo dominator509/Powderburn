@@ -9,3 +9,4 @@
 2026-07-26T02:29:56Z | forge | EP-001 | LEASE | forge starting EP-001 foundation
 2026-07-26T02:31:34Z | forge | EP-001 | MILESTONE_PASS | M1 workspace: resolved
 2026-07-26T02:31:34Z | forge | EP-001 | MILESTONE_PASS | M2 skeletons: ok
+2026-07-26T02:32:08Z | forge | EP-001 | MILESTONE_PASS | M3 offline: ok
