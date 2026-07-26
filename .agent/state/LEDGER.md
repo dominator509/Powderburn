@@ -13,3 +13,4 @@
 2026-07-26T02:32:35Z | forge | EP-001 | MILESTONE_PASS | M4 test-unit: ok
 2026-07-26T02:32:41Z | forge | EP-001 | MILESTONE_PASS | M5 gate: fires
 2026-07-26T02:33:53Z | forge | EP-001 | MILESTONE_PASS | M6 foundation gates green
+2026-07-26T02:35:17Z | forge | EP-001 | MILESTONE_PASS | M6 foundation gates green (8/8 per milestone RUN list; smoke+live-fire blocked until EP-003+)
