@@ -48,3 +48,4 @@
 2026-07-26T04:49:27Z | IpMan | EP-008 | MILESTONE_PASS | M1 structured logging scaffold
 2026-07-26T04:53:54Z | IpMan | EP-008 | NODE_DONE | 6 runbooks, metrics, logging
 2026-07-26T04:53:54Z | IpMan | EP-009 | NODE_DONE | release scripts: release.sh, rollback.sh, make-release-index.sh
+2026-07-26T04:54:00Z | IpMan | EP-010 | LEASE | IpMan starting EP-010 production readiness and ship
