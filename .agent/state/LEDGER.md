@@ -23,3 +23,4 @@
 2026-07-26T03:01:20Z | forge | EP-002 | MILESTONE_PASS | M4 environment ok
 2026-07-26T03:01:20Z | forge | EP-002 | MILESTONE_PASS | M5 ai ok
 2026-07-26T03:04:27Z | forge | EP-002 | MILESTONE_PASS | M6 test-integration: ok
+2026-07-26T03:04:41Z | forge | EP-002 | NODE_DONE | all 6 milestones passed; test-unit+test-integration green; 130+ tests; lint-determinism clean
