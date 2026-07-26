@@ -29,3 +29,5 @@ log: info ts=2026-07-26T22:38:14Z mod=test event=test_event key=value
 log: info ts=2026-07-26T22:45:07Z mod=test event=test_event key=value
 log: info ts=2026-07-26T22:51:23Z mod=test event=test_event key=value
 log: info ts=2026-07-26T23:03:47Z mod=test event=test_event key=value
+log: info ts=2026-07-26T23:05:47Z mod=test event=test_event key=value
+log: info ts=2026-07-26T23:06:18Z mod=test event=test_event key=value
