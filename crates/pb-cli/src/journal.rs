@@ -226,3 +226,28 @@ fn parse_location(args: &[&str], line_no: usize) -> Result<HitLocationType, Jour
     }
     Ok(HitLocationType::Torso) // default
 }
+
+/// Extract a branch choice from a script/script file.
+///
+/// Looks for a line matching `# choice: <value>` (case-insensitive `choice:`)
+/// and returns the value if found.  Returns `None` if no such line exists.
+pub fn extract_choice_from_script(path: &Path) -> Result<Option<String>, JournalError> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| JournalError::Parse(format!("cannot read choice file: {}", e)))?;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = trimmed.strip_prefix("# choice:") {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Ok(Some(val.to_string()));
+            }
+        } else if let Some(val) = trimmed.strip_prefix("#choice:") {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Ok(Some(val.to_string()));
+            }
+        }
+    }
+    Ok(None)
+}

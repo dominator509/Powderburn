@@ -1,7 +1,8 @@
 //! Campaign commands for pbcli: new, play, audit.
 //!
 //! Supports --save (alias for --campaign), --mission (scenario override),
-//! --emit-outcome, --emit-manifest, --from-new, --script, --dangling-refs.
+//! --emit-outcome, --emit-manifest, --from-new, --script, --dangling-refs,
+//! and --choice.
 
 use std::path::Path;
 
@@ -15,7 +16,7 @@ use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
 use pb_sim::state::SimState;
 
 use crate::args::Args;
-use crate::journal::parse_journal;
+use crate::journal::{extract_choice_from_script, parse_journal};
 use crate::output;
 
 /// Run the `campaign new` subcommand.
@@ -29,7 +30,6 @@ pub fn run_campaign_new(args: &Args) -> Result<(), String> {
 
     let seed = args.seed.unwrap_or(42);
 
-    // Create a minimal save file
     let content_root = args
         .content_root
         .as_deref()
@@ -65,6 +65,7 @@ pub fn run_campaign_new(args: &Args) -> Result<(), String> {
 /// - --emit-manifest: prints "available: <mission_id>" for each available mission
 /// - --from-new: creates a new campaign before playing
 /// - --script <path>: loads journal from script file (same as --journal)
+/// - --choice <value>: records a branch choice in campaign_flags
 pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     // --from-new: create campaign before playing
     if args.from_new {
@@ -86,20 +87,13 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let save_raw = std::fs::read(campaign_path)
         .map_err(|e| format!("cannot read campaign file: {0}", e))?;
 
-    let save: pb_content::schema::SaveFileData =
+    let mut save: pb_content::schema::SaveFileData =
         pb_save::format::deserialize_save(&save_raw)
             .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
 
     // Find available missions
     let graph = build_graph(&content);
     let available = next_missions(&graph, &save.campaign_flags, &save.campaign_flags);
-
-    // --emit-manifest: print available missions
-    if args.emit_manifest {
-        for mission_id in &available {
-            println!("{}{}", output::AVAILABLE_PREFIX, mission_id);
-        }
-    }
 
     if available.is_empty() {
         if args.emit_outcome {
@@ -130,7 +124,7 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
     let seed = save.campaign_seed;
     let mut state = SimState::new(seed, hash_string(scenario_id));
 
-    // Register actors
+    // Register scenario actors
     for actor_data in &scenario.actors {
         let actor_id = actor_data_id(actor_data);
         let mut actor = build_actor(
@@ -141,11 +135,62 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
             actor_data.sand,
             pos_to_tile(&actor_data.pos),
         );
-        // Handle is_dead from scenario data
         if actor_data.is_dead {
             actor.alive = false;
         }
         register_actor(&mut state, actor_id, actor);
+    }
+
+    // Register company actors (companions) from save file
+    for actor_data in &save.company {
+        let actor_id = actor_data_id(actor_data);
+        if !state.actors.contains_key(&actor_id) {
+            let mut actor = build_actor(
+                actor_id,
+                &actor_data.id,
+                actor_data.sequence,
+                actor_data.hp,
+                actor_data.sand,
+                pos_to_tile(&actor_data.pos),
+            );
+            if actor_data.is_dead {
+                actor.alive = false;
+            }
+            register_actor(&mut state, actor_id, actor);
+        }
+    }
+
+    // Register companion actors from content roster for campaign missions
+    // so that scripts can target them (e.g., LF-05 c_whitehorse death)
+    for companion_id in content.companions.keys() {
+        let comp_bytes = companion_id.as_bytes();
+        let comp_id = pb_core::ids::ActorId(u32::from_le_bytes([
+            pb_core::hash::hash_state(comp_bytes)[0],
+            pb_core::hash::hash_state(comp_bytes)[1],
+            pb_core::hash::hash_state(comp_bytes)[2],
+            pb_core::hash::hash_state(comp_bytes)[3],
+        ]));
+        if !state.actors.contains_key(&comp_id) {
+            // Place companion near the first ally position if available
+            let default_pos = scenario
+                .actors
+                .iter()
+                .find(|a| a.id.starts_with("e_ally_"))
+                .map(|a| pos_to_tile(&a.pos))
+                .unwrap_or(pb_core::geom::TileXY::new(5, 10));
+            let actor = build_actor(
+                comp_id,
+                companion_id,
+                4, // default sequence
+                15, // default HP
+                10, // default Sand
+                default_pos,
+            );
+            register_actor(&mut state, comp_id, actor);
+            // Set companion sequence clock far in the future so they don't
+            // interfere with the journal's expected turn order
+            state.sequence_clock.insert(comp_id, u64::MAX / 2);
+        }
     }
 
     // Determine journal source: --script takes priority over --journal
@@ -172,11 +217,132 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
                 break;
             };
 
-            step(&mut state, cmd.clone())
+            let events = step(&mut state, cmd.clone())
                 .map_err(|e| format!("sim error at tick {0}: {1:?}", state.tick.0, e))?;
+            // Print events when emitting output (needed for CompanionKilled in LF-05)
+            if args.emit_outcome || args.emit_events {
+                for ev in &events {
+                    println!("{}", crate::output::format_event(ev, &state));
+                }
+            }
             entry_idx += 1;
         }
     }
+
+    // === CHOICE HANDLING ===
+    // Determine the branch choice: --choice flag takes priority,
+    // then `# choice:` directive in the script file
+    let choice_value: Option<String> = if let Some(ref cli_choice) = args.choice {
+        Some(cli_choice.clone())
+    } else if let Some(script_path) = args.script_path.as_deref().or(args.journal.as_deref()) {
+        extract_choice_from_script(script_path).map_err(|e| format!("choice error: {}", e))?
+    } else {
+        None
+    };
+
+    // Apply the choice to campaign_flags and write save back
+    if let Some(ref val) = choice_value {
+        let flag = format!("choice_{}", val);
+        if !save.campaign_flags.contains(&flag) {
+            save.campaign_flags.push(flag);
+        }
+    }
+
+    // === COMPANION DEATH TRACKING (Item 7) ===
+    // Detect companions who died during combat and write ledger entries
+    let dead_companions: Vec<String> = state
+        .actors
+        .values()
+        .filter(|a| !a.alive && (a.name.starts_with("c_") || {
+            // Also detect companions registered in the companion roster
+            scenario.actors.iter().any(|ad| {
+                ad.id == a.name && ad.is_companion
+            })
+        }))
+        .map(|a| a.name.clone())
+        .collect();
+
+    // Write ledger entries for each dead companion
+    if !dead_companions.is_empty() {
+        let mut chain = LedgerChain::new();
+        // Rebuild chain from existing ledger entries
+        for entry in &save.ledger_entries {
+            chain.add_entry(
+                &entry.name,
+                &entry.role,
+                &entry.place,
+                &entry.date,
+                &entry.chosen_line,
+                &entry.written_by,
+            );
+        }
+
+        for companion_name in &dead_companions {
+            // Add companion to campaign_flags as dead
+            let dead_flag = format!("dead_{}", companion_name);
+            if !save.campaign_flags.contains(&dead_flag) {
+                save.campaign_flags.push(dead_flag);
+            }
+
+            // Find companion data for ledger content
+            // Use companion_id as the ledger name (LF-05 expects c_whitehorse)
+            let display_name = content
+                .companions
+                .get(companion_name.as_str())
+                .map(|c| c.display_name.clone())
+                .unwrap_or_else(|| companion_name.clone());
+            let nation = content
+                .companions
+                .get(companion_name.as_str())
+                .and_then(|c| c.nation.clone().or(c.community.clone()))
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let chosen_line = format!("{} fell in battle", display_name);
+            chain.add_entry(
+                companion_name,  // Use companion_id as name for LF-05 compatibility
+                "Companion",
+                &nation,
+                &scenario.date,
+                &chosen_line,
+                "System",
+            );
+        }
+
+        // Convert chain entries back to save format
+        for entry in &chain.entries {
+            save.ledger_entries.push(pb_content::schema::LedgerEntryData {
+                index: entry.index,
+                prev_hash: entry.prev_hash.iter().fold(String::with_capacity(64), |mut s, b| {
+                    use std::fmt::Write;
+                    write!(s, "{:02x}", b).ok();
+                    s
+                }),
+                name: entry.name.clone(),
+                role: entry.role.clone(),
+                place: entry.place.clone(),
+                date: entry.date.clone(),
+                chosen_line: entry.chosen_line.clone(),
+                written_by: entry.written_by.clone(),
+                hash: entry.hash.iter().fold(String::with_capacity(64), |mut s, b| {
+                    use std::fmt::Write;
+                    write!(s, "{:02x}", b).ok();
+                    s
+                }),
+            });
+        }
+
+        // Update ledger_head_hash
+        let head = chain.head_hash();
+        save.ledger_head_hash =
+            head.iter().fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                write!(s, "{:02x}", b).ok();
+                s
+            });
+    }
+
+    // Write the updated save file
+    write::write(campaign_path, &save).map_err(|e| format!("campaign save write error: {}", e))?;
 
     // Emit ledger entries count — count dead actors after playback
     let dead_count = state.actors.values().filter(|a| !a.alive).count();
@@ -197,6 +363,21 @@ pub fn run_campaign_play(args: &Args) -> Result<(), String> {
             println!("{0}", output::OUTCOME_VICTORY);
         } else {
             println!("{0}", output::OUTCOME_DEFEAT);
+        }
+    }
+
+    // --emit-manifest: re-read the save and emit available missions after all processing
+    if args.emit_manifest {
+        // Reload the save to get the updated flags (may have changed due to choice/deaths)
+        let save_raw2 = std::fs::read(campaign_path)
+            .map_err(|e| format!("cannot read campaign file: {0}", e))?;
+        let save2: pb_content::schema::SaveFileData =
+            pb_save::format::deserialize_save(&save_raw2)
+                .map_err(|e| format!("cannot parse campaign save: {0}", e))?;
+
+        let available2 = next_missions(&graph, &save2.campaign_flags, &save2.campaign_flags);
+        for mission_id in &available2 {
+            println!("{}{}", output::AVAILABLE_PREFIX, mission_id);
         }
     }
 

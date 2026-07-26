@@ -41,7 +41,7 @@
             is_dead: false,
         ),
         (
-            id: "e_target",
+            id: "e_bandit_02",
             archetype_id: "target",
             faction_id: "neutral",
             attributes: (grit: 4, nerve: 4, wind: 5, hands: 4, eyes: 4, savvy: 3, luck: 3),
@@ -71,7 +71,7 @@
             id: "obj_called_shot",
             description: "Hit the target with a called shot to the gun arm",
             kind: "HitLocation",
-            actor_ids: ["e_target"],
+            actor_ids: ["e_bandit_02"],
         ),
     ],
     victory_conditions: ["target_hit_at_gun_arm"],

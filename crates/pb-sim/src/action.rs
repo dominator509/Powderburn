@@ -5,10 +5,9 @@
 
 #![forbid(unsafe_code)]
 
-use pb_core::event::{Event, HitLocationType};
+use pb_core::event::{Event, HitLocationType, WoundType};
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
-use pb_rng::{PbRng, StreamTag};
 
 use crate::state::{ActorState, SimError, SimState};
 
@@ -131,98 +130,75 @@ fn execute_move(state: &mut SimState, actor_id: ActorId, target: TileXY) -> Vec<
     vec![]
 }
 
-/// Execute a shot action.
+/// Execute a shot action using the full shot pipeline.
 ///
-/// This is a simplified shot pipeline for M2. The full ten-stage pipeline
-/// lives in `crate::shot`.
+/// Delegates to `crate::shot::resolve_shot` for event computation,
+/// then applies state mutations (damage, wounds, alive flag) based
+/// on the returned events.
 fn execute_shot(
     state: &mut SimState,
     actor_id: ActorId,
     target: ActorId,
-    aimed: bool,
+    _aimed: bool,
     called: Option<HitLocationType>,
 ) -> Vec<Event> {
-    // Check target exists
-    let target_alive = state.actors.get(&target).is_some_and(|a| a.alive);
+    // Use the full shot pipeline (ten-stage resolve from shot.rs)
+    let events = match crate::shot::resolve_shot(state, actor_id, target, called) {
+        Ok(evts) => evts,
+        Err(_) => return vec![],
+    };
 
-    if !target_alive {
-        return vec![];
+    // Apply damage, wounds, and death to the target actor based on events
+    let mut damage = 0i32;
+    let mut wound: Option<WoundType> = None;
+    let mut had_hit = false;
+    for ev in &events {
+        match ev {
+            Event::DamageApplied { actor: _, damage: d } => {
+                damage = *d;
+            }
+            Event::WoundApplied { actor: _, wound: w } => {
+                wound = Some(*w);
+            }
+            Event::HitLocation { actor: _, location: _ } => {
+                had_hit = true;
+            }
+            _ => {}
+        }
     }
 
-    // Simple hit check: use RNG
-    let tick = state.tick.0;
-    let seed = state.seed;
-    let scenario = state.scenario_id;
-    let actor_num = actor_id.0;
-
-    // Aimed shots get +15 to hit bonus
-    let base_hit: i32 = if aimed { 75 } else { 60 };
-    let hit_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::ToHit, 0, 99);
-    let hit = hit_roll < base_hit;
-
-    let mut events = vec![Event::ShotHit {
-        actor: actor_id,
-        target,
-        hit,
-    }];
-
-    if hit {
-        // If called shot, use the specified location; otherwise random
-        let location = if let Some(loc) = called {
-            loc
-        } else {
-            let loc_roll = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::Damage, 0, 99);
-            if loc_roll < 10 {
-                HitLocationType::Head
-            } else if loc_roll < 13 {
-                HitLocationType::Eyes
-            } else if loc_roll < 48 {
-                HitLocationType::Torso
-            } else if loc_roll < 60 {
-                HitLocationType::Vitals
-            } else if loc_roll < 75 {
-                HitLocationType::GunArm
-            } else if loc_roll < 85 {
-                HitLocationType::OffArm
-            } else {
-                HitLocationType::Legs
-            }
-        };
-
-        events.push(Event::HitLocation {
-            actor: target,
-            location,
-        });
-
-        // Simple damage
-        let damage = PbRng::draw(seed, scenario, tick, actor_num, StreamTag::Damage, 5, 15);
-        events.push(Event::DamageApplied {
-            actor: target,
-            damage,
-        });
-
-        // If damage > 0, apply wound
-        if damage > 5 {
-            let wound_type = pb_core::event::WoundType::Bleeding;
-            events.push(Event::WoundApplied {
-                actor: target,
-                wound: wound_type,
-            });
-
-            if let Some(t_actor) = state.actors.get_mut(&target) {
-                t_actor.wounds.push(wound_type);
-                t_actor.hit_points -= damage;
-                if t_actor.hit_points <= 0 {
-                    t_actor.alive = false;
-                    events.push(Event::ActorKilled { actor: target });
+    if had_hit && damage > 0 {
+        if let Some(t_actor) = state.actors.get_mut(&target) {
+            t_actor.hit_points -= damage;
+            if let Some(w) = wound {
+                if !t_actor.wounds.contains(&w) {
+                    t_actor.wounds.push(w);
                 }
+            }
+            if t_actor.hit_points <= 0 {
+                t_actor.alive = false;
             }
         }
     }
 
+    // After resolve_shot, check if the target died and add appropriate events.
+    // resolve_shot does NOT emit ActorKilled or CompanionKilled — those are
+    // the caller's responsibility after applying state changes.
+    let target_now_dead = state.actors.get(&target).map_or(false, |a| !a.alive);
+    let had_death_event = events.iter().any(|e| matches!(e, Event::ActorKilled { .. }));
+    if target_now_dead && !had_death_event {
+        // Build a mutable events list that we can extend
+        let mut extended = events.clone();
+        let name = state.actors.get(&target).map(|a| a.name.clone()).unwrap_or_default();
+        extended.push(Event::ActorKilled { actor: target });
+        if name.starts_with("c_") {
+            extended.push(Event::CompanionKilled { id: name });
+        }
+        return extended;
+    }
+
     events
 }
-
 /// Execute a reload action (stub).
 fn execute_reload(_state: &mut SimState, _actor_id: ActorId) -> Vec<Event> {
     vec![]

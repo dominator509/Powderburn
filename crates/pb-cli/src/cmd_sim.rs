@@ -6,6 +6,8 @@ use std::path::Path;
 
 use pb_content::load::load_all;
 use pb_content::schema::ActorData;
+use pb_save::format::{deserialize_save, serialize_save};
+use pb_save::ledger::LedgerChain;
 use pb_sim::action::{step, Command};
 use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
 use pb_sim::hash::compute_state_hash;
@@ -85,8 +87,7 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
 
             if args.emit_events {
                 for ev in &events {
-                    let formatted = format!("{0}", ev);
-                    println!("{0}", formatted);
+                    println!("{}", output::format_event(ev, &state));
                 }
             }
 
@@ -125,8 +126,7 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
                         .map_err(|e| format!("sim error at tick {0}: {1:?}", state.tick.0, e))?;
                     if args.emit_events {
                         for ev in &events {
-                            let formatted = format!("{0}", ev);
-                            println!("{0}", formatted);
+                            println!("{}", output::format_event(ev, &state));
                         }
                     }
                 }
@@ -153,34 +153,84 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
 }
 
 fn run_sim_resume(resume_path: &Path, args: &Args) -> Result<(), String> {
-    let data = std::fs::read_to_string(resume_path)
+    let raw = std::fs::read(resume_path)
         .map_err(|e| format!("cannot read resume file '{0}': {1}", resume_path.display(), e))?;
 
-    let mut saved_tick: Option<u64> = None;
-    let mut saved_hash: Option<String> = None;
-    for line in data.lines() {
-        if let Some(tick_str) = line.strip_prefix("tick=") {
-            saved_tick = Some(
-                tick_str
-                    .parse()
-                    .map_err(|e| format!("invalid tick in resume file: {0}", e))?,
-            );
-        } else if let Some(hash_str) = line.strip_prefix("hash=") {
-            saved_hash = Some(hash_str.trim().to_string());
+    if raw.starts_with(b"PBSV") {
+        // Binary PBSV format — deserialize as SaveFileData
+        let save =
+            deserialize_save(&raw).map_err(|e| format!("save deserialize error: {0}", e))?;
+
+        let hash = save.ledger_head_hash.clone();
+        let _tick = save.written_at_tick;
+
+        // Rebuild LedgerChain from ledger entries and verify integrity
+        let mut chain = LedgerChain::new();
+        for entry_data in &save.ledger_entries {
+            chain.entries.push(pb_save::ledger::LedgerEntry {
+                index: entry_data.index,
+                prev_hash: hex_to_bytes(&entry_data.prev_hash),
+                name: entry_data.name.clone(),
+                role: entry_data.role.clone(),
+                place: entry_data.place.clone(),
+                date: entry_data.date.clone(),
+                chosen_line: entry_data.chosen_line.clone(),
+                written_by: entry_data.written_by.clone(),
+                hash: hex_to_bytes(&entry_data.hash),
+            });
+        }
+
+        let chain_intact = chain.verify_chain();
+
+        println!("{0}{1}", output::RESUMED_HASH_FORMAT, hash);
+        if chain_intact {
+            println!("{}", output::CHAIN_INTACT);
+        } else {
+            println!("chain: TAMPERED");
+        }
+
+        if args.emit_hash {
+            println!("{0}{1}", output::STATE_HASH_FORMAT, hash);
+        }
+    } else {
+        // Legacy text format — fallback parsing
+        let data = String::from_utf8(raw).map_err(|_| "resume file is not valid UTF-8".to_string())?;
+
+        let mut saved_tick: Option<u64> = None;
+        let mut saved_hash: Option<String> = None;
+        for line in data.lines() {
+            if let Some(tick_str) = line.strip_prefix("tick=") {
+                saved_tick = Some(
+                    tick_str
+                        .parse()
+                        .map_err(|e| format!("invalid tick in resume file: {0}", e))?,
+                );
+            } else if let Some(hash_str) = line.strip_prefix("hash=") {
+                saved_hash = Some(hash_str.trim().to_string());
+            }
+        }
+
+        let hash = saved_hash.ok_or_else(|| "resume file missing hash".to_string())?;
+        let _tick = saved_tick.unwrap_or(0);
+
+        println!("{0}{1}", output::RESUMED_HASH_FORMAT, hash);
+        println!("{}", output::CHAIN_INTACT);
+
+        if args.emit_hash {
+            println!("{0}{1}", output::STATE_HASH_FORMAT, hash);
         }
     }
 
-    let hash = saved_hash.ok_or_else(|| "resume file missing hash".to_string())?;
-    let _tick = saved_tick.unwrap_or(0);
-
-    println!("{0}{1}", output::RESUMED_HASH_FORMAT, hash);
-    println!("{0}", output::CHAIN_INTACT);
-
-    if args.emit_hash {
-        println!("{0}{1}", output::STATE_HASH_FORMAT, hash);
-    }
-
     Ok(())
+}
+
+/// Parse a 64-character hex string into a 32-byte array.
+fn hex_to_bytes(s: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("valid hex in save file");
+    }
+    out
 }
 
 /// Run the `replay` subcommand: load journal, run sim, compare hash.
@@ -280,7 +330,24 @@ fn save_state(state: &SimState, path: &Path) -> Result<(), String> {
         write!(s, "{:02x}", b).ok();
         s
     });
-    let data = format!("tick={0}\nhash={1}\n", state.tick.0, hex);
+
+    // Write PBSV binary format
+    let save = pb_content::schema::SaveFileData {
+        format_version: 1,
+        ruleset_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
+        content_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
+        campaign_seed: state.seed,
+        ledger_head_hash: hex,
+        ledger_entries: vec![],
+        campaign_flags: vec![],
+        company: vec![],
+        sim_snapshot: None,
+        written_at_tick: state.tick.0,
+    };
+
+    let data = serialize_save(&save).map_err(|e| format!("serialize error: {0}", e))?;
     std::fs::write(path, &data).map_err(|e| format!("write error: {0}", e))
 }
 

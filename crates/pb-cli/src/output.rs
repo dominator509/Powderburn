@@ -1,6 +1,9 @@
 //! Sentinel constants for pbcli output formatting.
 //! Each constant provides a canonical prefix string.
 
+use pb_core::event::Event;
+use pb_sim::state::SimState;
+
 /// Prefix for state hash output.
 pub const STATE_HASH_FORMAT: &str = "state-hash: ";
 
@@ -69,3 +72,52 @@ pub const WORST_AI_TURN: &str = "worst-ai-turn-ms: ";
 
 /// Worst sim step time prefix.
 pub const WORST_SIM_STEP: &str = "worst-sim-step-ms: ";
+
+/// Format an event using string names from simulation state.
+///
+/// Looks up actor IDs in `state.actors` to produce human-readable names
+/// (e.g. `actor=e_bandit_02` instead of `actor=ActorId(42)`).
+pub fn format_event(event: &Event, state: &SimState) -> String {
+    let name = |actor_id| {
+        state
+            .actors
+            .get(actor_id)
+            .map(|a| a.name.as_str())
+            .unwrap_or("unknown")
+    };
+
+    match event {
+        Event::HitLocation { actor, location } => {
+            format!("event: HitLocation actor={} location={}", name(actor), location)
+        }
+        Event::DamageApplied { actor, damage } => {
+            format!("event: DamageApplied actor={} damage={}", name(actor), damage)
+        }
+        Event::WoundApplied { actor, wound } => {
+            format!("event: WoundApplied actor={} wound={}", name(actor), wound)
+        }
+        Event::WeaponDropped { actor, item } => {
+            format!("event: WeaponDropped actor={} item={}", name(actor), item)
+        }
+        Event::Misfire { actor } => {
+            format!("event: Misfire actor={}", name(actor))
+        }
+        Event::ShotHit { actor, target, hit } => {
+            format!(
+                "event: ShotHit actor={} target={} hit={}",
+                name(actor),
+                name(target),
+                hit
+            )
+        }
+        Event::ActorKilled { actor } => {
+            format!("event: ActorKilled actor={}", name(actor))
+        }
+        Event::SmokeDeposited { tile, density } => {
+            format!("event: SmokeDeposited tile={} density={}", tile, density)
+        }
+        Event::CompanionKilled { id } => {
+            format!("event: CompanionKilled id={}", id)
+        }
+    }
+}

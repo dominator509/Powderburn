@@ -1,6 +1,7 @@
 # branch_kill_teague.script
 # Campaign script that kills Teague
 # Same combat as spare branch but with different choice outcome
+# choice: kill_teague
 0 3037190930 move x=8 y=6
 0 3769966676 Hold
 0 2180853174 move x=8 y=5

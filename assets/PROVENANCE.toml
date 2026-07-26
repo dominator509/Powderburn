@@ -1,0 +1,10 @@
+# POWDERBURN Asset Provenance Manifest
+# All assets in this directory and its subdirectories are covered by this file.
+# Every asset must have a source, license, and attribution.
+
+[asset_root]
+path = "/root/powderburn/assets"
+last_verified = "2026-07-26"
+
+[sprite_files]
+sprites = { source = "generated", license = "GPL-3.0-only", attribution = "POWDERBURN Project" }

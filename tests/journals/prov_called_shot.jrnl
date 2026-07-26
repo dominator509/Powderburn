@@ -1,28 +1,28 @@
 # prov_called_shot.jrnl
 # Scenario: e_shooter (1679563958) at (5,5), hp 35, seq 7, ap 8
-#           e_target (4138600959) at (8,5), hp 40, seq 3
+#           e_bandit_02 (347187621) at (8,5), hp 40, seq 3
 # Turn order: e_shooter first (seq 7 > seq 3)
 # Called shot to GunArm (5 AP) should trigger:
-#   event: HitLocation actor=e_target location=GunArm
-#   event: WoundApplied actor=e_target wound=Broken
-#   event: WeaponDropped actor=e_target item=colt_army_1860
-0 1679563958 CalledShot target=4138600959 loc=GunArm
-0 4138600959 Hold
-1 1679563958 CalledShot target=4138600959 loc=GunArm
-1 4138600959 Hold
-2 1679563958 CalledShot target=4138600959 loc=GunArm
-2 4138600959 Hold
-3 1679563958 CalledShot target=4138600959 loc=GunArm
-3 4138600959 Hold
-4 1679563958 CalledShot target=4138600959 loc=GunArm
-4 4138600959 Hold
-5 1679563958 CalledShot target=4138600959 loc=GunArm
-5 4138600959 Hold
-6 1679563958 CalledShot target=4138600959 loc=GunArm
-6 4138600959 Hold
-7 1679563958 CalledShot target=4138600959 loc=GunArm
-7 4138600959 Hold
-8 1679563958 CalledShot target=4138600959 loc=GunArm
-8 4138600959 Hold
-9 1679563958 CalledShot target=4138600959 loc=GunArm
-9 4138600959 Hold
+#   event: HitLocation actor=e_bandit_02 location=GunArm
+#   event: WoundApplied actor=e_bandit_02 wound=Broken
+#   event: WeaponDropped actor=e_bandit_02 item=colt_army_1860
+0 1679563958 CalledShot target=347187621 loc=GunArm
+0 347187621 Hold
+1 1679563958 CalledShot target=347187621 loc=GunArm
+1 347187621 Hold
+2 1679563958 CalledShot target=347187621 loc=GunArm
+2 347187621 Hold
+3 1679563958 CalledShot target=347187621 loc=GunArm
+3 347187621 Hold
+4 1679563958 CalledShot target=347187621 loc=GunArm
+4 347187621 Hold
+5 1679563958 CalledShot target=347187621 loc=GunArm
+5 347187621 Hold
+6 1679563958 CalledShot target=347187621 loc=GunArm
+6 347187621 Hold
+7 1679563958 CalledShot target=347187621 loc=GunArm
+7 347187621 Hold
+8 1679563958 CalledShot target=347187621 loc=GunArm
+8 347187621 Hold
+9 1679563958 CalledShot target=347187621 loc=GunArm
+9 347187621 Hold

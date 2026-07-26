@@ -61,6 +61,8 @@ pub struct Args {
     pub script_path: Option<PathBuf>,
     /// GPU adapter path for headless capture.
     pub adapter: Option<String>,
+    /// Campaign branch choice (--choice <value>).
+    pub choice: Option<String>,
 }
 
 impl Args {
@@ -97,6 +99,7 @@ impl Args {
         let mut from_new = false;
         let mut script_path: Option<PathBuf> = None;
         let mut adapter: Option<String> = None;
+        let mut choice: Option<String> = None;
 
         let mut i = 1; // skip program name
         while i < raw.len() {
@@ -182,11 +185,12 @@ impl Args {
                 "--adapter" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--adapter requires a value")?;
-                    adapter = Some(
-                        val.to_str()
-                            .ok_or("--adapter value not UTF-8")?
-                            .to_string(),
-                    );
+                    adapter = Some(val.to_str().ok_or("--adapter value not UTF-8")?.to_string());
+                }
+                "--choice" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--choice requires a value")?;
+                    choice = Some(val.to_str().ok_or("--choice value not UTF-8")?.to_string());
                 }
                 "--suspend-at-tick" => {
                     i += 1;
@@ -278,6 +282,7 @@ impl Args {
             from_new,
             script_path,
             adapter,
+            choice,
         })
     }
 }
