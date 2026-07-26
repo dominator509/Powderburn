@@ -5,3 +5,4 @@
 2026-07-26T02:28:45Z | forge | EP-000 | MILESTONE_PASS | M3 skeleton created
 2026-07-26T02:28:54Z | forge | EP-000 | MILESTONE_PASS | M4 commands: resolved
 2026-07-26T02:29:22Z | forge | EP-000 | MILESTONE_PASS | M5 inventory: recorded
+2026-07-26T02:29:34Z | forge | EP-000 | NODE_DONE | all 5 milestones passed; preflight: ok; expected files audit clean
