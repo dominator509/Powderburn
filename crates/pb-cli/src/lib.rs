@@ -6,3 +6,4 @@ pub mod cmd_replay;
 pub mod cmd_campaign;
 pub mod cmd_bench;
 pub mod cmd_selftest;
+pub mod cmd_a11y;
