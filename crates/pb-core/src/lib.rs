@@ -1,6 +1,8 @@
 //! See ARCHITECTURE.md for this crate's place in the import law.
 #![forbid(unsafe_code)]
 
+use core::ops::{Add, Div, Mul, Neg, Sub};
+
 /// A signed 32-bit fixed-point number with 10 fractional bits (Q22.10).
 ///
 /// Representation: `raw = (value * 1024) as i32`, rounded toward negative infinity.
@@ -44,31 +46,46 @@ impl Fix32 {
     pub const fn from_raw(v: i32) -> Self {
         Fix32(v)
     }
+}
 
-    /// Multiply two fixed-point numbers, rounding half toward zero.
-    pub fn mul(self, rhs: Self) -> Self {
+impl Mul for Fix32 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
         let product = self.0 as i64 * rhs.0 as i64;
         Fix32((product / SCALE as i64) as i32)
     }
+}
 
-    /// Divide two fixed-point numbers, rounding half toward zero.
-    pub fn div(self, rhs: Self) -> Self {
+impl Div for Fix32 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self {
         let quotient = (self.0 as i64 * SCALE as i64) / rhs.0 as i64;
         Fix32(quotient as i32)
     }
+}
 
-    /// Add two fixed-point numbers.
-    pub fn add(self, rhs: Self) -> Self {
+impl Add for Fix32 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
         Fix32(self.0.wrapping_add(rhs.0))
     }
+}
 
-    /// Subtract two fixed-point numbers.
-    pub fn sub(self, rhs: Self) -> Self {
+impl Sub for Fix32 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
         Fix32(self.0.wrapping_sub(rhs.0))
     }
+}
 
-    /// Negate.
-    pub fn neg(self) -> Self {
+impl Neg for Fix32 {
+    type Output = Self;
+
+    fn neg(self) -> Self {
         Fix32(self.0.wrapping_neg())
     }
 }
@@ -81,16 +98,14 @@ mod tests {
     fn fix32_mul_exact_integer() {
         let a = Fix32::from_int(3);
         let b = Fix32::from_int(4);
-        assert_eq!(a.mul(b).to_int_floor(), 12);
+        assert_eq!((a * b).to_int_floor(), 12);
     }
 
     #[test]
     fn fix32_div_rounds_toward_negative() {
         // 1/3 * 3 = 0.999... which floors to 0
-        let one = Fix32::ONE;
-        let three = Fix32::from_int(3);
-        let result = one.div(three).mul(three).to_int_floor();
-        assert_eq!(result, 0);
+        let result = (Fix32::ONE / Fix32::from_int(3)) * Fix32::from_int(3);
+        assert_eq!(result.to_int_floor(), 0);
     }
 
     #[test]
