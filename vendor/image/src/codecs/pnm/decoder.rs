@@ -540,14 +540,17 @@ trait HeaderReader: Read {
             }
         }
 
-        let (Some(h), Some(w), Some(d), Some(m)) = (height, width, depth, maxval) else {
-            return Err(DecoderError::HeaderLineMissing {
-                height,
-                width,
-                depth,
-                maxval,
+        let (h, w, d, m) = match (height, width, depth, maxval) {
+            (Some(h), Some(w), Some(d), Some(m)) => (h, w, d, m),
+            _ => {
+                return Err(DecoderError::HeaderLineMissing {
+                    height,
+                    width,
+                    depth,
+                    maxval,
+                }
+                .into())
             }
-            .into());
         };
 
         let tupltype = match tupltype {

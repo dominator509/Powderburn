@@ -6,18 +6,7 @@
 
 ## Changes
 
-### Version 0.25.5
-
-Features:
- - Added support for decoding 10-bit and 12-bit AVIF
- - Initial, opt-in serde support for an enum. This may be extended to other types in the future.
-
-Bug fixes:
- - [Multiple bug fixes in AVIF decoding](https://github.com/image-rs/image/pull/2373)
- - The `rayon` feature now correctly toggles the use of `rayon` when encoding AVIF. (Previously it would be either always on or always off depending on the version of the `ravif` crate in your dependency tree.)
- - "jfif" file extension for JPEG images is now recognized
-
-### Version 0.25.4
+### Version 0.25.3
 
 Features:
  - Much faster decoding of lossless WebP due to a variety of optimizations. Our benchmarks show 2x to 2.5x improvement.
@@ -31,12 +20,7 @@ Features:
 Bug fixes:
  - Fixed some APNG images being decoded incorrectly
  - Fixed the iterator over animated WebP frames to return `None` instead of an error when the end of the animation is reached
-
-### Version 0.25.3
-
-Yanked! This version accidentally missed a commit that should have been
-included with the release. The `Orientation` struct should be in the
-appropriate module instead of the top-level. This release won't be supported.
+ - Toggling the `rayon` feature now correctly toggles the use of `rayon` within `ravif` (AVIF encoder). Previously it would be either always on or always off, depending on the `ravif` version.
 
 ### Version 0.25.2
 

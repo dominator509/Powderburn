@@ -421,8 +421,9 @@ impl SampleLayout {
         let idx_x = x.checked_mul(self.width_stride);
         let idx_y = y.checked_mul(self.height_stride);
 
-        let (Some(idx_c), Some(idx_x), Some(idx_y)) = (idx_c, idx_x, idx_y) else {
-            return None;
+        let (idx_c, idx_x, idx_y) = match (idx_c, idx_x, idx_y) {
+            (Some(idx_c), Some(idx_x), Some(idx_y)) => (idx_c, idx_x, idx_y),
+            _ => return None,
         };
 
         Some(0usize)

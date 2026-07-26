@@ -14,3 +14,4 @@ workspace = true
     pb-content = { path = "../pb-content" }
     wgpu.workspace = true
     image.workspace = true
+    sha2.workspace = true
