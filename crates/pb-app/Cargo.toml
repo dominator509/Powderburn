@@ -18,6 +18,7 @@ workspace = true
     pb-save = { path = "../pb-save" }
     pb-render = { path = "../pb-render" }
     pb-audio = { path = "../pb-audio" }
+    serde.workspace = true
     tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
 
 [[bin]]

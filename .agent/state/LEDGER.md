@@ -35,3 +35,4 @@
 2026-07-26T04:14:43Z | IpMan | EP-005 | MILESTONE_PASS | M1 capture: wrote frame
 2026-07-26T04:28:51Z | IpMan | EP-005 | MILESTONE_PASS | M2 battlefield renders with 4274 unique colors
 2026-07-26T04:32:21Z | IpMan | EP-005 | MILESTONE_PASS | M3 smoke, fog, LOS overlay infrastructure complete
+2026-07-26T04:33:58Z | IpMan | EP-005 | MILESTONE_PASS | M4 screens, input, settings

@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 
 mod headless;
+mod screens;
+pub mod input;
+pub mod settings;
 
 use std::path::PathBuf;
 
