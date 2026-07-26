@@ -13,7 +13,7 @@
 //! * **Structural invariants** — non-empty identifiers, sorted range bands,
 //!   valid dice rolls.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::schema::{Content, DiceRoll};
 
@@ -134,8 +134,7 @@ fn check_duplicate_ids(content: &Content, out: &mut Vec<Diagnostic>) {
 
     // Use a set to track seen IDs; when we see an ID a second time, emit a
     // diagnostic for every entry that shares that ID.
-    let mut seen: std::collections::HashMap<&str, Vec<&IdEntry<'_>>> =
-        std::collections::HashMap::new();
+    let mut seen: BTreeMap<&str, Vec<&IdEntry<'_>>> = BTreeMap::new();
 
     for entry in &entries {
         seen.entry(entry.id).or_default().push(entry);
@@ -161,7 +160,7 @@ fn check_duplicate_ids(content: &Content, out: &mut Vec<Diagnostic>) {
 /// E-REF-WEAPON — check that equipped_primary, equipped_sidearm, and
 /// ItemStack.item_id values refer to a known weapon.
 fn check_weapon_references(content: &Content, out: &mut Vec<Diagnostic>) {
-    let weapon_ids: HashSet<&str> = content.weapons.keys().map(String::as_str).collect();
+    let weapon_ids: BTreeSet<&str> = content.weapons.keys().map(String::as_str).collect();
 
     for scenario in content.scenarios.values() {
         for actor in &scenario.actors {
@@ -205,7 +204,7 @@ fn check_weapon_references(content: &Content, out: &mut Vec<Diagnostic>) {
 /// E-REF-COMPANION — check that companion_gates values in campaign nodes
 /// refer to a known companion.
 fn check_companion_references(content: &Content, out: &mut Vec<Diagnostic>) {
-    let companion_ids: HashSet<&str> = content.companions.keys().map(String::as_str).collect();
+    let companion_ids: BTreeSet<&str> = content.companions.keys().map(String::as_str).collect();
 
     for node in content.campaign_nodes.values() {
         for gate_id in &node.companion_gates {
@@ -225,7 +224,7 @@ fn check_companion_references(content: &Content, out: &mut Vec<Diagnostic>) {
 /// E-REF-SCENARIO — check that scenario_id values in campaign nodes refer
 /// to a known scenario.
 fn check_scenario_references(content: &Content, out: &mut Vec<Diagnostic>) {
-    let scenario_ids: HashSet<&str> = content.scenarios.keys().map(String::as_str).collect();
+    let scenario_ids: BTreeSet<&str> = content.scenarios.keys().map(String::as_str).collect();
 
     for node in content.campaign_nodes.values() {
         if let Some(ref sc_id) = node.scenario_id {

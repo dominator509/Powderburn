@@ -1,0 +1,33 @@
+[project]
+name = "POWDERBURN: The Ledger of Elk Creek"
+identifier = "powderburn"
+version = "0.1.0"
+description = "A squad tactical RPG set on the American frontier, 1867–1878."
+license = "GPL-3.0-only"
+
+[build]
+rust_edition = "2021"
+rust_version = "1.85.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+ron = "0.8"
+
+[content]
+# Content directory structure:
+#   content/rules/          - Game rules tables (weapons, etc.)
+#   content/scenarios/      - Mission scenario files
+#   content/companions/     - Companion character definitions
+#   content/campaign/       - Campaign node graph
+#   content/lint/           - Validation rule files
+format_version = "1"
+
+[provenance]
+# All rules in content/rules/ are derived from SPEC-001 section 11 (Weapons)
+# and authoritative historical references listed in each record's sources field.
+# All companion definitions in content/companions/ are derived from
+# SPEC-000 section 5.3 with real attributes designed to sum to 40.
+# All scenario definitions are proving-ground test scenarios for simulation
+# validation, not campaign missions.
+sources_verified = true
+representation_law_applied = false  # Applied during full content validation pass

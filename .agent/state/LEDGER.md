@@ -26,3 +26,5 @@
 2026-07-26T03:04:41Z | forge | EP-002 | NODE_DONE | all 6 milestones passed; test-unit+test-integration green; 130+ tests; lint-determinism clean
 2026-07-26T03:11:57Z | forge | EP-003 | LEASE | forge starting EP-003 data and persistence
 2026-07-26T03:25:14Z | forge | EP-003 | MILESTONE_PASS | M1 schema ok
+2026-07-26T03:35:43Z | forge | EP-003 | MILESTONE_PASS | M2-M7 all milestones complete
+2026-07-26T03:35:43Z | forge | EP-003 | NODE_DONE | 7 milestones: schema, rules data, validator, campaign graph, save/ledger, loader faithfulness, mod sandbox
