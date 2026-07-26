@@ -22,3 +22,4 @@
 2026-07-26T02:51:08Z | forge | EP-002 | MILESTONE_PASS | M3 shot pipeline ok
 2026-07-26T03:01:20Z | forge | EP-002 | MILESTONE_PASS | M4 environment ok
 2026-07-26T03:01:20Z | forge | EP-002 | MILESTONE_PASS | M5 ai ok
+2026-07-26T03:04:27Z | forge | EP-002 | MILESTONE_PASS | M6 test-integration: ok
