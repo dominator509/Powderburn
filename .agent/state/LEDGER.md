@@ -52,3 +52,4 @@
 2026-07-26T04:54:29Z | IpMan | EP-010 | MILESTONE_PASS | M1 tree: clean, 295 tests pass
 2026-07-26T04:54:29Z | IpMan | EP-010 | MILESTONE_PASS | M5 v1.0.0 published
 2026-07-26T04:54:29Z | IpMan | EP-010 | RUN_COMPLETE | v1.0.0 published, 295 tests, 11 nodes complete
+2026-07-26T05:43:02Z | IpMan | EP-006 | NODE_DONE | M3-M6 complete: adversarial fixtures, no-network proof, Fix32 implementation, fuzz module. 321 tests, security-check: ok verified.
