@@ -35,6 +35,10 @@ pub enum GameScreen {
     Title,
     Combat,
     AfterAction,
+    /// Save slot selection screen.
+    SaveSlot,
+    /// Load slot selection screen.
+    LoadSlot,
 }
 
 /// Top-level game state.
@@ -52,6 +56,10 @@ pub struct GameState {
     pub camera_y: f32,
     pub tick: u64,
     pub message: String,
+    /// Whether the game is paused (pause menu overlay shown).
+    pub paused: bool,
+    /// Audio system for sound effect playback.
+    pub audio: Option<pb_audio::AudioSystem>,
 }
 
 impl GameState {
@@ -69,6 +77,8 @@ impl GameState {
             camera_y: 0.0,
             tick: 0,
             message: String::new(),
+            paused: false,
+            audio: None,
         }
     }
 }

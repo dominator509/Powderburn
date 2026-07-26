@@ -11,13 +11,17 @@
 #![allow(deprecated)]
 
 mod combat;
+mod hud;
 mod menu;
 mod state;
+mod saveload;
+mod afteraction;
 
 use std::path::Path;
 use std::sync::Arc;
 
 use pb_render::device::RenderDevice;
+use pb_render::text::BitmapFont;
 use state::{GameScreen, GameState, InteractionPhase, PlayerAction};
 use winit::event::{ElementState, Event, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -113,9 +117,36 @@ fn main() -> Result<(), String> {
         headless: false,
     });
 
+    // ── Load bitmap font ──────────────────────────────────────────────
+    let font_png_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/font.png");
+    let font_png_bytes = std::fs::read(&font_png_path)
+        .map_err(|e| format!("failed to read font.png: {e}"))?;
+    let font = BitmapFont::from_png_bytes(&device, &queue, &font_png_bytes)?;
+    println!("font: loaded {} glyphs from {}", 96, font_png_path.display());
+
+    // ── HUD renderer ──────────────────────────────────────────────────
+    let hud_renderer = hud::HudRenderer::new(
+        &device,
+        &font,
+        surface_format,
+    );
+
+    // ── After-action report renderer ──────────────────────────────────
+    let after_action_renderer = afteraction::AfterActionRenderer::new(
+        &device,
+        &font,
+        surface_format,
+    );
+
     // ── Game state ────────────────────────────────────────────────────
     let mut game_state = GameState::new();
     println!("POWDERBURN — Press ENTER to begin");
+
+    // Initialize audio system
+    let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    game_state.audio = Some(pb_audio::AudioSystem::new(&asset_root));
+    println!("audio: initialized with assets/audio/");
 
     // Content root (resolved at compile time via env! macro)
     let content_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
@@ -143,8 +174,32 @@ fn main() -> Result<(), String> {
                     return;
                 }
 
-                // Escape always exits
+                // ── Handle Escape: on Title/AfterAction exit, on Combat toggle pause ──
                 if matches!(kevent.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                    if game_state.screen == GameScreen::Combat {
+                        game_state.paused = !game_state.paused;
+                        game_state.message = if game_state.paused {
+                            "Game paused — press ESC to resume, S to save, L to load, Q to quit"
+                                .to_string()
+                        } else {
+                            "Resumed".to_string()
+                        };
+                        return;
+                    }
+                    if game_state.screen == GameScreen::AfterAction
+                        || game_state.screen == GameScreen::Title
+                    {
+                        target.exit();
+                        return;
+                    }
+                    // On SaveSlot/LoadSlot, go back
+                    if game_state.screen == GameScreen::SaveSlot
+                        || game_state.screen == GameScreen::LoadSlot
+                    {
+                        game_state.screen = GameScreen::Combat;
+                        game_state.paused = true;
+                        return;
+                    }
                     target.exit();
                     return;
                 }
@@ -170,8 +225,105 @@ fn main() -> Result<(), String> {
                     return;
                 }
 
-                // ── Combat keyboard actions ──────────────────────────
-                if game_state.screen == GameScreen::Combat {
+                // ── AfterAction screen: Enter → return to Title ─────────
+                if game_state.screen == GameScreen::AfterAction {
+                    if matches!(kevent.physical_key, PhysicalKey::Code(KeyCode::Enter)) {
+                        game_state.screen = GameScreen::Title;
+                        game_state.sim = None;
+                        game_state.message = String::new();
+                        game_state.paused = false;
+                        println!("Returning to title screen");
+                    }
+                    return;
+                }
+
+                // ── Save slot screen: number → save/load ───────────────
+                if game_state.screen == GameScreen::SaveSlot {
+                    let slot = match kevent.physical_key {
+                        PhysicalKey::Code(KeyCode::Digit1) => "save_01",
+                        PhysicalKey::Code(KeyCode::Digit2) => "save_02",
+                        PhysicalKey::Code(KeyCode::Digit3) => "save_03",
+                        PhysicalKey::Code(KeyCode::Digit4) => "save_04",
+                        PhysicalKey::Code(KeyCode::Digit5) => "save_05",
+                        _ => {
+                            game_state.message =
+                                "Press 1-5 to select a save slot, ESC to cancel".to_string();
+                            return;
+                        }
+                    };
+                    match saveload::save_game(&game_state, slot) {
+                        Ok(()) => {
+                            game_state.message = format!("Game saved to slot '{slot}'");
+                            game_state.screen = GameScreen::Combat;
+                            game_state.paused = false;
+                            println!("save: saved to slot '{}'", slot);
+                        }
+                        Err(e) => {
+                            game_state.message = format!("Save failed: {e}");
+                            eprintln!("save error: {e}");
+                        }
+                    }
+                    return;
+                }
+
+                if game_state.screen == GameScreen::LoadSlot {
+                    let slot = match kevent.physical_key {
+                        PhysicalKey::Code(KeyCode::Digit1) => "save_01",
+                        PhysicalKey::Code(KeyCode::Digit2) => "save_02",
+                        PhysicalKey::Code(KeyCode::Digit3) => "save_03",
+                        PhysicalKey::Code(KeyCode::Digit4) => "save_04",
+                        PhysicalKey::Code(KeyCode::Digit5) => "save_05",
+                        _ => {
+                            game_state.message =
+                                "Press 1-5 to select a load slot, ESC to cancel".to_string();
+                            return;
+                        }
+                    };
+                    match saveload::load_game(&mut game_state, slot) {
+                        Ok(()) => {
+                            game_state.message = format!("Game loaded from slot '{slot}'");
+                            game_state.screen = GameScreen::Combat;
+                            game_state.paused = false;
+                            game_state.phase = InteractionPhase::Idle;
+                            // Re-init combat for the new sim
+                            let _ = combat::init_combat(&mut game_state, &content_root);
+                            game_state.message = format!("Loaded from slot '{slot}'");
+                            println!("load: loaded from slot '{}'", slot);
+                        }
+                        Err(e) => {
+                            game_state.message = format!("Load failed: {e}");
+                            eprintln!("load error: {e}");
+                        }
+                    }
+                    return;
+                }
+
+                // ── Pause menu keys when paused ────────────────────────
+                if game_state.screen == GameScreen::Combat && game_state.paused {
+                    match kevent.physical_key {
+                        PhysicalKey::Code(KeyCode::KeyS) => {
+                            // Enter save slot selection
+                            game_state.screen = GameScreen::SaveSlot;
+                            game_state.message =
+                                "Choose save slot (1-5) or ESC to cancel".to_string();
+                        }
+                        PhysicalKey::Code(KeyCode::KeyL) => {
+                            // Enter load slot selection
+                            game_state.screen = GameScreen::LoadSlot;
+                            game_state.message =
+                                "Choose load slot (1-5) or ESC to cancel".to_string();
+                        }
+                        PhysicalKey::Code(KeyCode::KeyQ) => {
+                            println!("Quitting from pause menu");
+                            target.exit();
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+
+                // ── Combat keyboard actions (ignored when paused) ──────
+                if game_state.screen == GameScreen::Combat && !game_state.paused {
                     // These keys only work when an actor is selected
                     if let InteractionPhase::SelectedActor(_) = game_state.phase {
                         match kevent.physical_key {
@@ -396,24 +548,98 @@ fn main() -> Result<(), String> {
                 let size = window.inner_size();
 
                 // Render the appropriate screen
+                let sw = size.width.max(1);
+                let sh = size.height.max(1);
                 match game_state.screen {
                     GameScreen::Title => {
                         menu::render_title(
                             &render_device,
                             &view,
                             surface_format,
-                            size.width.max(1),
-                            size.height.max(1),
+                            sw,
+                            sh,
                         );
                     }
-                    GameScreen::Combat | GameScreen::AfterAction => {
+                    GameScreen::Combat => {
+                        // Always render the combat frame
                         combat::render_combat_frame(
                             &game_state,
                             &render_device,
                             &view,
                             surface_format,
-                            size.width.max(1),
-                            size.height.max(1),
+                            sw,
+                            sh,
+                        );
+
+                        // Render HUD (unless paused — we dim instead)
+                        if !game_state.paused {
+                            hud_renderer.render(
+                                &font,
+                                &game_state,
+                                &render_device,
+                                &view,
+                                sw,
+                                sh,
+                            );
+                        }
+
+                        // Pause overlay (semi-transparent dim + text)
+                        if game_state.paused {
+                            hud_renderer.render_pause_overlay(
+                                &font,
+                                &render_device,
+                                &view,
+                                sw,
+                                sh,
+                            );
+                        }
+                    }
+                    GameScreen::AfterAction => {
+                        after_action_renderer.render(
+                            &game_state,
+                            &font,
+                            &render_device,
+                            &view,
+                            surface_format,
+                            sw,
+                            sh,
+                        );
+                    }
+                    GameScreen::SaveSlot => {
+                        combat::render_combat_frame(
+                            &game_state,
+                            &render_device,
+                            &view,
+                            surface_format,
+                            sw,
+                            sh,
+                        );
+                        // Dim overlay + save slot text
+                        hud_renderer.render_slot_overlay(
+                            &font,
+                            &render_device,
+                            &view,
+                            sw,
+                            sh,
+                            "SAVE SLOT",
+                        );
+                    }
+                    GameScreen::LoadSlot => {
+                        combat::render_combat_frame(
+                            &game_state,
+                            &render_device,
+                            &view,
+                            surface_format,
+                            sw,
+                            sh,
+                        );
+                        hud_renderer.render_slot_overlay(
+                            &font,
+                            &render_device,
+                            &view,
+                            sw,
+                            sh,
+                            "LOAD SLOT",
                         );
                     }
                 }

@@ -62,8 +62,8 @@ fn build_shot_scenario(seed: u64) -> SimState {
 fn called_shot_same_input_same_output() {
     let state = build_shot_scenario(42);
 
-    let result_a = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Head));
-    let result_b = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Head));
+    let result_a = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Head), true, 0);
+    let result_b = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Head), true, 0);
 
     assert!(result_a.is_ok());
     assert!(result_b.is_ok());
@@ -84,12 +84,16 @@ fn called_shot_gunarm_deterministic() {
         ActorId(1),
         ActorId(2),
         Some(HitLocationType::GunArm),
+        true,
+        0,
     );
     let result_b = resolve_shot(
         &state,
         ActorId(1),
         ActorId(2),
         Some(HitLocationType::GunArm),
+        true,
+        0,
     );
 
     assert!(result_a.is_ok());
@@ -108,8 +112,8 @@ fn called_shot_gunarm_deterministic() {
 fn called_shot_eyes_deterministic() {
     let state = build_shot_scenario(42);
 
-    let result_a = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Eyes));
-    let result_b = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Eyes));
+    let result_a = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Eyes), true, 0);
+    let result_b = resolve_shot(&state, ActorId(1), ActorId(2), Some(HitLocationType::Eyes), true, 0);
 
     assert_eq!(result_a, result_b);
 }
@@ -125,12 +129,16 @@ fn called_shot_different_seed_different_result() {
         ActorId(1),
         ActorId(2),
         Some(HitLocationType::Torso),
+        true,
+        0,
     );
     let result_b = resolve_shot(
         &state_b,
         ActorId(1),
         ActorId(2),
         Some(HitLocationType::Torso),
+        true,
+        0,
     );
 
     // Very unlikely to get identical events from different seeds

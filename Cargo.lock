@@ -1328,6 +1328,7 @@ dependencies = [
 name = "pb-app"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "pb-ai",
  "pb-audio",
  "pb-content",

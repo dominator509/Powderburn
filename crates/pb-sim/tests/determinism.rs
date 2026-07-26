@@ -319,8 +319,8 @@ fn called_shot_determinism_same_result_twice() {
     let _ = advance_to_next_actor(&mut state);
 
     // Resolve a called shot to GunArm twice
-    let result_a = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm));
-    let result_b = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm));
+    let result_a = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm), true, 0);
+    let result_b = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm), true, 0);
 
     // Both calls must produce identical results
     assert!(result_a.is_ok());

@@ -109,6 +109,7 @@ mod tests {
             seed: 12345,
             scenario_id: 1,
             wind_speed: 0,
+            overwatch: std::collections::BTreeSet::new(),
         }
     }
 

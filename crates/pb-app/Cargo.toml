@@ -22,6 +22,7 @@ workspace = true
     tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
     wgpu.workspace = true
     winit.workspace = true
+    bytemuck.workspace = true
 
 [[bin]]
 name = "powderburn"

@@ -4,7 +4,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pb_core::event::WoundType;
 use pb_core::geom::{Facing, TileXY};
@@ -62,6 +62,8 @@ pub struct SimState {
     pub scenario_id: u32,
     /// Current wind speed (0-10), influences AP grant.
     pub wind_speed: i32,
+    /// Actors currently on overwatch (DrawBead).
+    pub overwatch: BTreeSet<ActorId>,
 }
 
 impl SimState {
@@ -74,6 +76,7 @@ impl SimState {
             seed,
             scenario_id,
             wind_speed: 0,
+            overwatch: BTreeSet::new(),
         }
     }
 }

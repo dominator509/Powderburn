@@ -42,7 +42,7 @@ fn called_shot_to_gunarm_full_pipeline() {
         .actors
         .insert(target, make_actor(target, TileXY::new(5, 0)));
 
-    let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm));
+    let result = resolve_shot(&state, shooter, target, Some(HitLocationType::GunArm), true, 0);
     assert!(result.is_ok(), "Shot should resolve without error");
 
     let events = result.unwrap();
@@ -150,7 +150,7 @@ fn shot_out_of_range_still_resolves() {
         .actors
         .insert(target, make_actor(target, TileXY::new(60, 0)));
 
-    let result = resolve_shot(&state, shooter, target, None);
+    let result = resolve_shot(&state, shooter, target, None, false, 0);
     assert!(
         result.is_ok(),
         "Shot pipeline should handle range without crashing"
@@ -170,7 +170,7 @@ fn shot_target_dead() {
         .insert(shooter, make_actor(shooter, TileXY::new(0, 0)));
     state.actors.insert(target, t);
 
-    let result = resolve_shot(&state, shooter, target, None).unwrap();
+    let result = resolve_shot(&state, shooter, target, None, false, 0).unwrap();
     assert!(
         result.is_empty(),
         "Shooting a dead target should produce no events"
@@ -190,7 +190,7 @@ fn shot_returns_shot_hit_event() {
         .actors
         .insert(target, make_actor(target, TileXY::new(10, 0)));
 
-    let result = resolve_shot(&state, shooter, target, None).unwrap();
+    let result = resolve_shot(&state, shooter, target, None, false, 0).unwrap();
     assert!(!result.is_empty(), "Should not be empty");
     // First event should always be ShotHit or Misfire
     match &result[0] {
@@ -204,6 +204,6 @@ fn shot_returns_shot_hit_event() {
 #[test]
 fn shot_unknown_actor_returns_error() {
     let state = SimState::new(42, 1);
-    let result = resolve_shot(&state, ActorId(1), ActorId(2), None);
+    let result = resolve_shot(&state, ActorId(1), ActorId(2), None, false, 0);
     assert!(result.is_err());
 }

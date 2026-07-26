@@ -26,6 +26,7 @@ use pb_sim::clock::advance_to_next_actor;
 use pb_sim::state::{ActorState, SimState, Stance};
 
 use crate::state::{GameScreen, GameState, InteractionPhase, PlayerAction};
+use pb_core::event::Event;
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -275,6 +276,9 @@ pub fn handle_combat_click(game_state: &mut GameState) -> Result<(), String> {
             if let Some((&id, actor)) = actor_at {
                 if actor.alive && is_ally(actor) {
                     game_state.phase = InteractionPhase::SelectedActor(id);
+                    if let Some(ref audio) = game_state.audio {
+                        audio.play(pb_audio::Sfx::Select);
+                    }
                     if let Some(a) = sim.actors.get(&id) {
                         game_state.message = format!(
                             "Selected {} (HP: {}/{}, AP: {}) — press F(fire), R(reload), H(hold)",
@@ -376,8 +380,16 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
 
     let cmd = Command { actor_id, action };
 
+    // Play pistol shot sound
+    if let Some(ref audio) = gs.audio {
+        audio.play(pb_audio::Sfx::PistolShot);
+    }
+
     // Execute via sim step
     let events = step(sim, cmd).map_err(|e| format!("action failed: {e:?}"))?;
+
+    // Play hit/miss/death sounds from events
+    play_sfx_from_events(&mut gs.audio, &events);
 
     // Log events to console and update message
     for ev in &events {
@@ -415,7 +427,13 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
 
     let sim_action = match action {
         PlayerAction::Hold => Action::Hold,
-        PlayerAction::Reload => Action::Reload,
+        PlayerAction::Reload => {
+            // Play reload sound
+            if let Some(ref audio) = gs.audio {
+                audio.play(pb_audio::Sfx::Reload);
+            }
+            Action::Reload
+        }
         _ => return Err("not an immediate action".to_string()),
     };
 
@@ -450,6 +468,19 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
     check_victory_conditions(gs);
 
     Ok(())
+}
+
+/// Play sound effects based on simulation events.
+fn play_sfx_from_events(audio: &mut Option<pb_audio::AudioSystem>, events: &[Event]) {
+    let Some(ref audio) = *audio else { return };
+    for ev in events {
+        match ev {
+            Event::ShotHit { hit: true, .. } => audio.play(pb_audio::Sfx::Hit),
+            Event::ShotHit { hit: false, .. } => audio.play(pb_audio::Sfx::Miss),
+            Event::ActorKilled { .. } => audio.play(pb_audio::Sfx::Death),
+            _ => {}
+        }
+    }
 }
 
 /// Run AI for all alive enemies in the sim.
@@ -520,11 +551,29 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
             }
         };
 
+        // Check if this is a shooting action (before cmd is moved)
+        let is_fire = matches!(cmd.action, Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(..));
+
         // Execute the AI decision
         match step(sim, cmd) {
             Ok(events) => {
                 for ev in &events {
                     println!("[AI {}] {}", actor.name, ev);
+                }
+                // Play AI audio
+                if let Some(ref audio) = gs.audio {
+                    // Rifle shot for enemy fire
+                    if is_fire {
+                        audio.play(pb_audio::Sfx::RifleShot);
+                    }
+                    for ev in &events {
+                        match ev {
+                            Event::ShotHit { hit: true, .. } => audio.play(pb_audio::Sfx::Hit),
+                            Event::ShotHit { hit: false, .. } => audio.play(pb_audio::Sfx::Miss),
+                            Event::ActorKilled { .. } => audio.play(pb_audio::Sfx::Death),
+                            _ => {}
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -569,11 +618,16 @@ pub fn check_victory_conditions(gs: &mut GameState) {
         .count();
 
     if enemies_alive == 0 {
+        if let Some(ref audio) = gs.audio {
+            audio.play(pb_audio::Sfx::Victory);
+        }
         gs.message = "🎉 Victory! All enemies eliminated.".to_string();
         gs.phase = InteractionPhase::Idle;
+        gs.screen = crate::state::GameScreen::AfterAction;
     } else if allies_alive == 0 {
         gs.message = "💀 Defeat! All allies have fallen.".to_string();
         gs.phase = InteractionPhase::Idle;
+        gs.screen = crate::state::GameScreen::AfterAction;
     }
 }
 

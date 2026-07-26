@@ -14,7 +14,7 @@
     clippy::manual_range_contains
 )]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap, Tick};
@@ -110,6 +110,7 @@ fn random_simstate(seed: u64, actor_count: u32) -> SimState {
         seed: rng.next_u64(),
         scenario_id: rng.next_i32(1, 100) as u32,
         wind_speed: rng.next_i32(0, 10),
+        overwatch: BTreeSet::new(),
     }
 }
 

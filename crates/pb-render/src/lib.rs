@@ -10,6 +10,7 @@ pub mod device;
 pub mod overlay;
 pub mod smoke;
 pub mod sprites;
+pub mod text;
 pub mod tiles;
 
 /// A color with 8-bit channels.
