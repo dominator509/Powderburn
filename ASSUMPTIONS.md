@@ -19,3 +19,9 @@ silent, and never blocks silently.
 | A-12 | The operator accepts a Linux-only v1 with a Windows cross-build deferred to v1.1 | Keeps the ship gate reachable; recorded as a non-goal | A platform expectation is missed | Stated in PROJECT_BRIEF.md non-goals and in RELEASE.md | No |
 | A-13 | Data-only mods are sufficient for the modding audience | Native mod loading would violate LBI-09 and the sandbox model | Modder disappointment; mitigated by a rich data schema and a public validator | SPEC-005 section 3 | No |
 | A-14 | ExecPlans may specify canonical schemas, signatures, and acceptance tests verbatim rather than embedding every line of a large game's source | A full game exceeds any single transcription budget; test-first milestones fix the target surface exactly | The EXECUTOR composes more than it transcribes, raising hallucination risk; mitigated by locked vocabulary, embedded rule tables, and test-first ordering | ADR-0007 in DECISIONS.md; every milestone that composes carries a verification grep | No |
+
+## Verified at EP-000
+- A-01 confirmed: x86_64 Linux with llvmpipe (Mesa 25.2.8, LLVM 20.1.2) via Xvfb :99 — `sh scripts/probes/pb_headless_adapter.sh` returned ok
+- A-02 confirmed: rustc 1.85.0 (4d91de4e4 2025-02-17) pinned as repository default toolchain
+- A-03 pending (deferred to EP-001 M2): cargo vendor not yet executed; offline mode asserted by env var PB_CARGO_OFFLINE=1
+- A-08 confirmed: minisign available at /usr/bin/minisign with secret key at /root/.keys/powderburn.key
