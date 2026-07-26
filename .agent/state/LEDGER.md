@@ -18,3 +18,5 @@
 2026-07-26T02:40:57Z | forge | EP-001 | NODE_DONE | all 6 milestones passed; M1-M6 gates green; smoke+live-fire deferred to EP-007+
 2026-07-26T02:41:18Z | forge | EP-002 | LEASE | forge starting EP-002 core domain
 2026-07-26T02:44:23Z | forge | EP-002 | MILESTONE_PASS | M1 core and rng ok
+2026-07-26T02:51:08Z | forge | EP-002 | MILESTONE_PASS | M2 clock and ap economy ok
+2026-07-26T02:51:08Z | forge | EP-002 | MILESTONE_PASS | M3 shot pipeline ok

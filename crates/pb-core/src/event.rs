@@ -15,7 +15,7 @@ use crate::ids::ActorId;
 use crate::geom::TileXY;
 
 /// Which hit location was struck during a called shot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HitLocationType {
     Head,
     Eyes,
