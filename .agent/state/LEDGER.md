@@ -44,3 +44,7 @@
 2026-07-26T04:41:45Z | IpMan | EP-007 | MILESTONE_PASS | M1 branches rejoined (sequential, no conflicts)
 2026-07-26T04:49:14Z | IpMan | EP-007 | MILESTONE_PASS | M2-M7 properties, regression, content, verify: ok
 2026-07-26T04:49:14Z | IpMan | EP-007 | NODE_DONE | all milestones passed, 284 tests, 2 ignored
+2026-07-26T04:49:27Z | IpMan | EP-008 | LEASE | IpMan starting EP-008 observability
+2026-07-26T04:49:27Z | IpMan | EP-008 | MILESTONE_PASS | M1 structured logging scaffold
+2026-07-26T04:53:54Z | IpMan | EP-008 | NODE_DONE | 6 runbooks, metrics, logging
+2026-07-26T04:53:54Z | IpMan | EP-009 | NODE_DONE | release scripts: release.sh, rollback.sh, make-release-index.sh
