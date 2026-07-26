@@ -33,3 +33,4 @@
 2026-07-26T03:49:18Z | forge | EP-004 | NODE_DONE | 6 milestones: CLI surface, journal/sim/replay, campaign commands, pbtool, contract tests, replay server
 2026-07-26T04:02:43Z | IpMan | EP-005 | LEASE | IpMan starting EP-005 client and renderer
 2026-07-26T04:14:43Z | IpMan | EP-005 | MILESTONE_PASS | M1 capture: wrote frame
+2026-07-26T04:28:51Z | IpMan | EP-005 | MILESTONE_PASS | M2 battlefield renders with 4274 unique colors

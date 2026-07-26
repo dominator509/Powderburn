@@ -1,6 +1,6 @@
 //! Headless frame capture.
 //!
-//! Renders a frame to an offscreen texture and writes it as a PNG file.
+//! Renders an isometric battlefield frame to an offscreen texture and writes it as a PNG file.
 //! This is the basis for LF-08 and for all deterministic visual proofs.
 
 use std::io::Read;
@@ -14,14 +14,12 @@ use crate::{CaptureMeta, RenderConfig};
 
 /// Render a single frame headlessly and capture it to a PNG file.
 ///
-/// For M1, this simply clears the frame to a solid color and writes it.
-/// Later milestones add the actual isometric scene rendering.
+/// Renders isometric tiles and sprites on a battlefield.
 pub async fn capture_frame(
     device: Arc<RenderDevice>,
     config: &RenderConfig,
     output_path: &Path,
 ) -> Result<CaptureMeta, String> {
-    // Create the offscreen texture
     let texture_size = wgpu::Extent3d {
         width: config.width,
         height: config.height,
@@ -41,7 +39,34 @@ pub async fn capture_frame(
 
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Create a buffer to read the texture back
+    // Build camera
+    let camera = crate::camera::IsoCamera::new(config.width, config.height);
+    let camera_bytes = camera.ortho_matrix_bytes();
+
+    // Build tile system - a 16x12 grid of isometric tiles
+    let cols = 16u32;
+    let rows = 12u32;
+    let mut tiles = Vec::new();
+    for y in 0..rows {
+        for x in 0..cols {
+            // Green grass tiles with some variation
+            let shade = 0.3 + ((x + y) % 3) as f32 * 0.1;
+            let elevation = if (x + y) % 4 == 0 { 1 } else { 0 };
+            tiles.push(crate::tiles::TileVisual::new(0.2, shade, 0.15, elevation));
+        }
+    }
+    let tile_system = crate::tiles::TileSystem::new(&device, cols, rows, &tiles, &camera_bytes);
+
+    // Build sprite system with a few colored sprites
+    let sprites = vec![
+        crate::sprites::SpriteInstance::new(0.0, 0.0, 2.0), // player unit (white)
+        crate::sprites::SpriteInstance::new(3.0, 2.0, 2.0), // enemy unit
+        crate::sprites::SpriteInstance::new(-2.0, 4.0, 2.0), // neutral unit
+        crate::sprites::SpriteInstance::new(1.0, -3.0, 2.0), // another unit
+    ];
+    let sprite_system = crate::sprites::SpriteSystem::new(&device, &sprites, &camera_bytes);
+
+    // Create buffer to read back
     let buffer_size = (config.width * config.height * 4) as u64;
     let buffer = device.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("capture buffer"),
@@ -50,7 +75,7 @@ pub async fn capture_frame(
         mapped_at_creation: false,
     });
 
-    // Render: clear to a dark green-blue (frontier sky)
+    // Render
     let mut encoder = device
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -58,16 +83,16 @@ pub async fn capture_frame(
         });
 
     {
-        let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("clear pass"),
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &texture_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
                         r: 0.15,
-                        g: 0.25,
-                        b: 0.20,
+                        g: 0.20,
+                        b: 0.12,
                         a: 1.0,
                     }),
                     store: wgpu::StoreOp::Store,
@@ -77,11 +102,14 @@ pub async fn capture_frame(
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-        // No draw calls yet - M1 is just a clear
+
+        // Draw tiles first (back to front is handled by z-order in vertex data)
+        tile_system.render(&mut rpass);
+
+        // Draw sprites on top
+        sprite_system.render(&mut rpass);
     }
 
-    // Copy texture to buffer
-    let block_size = 4; // RGBA8 = 4 bytes per pixel
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &texture,
@@ -93,7 +121,7 @@ pub async fn capture_frame(
             buffer: &buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(config.width * block_size),
+                bytes_per_row: Some(config.width * 4),
                 rows_per_image: Some(config.height),
             },
         },
@@ -102,7 +130,7 @@ pub async fn capture_frame(
 
     device.queue.submit(std::iter::once(encoder.finish()));
 
-    // Map the buffer and read pixels
+    // Read back
     let buffer_slice = buffer.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
     buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -120,7 +148,6 @@ pub async fn capture_frame(
     drop(data);
     buffer.unmap();
 
-    // Write PNG using the image crate
     image::save_buffer(
         output_path,
         &pixels,
@@ -130,7 +157,6 @@ pub async fn capture_frame(
     )
     .map_err(|e| format!("failed to write PNG: {}", e))?;
 
-    // Compute SHA256 of the file
     let checksum = file_sha256(output_path).unwrap_or_else(|| "unknown".to_string());
 
     Ok(CaptureMeta {

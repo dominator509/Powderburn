@@ -3,8 +3,11 @@
 //! This crate uses floats freely because presentation is not simulation state.
 #![forbid(unsafe_code)]
 
-pub mod device;
+pub mod camera;
 pub mod capture;
+pub mod device;
+pub mod sprites;
+pub mod tiles;
 
 /// A color with 8-bit channels.
 #[derive(Debug, Clone, Copy)]
