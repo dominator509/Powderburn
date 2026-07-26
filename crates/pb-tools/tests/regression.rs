@@ -11,6 +11,8 @@
 //! - `format-check.sh`: formatting violations
 //! - `reality-gate.sh`: forbidden implementation markers (TODO)
 
+#![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -259,7 +261,7 @@ fn reality_gate_catches_fixme_markers() {
 
     write_file(&target_file, &original);
 
-    let combined = format!("{}{}", stdout, stderr);
+    let _combined = format!("{}{}", stdout, stderr);
     assert!(
         !success,
         "reality-gate.sh should have failed with FIXME marker injection.\nstdout: {}\nstderr: {}",

@@ -1,5 +1,7 @@
 //! Selftest command for pbcli.
 
+#![allow(clippy::panic_in_result_fn)]
+
 use std::path::Path;
 
 use pb_content::load::load_all;
@@ -18,7 +20,7 @@ use crate::args::Args;
 use crate::output;
 
 /// Run the `selftest` subcommand.
-pub fn run_selftest(_args: &Args) -> Result<(), String> {
+pub fn run_selftest(args: &Args) -> Result<(), String> {
     // 1. Fix32 basic arithmetic
     let _a = Fix32::from_int(5);
     let _b = Fix32::from_int(3);
@@ -84,6 +86,12 @@ pub fn run_selftest(_args: &Args) -> Result<(), String> {
     // 11. compute_state_hash
     let h = compute_state_hash(&state);
     assert_ne!(h, [0u8; 32]);
+
+    // Emit the state hash if --emit-hash was passed
+    if args.emit_hash {
+        let hex: String = h.iter().map(|b| format!("{:02x}", b)).collect();
+        println!("state-hash: {}", hex);
+    }
 
     // 12. Hit location types
     assert_eq!(HitLocationType::Head.to_string(), "Head");

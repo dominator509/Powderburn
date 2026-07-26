@@ -368,6 +368,12 @@ fn check_objective_actor_references(content: &Content, out: &mut Vec<Diagnostic>
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_range_contains,
+    clippy::option_map_unit_fn
+)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

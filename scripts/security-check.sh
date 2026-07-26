@@ -21,7 +21,15 @@ _check_binary_for_network_syms() {
     syms=$(nm -uC "$binary" 2>/dev/null || true)
     for s in socket connect getaddrinfo gethostbyname SSL_connect curl_easy_init \
              sendto recvfrom bind listen accept; do
-      case "$syms" in *"$s"*) fail "binary $binary references network symbol: $s (LBI-09)";; esac
+      case "$s" in
+        socket)
+          # Exact match for 'socket' appearing as a word (exclude socketpair)
+          echo "$syms" | tr ' ' '\n' | grep -x '.*\bsocket\b.*' >/dev/null 2>&1 && fail "binary $binary references network symbol: $s (LBI-09)"
+          ;;
+        *)
+          case "$syms" in *"$s"*) fail "binary $binary references network symbol: $s (LBI-09)";; esac
+          ;;
+      esac
     done
   done
 }

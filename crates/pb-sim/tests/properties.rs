@@ -7,7 +7,12 @@
 //! - Shot hit chance is always 5-95 inclusive
 //!
 //! These tests do NOT use the `proptest` crate — they use a simple LCG
-//! generator for deterministic, seeded test-case generation.
+#![forbid(unsafe_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_range_contains
+)]
 
 use std::collections::BTreeMap;
 
@@ -172,7 +177,7 @@ fn state_hash_sensitive_to_mutation() {
         let hash_orig = compute_state_hash(&state);
 
         // Mutate tick
-        let mut mutated = SimState {
+        let mutated = SimState {
             tick: Tick(state.tick.0.wrapping_add(1)),
             ..state
         };

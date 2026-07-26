@@ -7,6 +7,8 @@
 //!   3. Create ANOTHER fresh scenario, apply same journal, capture hash3.
 //!   4. Assert all three hashes are identical and not all-zeros.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use pb_sim::action::{step, Action, Command};
 use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
 use pb_sim::hash::compute_state_hash;

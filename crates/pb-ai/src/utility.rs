@@ -483,6 +483,12 @@ fn distance_to_enemy_by_id(target_id: ActorId, actor: &ActorState, enemies: &[Ac
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unnecessary_cast,
+    clippy::manual_range_contains
+)]
 mod tests {
     use super::*;
     use pb_core::geom::Facing;

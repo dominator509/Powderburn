@@ -84,7 +84,7 @@ fn run_golden(args: &[String]) -> Result<(), String> {
 /// Dispatch image sub-subcommands.
 fn run_image(args: &[String]) -> Result<(), String> {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("stats");
-    let image_path = args.get(1).map(|s| Path::new(s));
+    let image_path = args.get(1).map(Path::new);
 
     match sub {
         "stats" => {
@@ -100,7 +100,7 @@ fn run_atlas(args: &[String]) -> Result<(), String> {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("pack");
     let output_dir = args
         .get(1)
-        .map(|s| Path::new(s))
+        .map(Path::new)
         .unwrap_or_else(|| Path::new("atlas"));
 
     match sub {

@@ -196,6 +196,11 @@ pub fn resolve_shot(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_range_contains
+)]
 mod tests {
     use super::*;
     use crate::state::{ActorState, Stance};

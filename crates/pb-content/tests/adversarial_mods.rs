@@ -11,6 +11,8 @@
 //! Symlinks are created in test setup functions because git cannot track them
 //! portably across platforms.
 
+#![allow(unused_imports, clippy::expect_used)]
+
 use std::os::unix::fs::symlink;
 use std::path::Path;
 

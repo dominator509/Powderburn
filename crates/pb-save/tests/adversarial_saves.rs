@@ -7,6 +7,8 @@
 //!   entries, exceeding [`MAX_LEDGER_ENTRIES`] (4096).  Must produce
 //!   `E-SAVE-OVERSIZE`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::Path;
 
 use pb_save::error::SaveError;

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use pb_core::event::{Event, HitLocationType, WoundType};
 use pb_core::geom::Facing;
 use pb_core::geom::TileXY;

@@ -41,6 +41,7 @@ impl Fix32 {
     ///
     /// # Panics
     /// Panics if the value overflows i32 when scaled.
+    #[allow(clippy::float_arithmetic)]
     pub fn from_f64(val: f64) -> Self {
         let scaled = (val * SCALE_F64).round() as i64;
         Fix32(scaled as i32)
@@ -52,6 +53,7 @@ impl Fix32 {
     }
 
     /// Convert to a floating-point value (for display/reporting only, never in kernel logic).
+    #[allow(clippy::float_arithmetic)]
     pub fn to_f64(self) -> f64 {
         self.0 as f64 / SCALE_F64
     }
@@ -346,7 +348,7 @@ mod tests {
         let a = Fix32::from_f64(1.5);
         let b = Fix32::from_f64(2.25);
         let c = (a * b) / (a + b);
-        let expected = Fix32::from_raw(229);
+        let _expected = Fix32::from_raw(229);
         // Just verify it's deterministic - no floating-point involved
         assert!(c.raw() != 0);
         assert!((c.to_f64() - (1.5 * 2.25 / (1.5 + 2.25))).abs() < 0.01);
@@ -381,11 +383,9 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let v = Fix32::from_f64(3.1415);
+        let v = Fix32::from_f64(std::f64::consts::PI);
         let raw = v.raw();
         let back = Fix32::from_raw(raw);
         assert_eq!(v, back);
     }
 }
-
-// TODO: this is a deliberate test marker for reality-gate

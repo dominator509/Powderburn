@@ -143,6 +143,11 @@ impl PbRng {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_range_contains
+)]
 mod tests {
     use super::*;
 

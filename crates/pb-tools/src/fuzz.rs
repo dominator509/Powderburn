@@ -50,8 +50,8 @@ pub fn run_fuzz(content_root: &Path, iters: usize, seed: u64) {
         if let Ok(entries) = std::fs::read_dir(content_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "ron")
-                    || path.extension().map_or(false, |ext| ext == "RON")
+                if path.extension().is_some_and(|ext| ext == "ron")
+                    || path.extension().is_some_and(|ext| ext == "RON")
                 {
                     match std::fs::read(&path) {
                         Ok(data) => {
@@ -66,7 +66,7 @@ pub fn run_fuzz(content_root: &Path, iters: usize, seed: u64) {
                     if let Ok(sub_entries) = std::fs::read_dir(&path) {
                         for sub in sub_entries.flatten() {
                             let sub_path = sub.path();
-                            if sub_path.extension().map_or(false, |ext| ext == "ron") {
+                            if sub_path.extension().is_some_and(|ext| ext == "ron") {
                                 if let Ok(data) = std::fs::read(&sub_path) {
                                     fuzz_content(&data);
                                 }

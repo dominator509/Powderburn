@@ -96,7 +96,10 @@ impl LogEvent {
 
         // Write to log file
         let guard = log_writer();
-        let mut writer = guard.lock().unwrap();
+        let mut writer = match guard.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let _ = writer.write_all(line.as_bytes());
         let _ = writer.flush();
         drop(writer);

@@ -8,6 +8,8 @@
 //! entries, round-trip them through serialization/deserialization, and
 //! verify chain integrity.
 
+#![allow(clippy::expect_used)]
+
 use pb_content::schema::{LedgerEntryData, SaveFileData};
 use pb_save::format::{deserialize_save, serialize_save};
 use pb_save::ledger::LedgerChain;

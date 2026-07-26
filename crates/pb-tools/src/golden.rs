@@ -8,7 +8,7 @@ use std::process::Command;
 pub fn golden_refresh(golden_path: &Path) -> Result<(), String> {
     // Check that the git tree is clean
     let status = Command::new("git")
-        .args(&["status", "--porcelain"])
+        .args(["status", "--porcelain"])
         .current_dir(golden_path)
         .output()
         .map_err(|e| format!("git status failed: {}", e))?;
@@ -36,7 +36,11 @@ pub fn golden_refresh(golden_path: &Path) -> Result<(), String> {
                 let data = fs::read(&path)
                     .map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
                 let hash = pb_core::hash::hash_state(&data);
-                let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                let hex: String = hash.iter().fold(String::with_capacity(64), |mut s, b| {
+                    use std::fmt::Write;
+                    write!(s, "{:02x}", b).ok();
+                    s
+                });
                 fs::write(&path, hex.as_bytes())
                     .map_err(|e| format!("cannot write {}: {}", path.display(), e))?;
             }

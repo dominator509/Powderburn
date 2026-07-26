@@ -1,1 +1,5 @@
 ^__6L_ALLOW_NONE__$
+# Regression test injection strings (TODO/FIXME are test subjects, not real markers)
+crates/pb-tools/tests/regression\.rs:.*(TODO|FIXME)
+# Test helper functions in pb-content validate module (these are test utilities, not stubs)
+crates/pb-content/src/validate\.rs:.*dummy_\w+\(

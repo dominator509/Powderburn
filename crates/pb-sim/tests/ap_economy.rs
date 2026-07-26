@@ -1,3 +1,5 @@
+#![allow(clippy::while_let_loop, clippy::unwrap_used)]
+
 use std::collections::BTreeMap;
 
 use pb_core::geom::TileXY;

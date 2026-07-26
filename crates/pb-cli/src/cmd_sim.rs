@@ -110,7 +110,11 @@ pub fn run_sim(args: &Args) -> Result<(), String> {
     // Emit hash if requested
     if args.emit_hash {
         let h = compute_state_hash(&state);
-        let hex: String = h.iter().map(|b| format!("{:02x}", b)).collect();
+        let hex: String = h.iter().fold(String::with_capacity(64), |mut s, b| {
+            use std::fmt::Write;
+            write!(s, "{:02x}", b).ok();
+            s
+        });
         println!("{}{}", output::STATE_HASH_FORMAT, hex);
     }
 
@@ -166,14 +170,26 @@ pub fn run_replay(args: &Args) -> Result<(), String> {
     let final_hash = compute_state_hash(&state);
 
     if let Some(expected_hash) = &args.expect {
-        let computed_hex: String = final_hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let computed_hex: String = final_hash
+            .iter()
+            .fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                write!(s, "{:02x}", b).ok();
+                s
+            });
         if *expected_hash == computed_hex {
             println!("{}", output::REPLAY_MATCH);
         } else {
             println!("{}{}", output::REPLAY_DIFFER, state.tick.0);
         }
     } else {
-        let hex: String = final_hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let hex: String = final_hash
+            .iter()
+            .fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                write!(s, "{:02x}", b).ok();
+                s
+            });
         println!("{}{}", output::STATE_HASH_FORMAT, hex);
     }
 
@@ -183,7 +199,11 @@ pub fn run_replay(args: &Args) -> Result<(), String> {
 /// Save state to a file as a simple hash-chain entry.
 fn save_state(state: &SimState, path: &Path) -> Result<(), String> {
     let h = compute_state_hash(state);
-    let hex: String = h.iter().map(|b| format!("{:02x}", b)).collect();
+    let hex: String = h.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write;
+        write!(s, "{:02x}", b).ok();
+        s
+    });
     let data = format!("tick={}\nhash={}\n", state.tick.0, hex);
     std::fs::write(path, &data).map_err(|e| format!("write error: {}", e))
 }

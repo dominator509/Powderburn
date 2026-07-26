@@ -38,7 +38,7 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
                 ContentError::new("E-CONTENT-001", format!("dir entry error: {}", e))
             })?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "ron") {
+            if path.extension().is_some_and(|ext| ext == "ron") {
                 let scenario: ScenarioData = load_single_ron(&path)?;
                 content.scenarios.insert(scenario.id.clone(), scenario);
             }
@@ -58,7 +58,7 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
                 ContentError::new("E-CONTENT-001", format!("dir entry error: {}", e))
             })?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "ron") {
+            if path.extension().is_some_and(|ext| ext == "ron") {
                 let companions: Vec<CompanionData> = load_ron_file(&path)?;
                 for c in companions {
                     content.companions.insert(c.id.clone(), c);
@@ -77,7 +77,7 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
                 ContentError::new("E-CONTENT-001", format!("dir entry error: {}", e))
             })?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "ron") {
+            if path.extension().is_some_and(|ext| ext == "ron") {
                 let nodes: Vec<CampaignNodeData> = load_ron_file(&path)?;
                 for n in nodes {
                     content.campaign_nodes.insert(n.id.clone(), n);

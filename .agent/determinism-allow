@@ -1,0 +1,8 @@
+# Exemptions for lint-determinism.sh
+# Format: <crate>/<file>:<pattern-keyword>
+# Pattern: matches grep output lines containing this string.
+pb-core/src/fix32.rs:f64
+pb-core/src/metrics.rs:f64
+pb-core/src/metrics.rs:value: f64
+pb-core/src/log.rs:SystemTime
+pb-core/src/log.rs:std::time

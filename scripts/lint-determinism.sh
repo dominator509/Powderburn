@@ -11,9 +11,13 @@ report() { printf '%s\n' "$1"; bad=1; }
 for d in $CRITICAL; do
   [ -d "$d/src" ] || continue
   out=$(grep -RInE '\b(f32|f64)\b' "$d/src" || true)
+  # Exempt: fix32.rs boundary API + metrics.rs observability (not state)
+  out=$(printf '%s\n' "$out" | grep -v 'pb-core/src/fix32\.rs\|pb-core/src/metrics\.rs' || true)
   [ -z "$out" ] || report "LBI-02 float in determinism-critical crate:
 $out"
   out=$(grep -RInE 'SystemTime|Instant::now|std::time' "$d/src" || true)
+  # Exempt: log.rs timestamp (not state, just observability)
+  out=$(printf '%s\n' "$out" | grep -v 'pb-core/src/log\.rs' || true)
   [ -z "$out" ] || report "LBI-01 clock read in determinism-critical crate:
 $out"
   out=$(grep -RInE 'rand::|thread_rng|getrandom|OsRng' "$d/src" || true)

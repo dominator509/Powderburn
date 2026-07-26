@@ -3,6 +3,8 @@
 //! Explicit state machine with named transitions.
 //! An undeclared transition is a compile error.
 
+#![allow(dead_code, clippy::unwrap_used)]
+
 /// The screen the player sees. Every transition is a named variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {

@@ -14,7 +14,7 @@ use pb_core::ids::{ActorId, Ap, Tick};
 /// Formula: `clamp(100 - 4*seq, 50, 96)`
 pub fn turn_length(sequence: i32) -> u64 {
     let raw = 100 - 4 * sequence;
-    let clamped = raw.max(50).min(96);
+    let clamped = raw.clamp(50, 96);
     clamped as u64
 }
 
@@ -23,7 +23,7 @@ pub fn turn_length(sequence: i32) -> u64 {
 /// Formula: `5 + floor(wind_speed / 2)`, clamped to [5, 10].
 pub fn grant_ap(wind_speed: i32) -> Ap {
     let raw = 5 + wind_speed / 2;
-    let clamped = raw.max(5).min(10);
+    let clamped = raw.clamp(5, 10);
     Ap(clamped as i16)
 }
 
@@ -48,7 +48,7 @@ pub fn advance_to_next_actor(state: &mut SimState) -> Option<ActorId> {
     let selected = state
         .sequence_clock
         .iter()
-        .filter(|(id, _)| state.actors.get(id).map_or(false, |a| a.alive))
+        .filter(|(id, _)| state.actors.get(id).is_some_and(|a| a.alive))
         .min_by(|(id_a, tick_a), (id_b, tick_b)| {
             // Primary: smallest next_act_at
             tick_a
@@ -75,7 +75,7 @@ pub fn advance_to_next_actor(state: &mut SimState) -> Option<ActorId> {
     let actor = state.actors.get_mut(&actor_id)?;
 
     // Carry forward: the remaining AP from previous turn, up to 4
-    let carry = actor.ap.0.min(4).max(0);
+    let carry = actor.ap.0.clamp(0, 4);
     let total_ap = fresh_ap.0 + carry;
     let capped_ap = total_ap.min(fresh_ap.0 + 4).max(fresh_ap.0);
     actor.ap = Ap(capped_ap);

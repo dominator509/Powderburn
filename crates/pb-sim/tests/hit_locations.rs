@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if, clippy::expect_used)]
+
 use std::collections::BTreeMap;
 
 use pb_core::event::HitLocationType;

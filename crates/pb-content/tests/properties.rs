@@ -4,6 +4,8 @@
 //! - `load_all` + `validate` succeeds on the known-good content directory
 //! - Each weapon record in the loaded content is structurally valid
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::path::Path;
 
 use pb_content::load::load_all;

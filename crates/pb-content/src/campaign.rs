@@ -31,10 +31,10 @@ pub fn compute_reachable(
 
     // Find starting nodes (those with no requires or whose requires are all met)
     for (id, node) in &graph.nodes {
-        if node.requires.is_empty() || node.requires.iter().all(|r| flag_set.contains(r.as_str())) {
-            if !frontier.contains(&id.as_str()) {
-                frontier.push(id);
-            }
+        if (node.requires.is_empty() || node.requires.iter().all(|r| flag_set.contains(r.as_str())))
+            && !frontier.contains(&id.as_str())
+        {
+            frontier.push(id);
         }
     }
 
@@ -56,7 +56,7 @@ pub fn compute_reachable(
 
         // For now, we still traverse but mark the limitation
         for unlocked in &node.unlocks {
-            if !reachable.contains(unlocked.as_str()) && !frontier.contains(&&*unlocked.as_str()) {
+            if !reachable.contains(unlocked.as_str()) && !frontier.contains(&unlocked.as_str()) {
                 frontier.push(unlocked);
             }
         }

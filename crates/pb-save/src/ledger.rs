@@ -38,7 +38,7 @@ pub struct LedgerEntry {
 ///
 /// Build it with [`new`](LedgerChain::new) and [`add_entry`](LedgerChain::add_entry),
 /// then call [`verify_chain`](LedgerChain::verify_chain) to check integrity.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LedgerChain {
     /// Ordered list of ledger entries.
     pub entries: Vec<LedgerEntry>,

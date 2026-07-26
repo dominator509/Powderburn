@@ -144,7 +144,7 @@ fn combat_sand_scenario() {
     assert_eq!(morale_state(sand, max_sand), MoraleState::Rattled);
 
     // Kill an enemy: gain 3 Sand
-    sand = sand + sand_gain_for_event("kill_enemy");
+    sand += sand_gain_for_event("kill_enemy");
     assert_eq!(sand, 61);
     // Back to Steady
     assert_eq!(morale_state(sand, max_sand), MoraleState::Steady);
@@ -155,7 +155,7 @@ fn combat_sand_scenario() {
     assert_eq!(morale_state(sand, max_sand), MoraleState::Rattled);
 
     // Rally: gain 5 Sand → 56 → still Rattled
-    sand = sand + sand_gain_for_event("rally");
+    sand += sand_gain_for_event("rally");
     assert_eq!(sand, 56);
     assert_eq!(morale_state(sand, max_sand), MoraleState::Rattled);
 }

@@ -8,6 +8,8 @@
 //! - `deep_nest/scenarios/deep_nest.ron` — a RON file with extreme nesting
 //!   depth that exceeds RON's recursion limit.  Must produce `E-CONTENT-001`.
 
+#![allow(clippy::expect_used, clippy::unwrap_used, unused_imports)]
+
 use std::path::Path;
 
 use pb_content::error::ContentError;

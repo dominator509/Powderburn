@@ -8,6 +8,8 @@
 //! - Invalid numeric fields → `E-JOURNAL-PARSE`
 //! - Missing required arguments → `E-JOURNAL-PARSE`
 
+#![allow(clippy::expect_used)]
+
 use std::io::Write;
 use std::path::Path;
 

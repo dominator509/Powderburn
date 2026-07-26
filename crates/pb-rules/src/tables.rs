@@ -249,6 +249,11 @@ pub fn location_to_wound(loc: HitLocationType) -> pb_core::event::WoundType {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::bool_assert_comparison
+)]
 mod tests {
     use super::*;
 

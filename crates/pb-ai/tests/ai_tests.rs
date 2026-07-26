@@ -3,8 +3,15 @@
 //! M5: Tests that bounded candidate generation, integer scoring, and
 //! deterministic tie-breaking all work correctly.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::unnecessary_cast,
+    clippy::identity_op,
+    unused_imports
+)]
+
 use pb_ai::utility::{generate_candidates, score_candidate, select_best, AiCandidate};
-use pb_core::event::HitLocationType;
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap};
 use pb_sim::action::Action;

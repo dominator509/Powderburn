@@ -212,11 +212,15 @@ fn hash_string(s: &str) -> u32 {
 /// Compute a content hash for the save file.
 fn compute_content_hash(content: &Content) -> String {
     let mut buf = Vec::new();
-    for (id, _) in &content.scenarios {
+    for id in content.scenarios.keys() {
         buf.extend_from_slice(id.as_bytes());
     }
     let h = pb_core::hash::hash_state(&buf);
-    h.iter().map(|b| format!("{:02x}", b)).collect()
+    h.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write;
+        write!(s, "{:02x}", b).ok();
+        s
+    })
 }
 
 /// Convert actor data to numeric ID.

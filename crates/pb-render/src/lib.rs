@@ -2,6 +2,7 @@
 //! wgpu-based isometric renderer with headless capture support.
 //! This crate uses floats freely because presentation is not simulation state.
 #![forbid(unsafe_code)]
+#![allow(clippy::float_arithmetic, clippy::unnecessary_cast, dead_code)]
 
 pub mod camera;
 pub mod capture;

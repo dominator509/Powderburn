@@ -3,6 +3,8 @@
 //! Tests round-trip integrity, tamper detection, hash mismatch detection,
 //! size limit enforcement, and ledger chain correctness.
 
+#![allow(unused_imports, clippy::expect_used)]
+
 use std::path::Path;
 
 use pb_content::schema::SaveFileData;

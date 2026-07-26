@@ -4,6 +4,8 @@
 //! with the same inputs (seed, state, shooter, target, location) on fresh
 //! state copies.
 
+#![allow(clippy::unwrap_used, clippy::bool_assert_comparison)]
+
 use pb_sim::shot::resolve_shot;
 use pb_sim::state::{ActorState, SimState, Stance};
 

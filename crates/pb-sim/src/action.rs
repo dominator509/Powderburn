@@ -103,7 +103,9 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
 
     // Deduct AP
     let new_ap = pb_core::ids::Ap(actor.ap.0 - cost.0);
-    state.actors.get_mut(&cmd.actor_id).unwrap().ap = new_ap;
+    if let Some(actor_mut) = state.actors.get_mut(&cmd.actor_id) {
+        actor_mut.ap = new_ap;
+    }
 
     match cmd.action {
         Action::Move(target) => Ok(execute_move(state, cmd.actor_id, target)),
@@ -141,7 +143,7 @@ fn execute_shot(
     _called: Option<HitLocationType>,
 ) -> Vec<Event> {
     // Check target exists
-    let target_alive = state.actors.get(&target).map_or(false, |a| a.alive);
+    let target_alive = state.actors.get(&target).is_some_and(|a| a.alive);
 
     if !target_alive {
         return vec![];
@@ -232,6 +234,11 @@ fn execute_melee(_state: &mut SimState, _actor_id: ActorId, _target: ActorId) ->
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::manual_range_contains
+)]
 mod tests {
     use super::*;
     use crate::state::Stance;
