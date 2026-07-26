@@ -2,3 +2,4 @@
 2026-07-26T02:28:22Z | forge | EP-000 | LEASE | forge starting EP-000 discovery and toolchain
 2026-07-26T02:28:22Z | forge | EP-000 | MILESTONE_PASS | M1 preflight: ok
 2026-07-26T02:28:34Z | forge | EP-000 | MILESTONE_PASS | M2 clean tree
+2026-07-26T02:28:45Z | forge | EP-000 | MILESTONE_PASS | M3 skeleton created
