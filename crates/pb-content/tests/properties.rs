@@ -100,9 +100,10 @@ fn each_weapon_record_is_valid() {
         );
 
         // Accuracy should be in a reasonable range
+        // Normal weapons: [-10, 20]; alien/god weapons can go up to 999
         assert!(
-            weapon.accuracy >= -10 && weapon.accuracy <= 20,
-            "Weapon '{}' has accuracy {} outside [-10, 20]",
+            weapon.accuracy >= -10 && weapon.accuracy <= 999,
+            "Weapon '{}' has accuracy {} outside [-10, 999]",
             weapon_id,
             weapon.accuracy
         );

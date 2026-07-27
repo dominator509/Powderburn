@@ -21,6 +21,7 @@ workspace = true
     serde = { workspace = true }
     ron = { workspace = true }
     tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
+    wgpu = { workspace = true }
 
 [[bin]]
 name = "pbcli"

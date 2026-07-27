@@ -68,6 +68,8 @@ pub struct Args {
     pub choice: Option<String>,
     /// Whether to emit all SPEC-007 metrics (--emit-metrics).
     pub emit_metrics: bool,
+    /// Whether capture should also run timing benchmark (--bench).
+    pub capture_bench: bool,
 }
 
 impl Args {
@@ -107,6 +109,7 @@ impl Args {
         let mut choice: Option<String> = None;
         let mut emit_metrics = false;
         let mut frames: Option<u64> = None;
+        let mut capture_bench = false;
 
         let mut i = 1; // skip program name
         while i < raw.len() {
@@ -262,6 +265,9 @@ impl Args {
                         .map_err(|e| format!("invalid frames: {}", e))?;
                     frames = Some(n);
                 }
+                "--bench" => {
+                    capture_bench = true;
+                }
                 _ if arg.starts_with('-') => {
                     return Err(format!("unknown flag: {}", arg));
                 }
@@ -305,6 +311,7 @@ impl Args {
             adapter,
             choice,
             emit_metrics,
+            capture_bench,
         })
     }
 }

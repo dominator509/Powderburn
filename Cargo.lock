@@ -1367,6 +1367,7 @@ dependencies = [
  "ron",
  "serde",
  "tokio",
+ "wgpu",
 ]
 
 [[package]]
