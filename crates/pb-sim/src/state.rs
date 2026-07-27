@@ -49,6 +49,16 @@ pub struct ActorState {
     pub stance: Stance,
     /// Character progression data (XP, level, skills, marks, way).
     pub progression: ActorProgression,
+    /// Weapon ID string.
+    pub weapon: String,
+    /// Rounds loaded in weapon.
+    pub loaded_rounds: i32,
+    /// Weapon capacity.
+    pub weapon_capacity: i32,
+    /// Fouling level (0-10, affects misfire).
+    pub fouling: i32,
+    /// Whether weapon is jammed.
+    pub jammed: bool,
 }
 
 /// Top-level simulation state.
@@ -68,6 +78,12 @@ pub struct SimState {
     pub wind_speed: i32,
     /// Actors currently on overwatch (DrawBead).
     pub overwatch: BTreeSet<ActorId>,
+    /// Per-tile smoke density grid (col-major, density 0-6).
+    pub smoke_grid: Vec<u8>,
+    /// Grid columns for smoke.
+    pub smoke_cols: u32,
+    /// Grid rows for smoke.
+    pub smoke_rows: u32,
 }
 
 impl SimState {
@@ -81,6 +97,9 @@ impl SimState {
             scenario_id,
             wind_speed: 0,
             overwatch: BTreeSet::new(),
+            smoke_grid: vec![0u8; 20 * 12], // 20x12 grid
+            smoke_cols: 20,
+            smoke_rows: 12,
         }
     }
 }

@@ -32,6 +32,12 @@ fn build_shot_scenario(seed: u64) -> SimState {
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
+            progression: pb_sim::progression::ActorProgression::new(),
+            weapon: String::new(),
+            loaded_rounds: 0,
+            weapon_capacity: 0,
+            fouling: 0,
+            jammed: false,
         },
     );
 
@@ -50,6 +56,12 @@ fn build_shot_scenario(seed: u64) -> SimState {
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
+            progression: pb_sim::progression::ActorProgression::new(),
+            weapon: String::new(),
+            loaded_rounds: 0,
+            weapon_capacity: 0,
+            fouling: 0,
+            jammed: false,
         },
     );
 

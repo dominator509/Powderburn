@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::action::update_alive_and_xp;
 use crate::state::{ActorState, SimState, Stance};
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap, Tick};
@@ -87,6 +88,9 @@ pub fn advance_to_next_actor(state: &mut SimState) -> Option<ActorId> {
         .entry(actor_id)
         .and_modify(|t| *t = next_tick.wrapping_add(tl));
 
+    // Update alive actor count and XP total gauges after each advance
+    update_alive_and_xp(state);
+
     Some(actor_id)
 }
 
@@ -113,6 +117,11 @@ pub fn build_actor(
         max_sand: sand,
         stance: Stance::Standing,
         progression: crate::progression::ActorProgression::new(),
+        weapon: "colt_army_1860".to_string(),
+        loaded_rounds: 6,
+        weapon_capacity: 6,
+        fouling: 0,
+        jammed: false,
     }
 }
 

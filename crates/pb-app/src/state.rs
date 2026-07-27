@@ -42,6 +42,15 @@ pub enum GameScreen {
     LoadSlot,
 }
 
+/// A single called shot location entry for the wheel overlay.
+#[derive(Debug, Clone, Copy)]
+pub struct CalledShotEntry {
+    pub location: HitLocationType,
+    pub key: u8,
+    pub penalty: i32,
+    pub crit_effect: &'static str,
+}
+
 /// Top-level game state.
 #[derive(Debug)]
 pub struct GameState {
@@ -61,6 +70,16 @@ pub struct GameState {
     pub paused: bool,
     /// Audio system for sound effect playback.
     pub audio: Option<pb_audio::AudioSystem>,
+    /// Whether the called shot wheel overlay is shown.
+    pub called_shot_active: bool,
+    /// Currently selected called shot location index (0-6) when wheel is active.
+    pub called_shot_index: u8,
+    /// The called shot entries for the wheel display.
+    pub called_shot_entries: Vec<CalledShotEntry>,
+    /// Hovered tile for movement preview (ap_cost).
+    pub move_preview_ap: Option<i32>,
+    /// Whether movement preview info is visible.
+    pub move_preview_active: bool,
 }
 
 impl GameState {
@@ -80,6 +99,19 @@ impl GameState {
             message: String::new(),
             paused: false,
             audio: None,
+            called_shot_active: false,
+            called_shot_index: 0,
+            called_shot_entries: vec![
+                CalledShotEntry { location: HitLocationType::Head, key: 1, penalty: 25, crit_effect: "Concuss" },
+                CalledShotEntry { location: HitLocationType::Eyes, key: 2, penalty: 40, crit_effect: "Blind" },
+                CalledShotEntry { location: HitLocationType::Torso, key: 3, penalty: 0, crit_effect: "Bleed" },
+                CalledShotEntry { location: HitLocationType::Vitals, key: 4, penalty: 30, crit_effect: "Bleed×2.5" },
+                CalledShotEntry { location: HitLocationType::GunArm, key: 5, penalty: 15, crit_effect: "Broken" },
+                CalledShotEntry { location: HitLocationType::OffArm, key: 6, penalty: 18, crit_effect: "Broken" },
+                CalledShotEntry { location: HitLocationType::Legs, key: 7, penalty: 10, crit_effect: "Broken" },
+            ],
+            move_preview_ap: None,
+            move_preview_active: false,
         }
     }
 }

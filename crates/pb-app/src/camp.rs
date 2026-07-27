@@ -306,7 +306,8 @@ mod tests {
 
     #[test]
     fn skill_display_can_upgrade_false_no_points() {
-        let prog = ActorProgression::at_level(5);
+        let mut prog = ActorProgression::at_level(5);
+        prog.skill_points = 0;
         let view = build_progression_view("X", &prog);
         let pistols = view.skills.iter().find(|s| s.name == "Pistols").unwrap();
         assert!(!pistols.can_upgrade);

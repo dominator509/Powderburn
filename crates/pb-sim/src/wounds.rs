@@ -69,6 +69,12 @@ mod tests {
             sand: 10,
             max_sand: 10,
             stance: Stance::Standing,
+            progression: crate::progression::ActorProgression::new(),
+            weapon: "colt_army_1860".to_string(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
+            fouling: 0,
+            jammed: false,
         }
     }
 

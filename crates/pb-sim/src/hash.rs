@@ -100,6 +100,12 @@ mod tests {
                 sand: 20,
                 max_sand: 20,
                 stance: Stance::Standing,
+                progression: crate::progression::ActorProgression::new(),
+                weapon: "colt_army_1860".to_string(),
+                loaded_rounds: 6,
+                weapon_capacity: 6,
+                fouling: 0,
+                jammed: false,
             },
         );
         SimState {
@@ -110,6 +116,9 @@ mod tests {
             scenario_id: 1,
             wind_speed: 0,
             overwatch: std::collections::BTreeSet::new(),
+            smoke_grid: vec![0u8; 20 * 12],
+            smoke_cols: 20,
+            smoke_rows: 12,
         }
     }
 

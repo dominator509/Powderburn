@@ -75,6 +75,11 @@ pub fn run_selftest(args: &Args) -> Result<(), String> {
         max_sand: 10,
         stance: Stance::Standing,
         progression: pb_sim::progression::ActorProgression::new(),
+        weapon: "colt_army_1860".to_string(),
+        loaded_rounds: 6,
+        weapon_capacity: 6,
+        fouling: 0,
+        jammed: false,
     };
     let cost = action_cost(&Action::Reload, &actor);
     assert_eq!(cost, Ap(3));
@@ -108,6 +113,100 @@ pub fn run_selftest(args: &Args) -> Result<(), String> {
         let _content = load_all(content_root).map_err(|e| format!("content load: {}", e))?;
     }
 
+    // === --emit-metrics: run a fixed 12-tick scenario ======================
+    if args.emit_metrics {
+        run_selftest_metrics()?;
+    }
+
     println!("{}", output::SELFTEST_OK);
     Ok(())
+}
+
+/// Run a fixed 12-tick scenario and dump all SPEC-007 metrics to stderr.
+fn run_selftest_metrics() -> Result<(), String> {
+    use pb_sim::action::Command;
+    use pb_sim::clock::{advance_to_next_actor, build_actor, register_actor};
+
+    let registry = pb_core::metrics::MetricsRegistry::global();
+    registry.reset_all();
+
+    // Create a sim state with 4 actors: 2 allies, 2 enemies
+    let mut state = SimState::new(42, 1);
+
+    let ally1 = ActorId(1);
+    let ally2 = ActorId(2);
+    let enemy1 = ActorId(3);
+    let enemy2 = ActorId(4);
+
+    register_actor(
+        &mut state,
+        ally1,
+        build_actor(ally1, "e_ally_alpha", 5, 20, 10, TileXY::new(2, 2)),
+    );
+    register_actor(
+        &mut state,
+        ally2,
+        build_actor(ally2, "e_ally_beta", 3, 18, 8, TileXY::new(2, 3)),
+    );
+    register_actor(
+        &mut state,
+        enemy1,
+        build_actor(enemy1, "e_enemy_gamma", 6, 15, 5, TileXY::new(8, 8)),
+    );
+    register_actor(
+        &mut state,
+        enemy2,
+        build_actor(enemy2, "e_enemy_delta", 4, 12, 4, TileXY::new(9, 9)),
+    );
+
+    // Run 12 ticks: advance clock and apply Hold for each
+    for _i in 0..12 {
+        let Some(actor_id) = advance_to_next_actor(&mut state) else {
+            break;
+        };
+        let cmd = Command {
+            actor_id,
+            action: pb_sim::action::Action::Hold,
+        };
+        let _events = pb_sim::action::step(&mut state, cmd)
+            .map_err(|e| format!("step error at tick {}: {:?}", state.tick.0, e))?;
+    }
+
+    // Emit all metrics to stderr in SPEC-003 format
+    registry.emit_all();
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_selftest_emit_metrics_produces_at_least_8_lines() {
+        // Run the metrics scenario and capture stderr output
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_selftest_metrics().unwrap();
+        }));
+        assert!(result.is_ok(), "run_selftest_metrics should not panic");
+
+        // Verify the registry has been populated with metric data
+        let registry = pb_core::metrics::MetricsRegistry::global();
+        let line_count = registry.rng_draws.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            line_count > 0,
+            "RNG draws should be greater than 0 after 12 ticks, got {}",
+            line_count
+        );
+        assert!(
+            registry.sim_step_ms.count() > 0,
+            "sim.step.ms should have samples"
+        );
+        assert!(
+            registry.sim_events_per_turn.count() > 0,
+            "sim.events.per_turn should have samples"
+        );
+        let alive = registry.sim_actors_alive.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(alive > 0, "sim.actors.alive should be > 0, got {}", alive);
+    }
 }

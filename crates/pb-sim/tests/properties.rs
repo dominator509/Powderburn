@@ -87,6 +87,12 @@ fn random_actor(id: u32, rng: &mut Lcg) -> (ActorId, ActorState) {
         sand,
         max_sand,
         stance,
+        progression: pb_sim::progression::ActorProgression::new(),
+        weapon: String::new(),
+        loaded_rounds: 0,
+        weapon_capacity: 0,
+        fouling: 0,
+        jammed: false,
     };
 
     (ActorId(id), actor)
@@ -111,6 +117,9 @@ fn random_simstate(seed: u64, actor_count: u32) -> SimState {
         scenario_id: rng.next_i32(1, 100) as u32,
         wind_speed: rng.next_i32(0, 10),
         overwatch: BTreeSet::new(),
+        smoke_grid: vec![0u8; 240],
+        smoke_cols: 20,
+        smoke_rows: 12,
     }
 }
 

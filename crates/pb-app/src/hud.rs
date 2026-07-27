@@ -7,10 +7,13 @@
 
 use std::sync::Arc;
 
+use pb_core::event::HitLocationType;
 use pb_render::device::RenderDevice;
 use pb_render::text::{BitmapFont, TextRenderer};
 
-use crate::state::{GameScreen, GameState, InteractionPhase};
+use crate::combat::compute_hit_chance_for_hover;
+use crate::state::{GameScreen, GameState, InteractionPhase, PlayerAction};
+use pb_sim::shot::HitChanceMod;
 
 // ── Layout constants (all in pixel coords) ─────────────────────────────
 
@@ -20,6 +23,8 @@ const HUD_BOTTOM: f32 = 100.0;
 const BAR_H: f32 = 90.0;
 /// Text scale (1.0 = 8×8 px).
 const TXT_SCALE: f32 = 2.0;
+/// Small text scale.
+const TXT_SCALE_SMALL: f32 = 1.5;
 /// Line height in scaled pixels.
 const LINE_H: f32 = 20.0;
 /// Left margin.
@@ -263,6 +268,10 @@ impl HudRenderer {
             "NO SIMULATION"
         };
 
+        // ── Sequence strip (top of screen) ────────────────────────────
+        let sequence_text = build_sequence_strip(game_state);
+
+        // ── Selected actor info ────────────────────────────────────────
         let selected_info = match game_state.phase {
             InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => {
                 game_state.sim.as_ref().and_then(|sim| {
@@ -279,7 +288,7 @@ impl HudRenderer {
 
         let action_menu = match game_state.phase {
             InteractionPhase::SelectedActor(_) => {
-                "Actions: [F]ire  [A]imed  [1-7]Called  [H]old  [R]eload"
+                "Actions: [F]ire  [A]imed  [G]Called  [H]old  [R]eload"
             }
             InteractionPhase::Targeting { .. } => {
                 "Click an enemy to target | Right-click to cancel"
@@ -290,7 +299,7 @@ impl HudRenderer {
         let instructions = match game_state.phase {
             InteractionPhase::Idle => "Click an ally to select | Press key for action",
             InteractionPhase::SelectedActor(_) => {
-                "Press F: fire  A: aimed  1-7: called shot  H: hold  R: reload"
+                "Press F: fire  A: aimed  G: called shot wheel  1-7: called shot  H: hold  R: reload"
             }
             InteractionPhase::Targeting { .. } => "Click on an enemy to execute the action",
             InteractionPhase::Executing => "Executing action...",
@@ -298,6 +307,19 @@ impl HudRenderer {
 
         // Message text (one-line from game state).
         let message = &game_state.message;
+
+        // ── Modifier breakdown (while targeting) ──────────────────────
+        let modifier_text = if matches!(game_state.phase, InteractionPhase::Targeting { .. }) {
+            build_modifier_breakdown_text(game_state)
+        } else {
+            String::new()
+        };
+
+        // ── Weapon status ─────────────────────────────────────────────
+        let weapon_text = build_weapon_status_text(game_state);
+
+        // ── Wound doll ────────────────────────────────────────────────
+        let wound_info = build_wound_doll_text(game_state);
 
         // ── Background bar ─────────────────────────────────────────────
 
@@ -371,6 +393,13 @@ impl HudRenderer {
             }
         }
 
+        // ── Called shot wheel overlay ─────────────────────────────────
+        if game_state.called_shot_active {
+            // Dim overlay for called shot wheel
+            let wheel_rects = build_called_shot_wheel_rects();
+            rects.extend(wheel_rects);
+        }
+
         // ── Render pass ────────────────────────────────────────────────
 
         let mut encoder =
@@ -400,12 +429,12 @@ impl HudRenderer {
             self.rect_renderer
                 .render_rects(&render_device.queue, &mut rpass, &rects, sw, sh);
 
-            // 2. Turn indicator (top-left).
+            // 2. Turn indicator (top-left, small).
             let turn_mesh = font.render_text(
                 turn_text,
                 MARGIN,
                 8.0,
-                TXT_SCALE,
+                TXT_SCALE_SMALL,
                 [1.0, 0.9, 0.4, 1.0],
                 sw,
                 sh,
@@ -413,7 +442,22 @@ impl HudRenderer {
             self.text_renderer
                 .render(&render_device.queue, &mut rpass, &turn_mesh);
 
-            // 3. Selection info (top area, right side).
+            // 3. Sequence strip (top, next to turn indicator)
+            if !sequence_text.is_empty() {
+                let seq_mesh = font.render_text(
+                    &sequence_text,
+                    MARGIN + 90.0,
+                    8.0,
+                    TXT_SCALE_SMALL,
+                    [0.7, 0.8, 1.0, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &seq_mesh);
+            }
+
+            // 4. Selection info (top area, right side).
             if let Some(ref info) = selected_info {
                 let info_x = MARGIN + HP_BAR_W + 30.0;
                 let info_mesh =
@@ -422,7 +466,22 @@ impl HudRenderer {
                     .render(&render_device.queue, &mut rpass, &info_mesh);
             }
 
-            // 4. Action menu (bottom bar, line 1).
+            // 5. Weapon status (top bar, right side)
+            if !weapon_text.is_empty() {
+                let weapon_mesh = font.render_text(
+                    &weapon_text,
+                    sw - 300.0,
+                    8.0,
+                    TXT_SCALE_SMALL,
+                    [0.9, 0.75, 0.5, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &weapon_mesh);
+            }
+
+            // 6. Action menu (bottom bar, line 1).
             if !action_menu.is_empty() {
                 let menu_mesh = font.render_text(
                     action_menu,
@@ -437,7 +496,7 @@ impl HudRenderer {
                     .render(&render_device.queue, &mut rpass, &menu_mesh);
             }
 
-            // 5. Instructions (bottom bar, line 2).
+            // 7. Instructions (bottom bar, line 2).
             let instr_mesh = font.render_text(
                 instructions,
                 MARGIN,
@@ -450,7 +509,7 @@ impl HudRenderer {
             self.text_renderer
                 .render(&render_device.queue, &mut rpass, &instr_mesh);
 
-            // 6. Message (bottom bar, line 3).
+            // 8. Message (bottom bar, line 3).
             if !message.is_empty() {
                 let msg_mesh = font.render_text(
                     message,
@@ -463,6 +522,65 @@ impl HudRenderer {
                 );
                 self.text_renderer
                     .render(&render_device.queue, &mut rpass, &msg_mesh);
+            }
+
+            // 9. Modifier breakdown (below instructions, while targeting)
+            if !modifier_text.is_empty() {
+                let mod_mesh = font.render_text(
+                    &modifier_text,
+                    MARGIN,
+                    bar_y + 8.0 - LINE_H,
+                    TXT_SCALE_SMALL,
+                    [1.0, 0.9, 0.3, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &mod_mesh);
+            }
+
+            // 10. Wound doll (bottom bar, right side)
+            if !wound_info.is_empty() {
+                let wound_mesh = font.render_text(
+                    &wound_info,
+                    sw - 250.0,
+                    bar_y + 8.0,
+                    TXT_SCALE_SMALL,
+                    [0.8, 0.4, 0.4, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &wound_mesh);
+            }
+
+            // 11. Called shot wheel text overlay
+            if game_state.called_shot_active {
+                let wheel_text = build_called_shot_wheel_text(game_state);
+                let wmesh = font.render_text(
+                    &wheel_text,
+                    sw * 0.1,
+                    sh * 0.25,
+                    2.5,
+                    [1.0, 1.0, 0.8, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &wmesh);
+
+                // Hint text at bottom
+                let hint = font.render_text(
+                    "Press G to confirm | TAB to cycle | ESC to cancel",
+                    sw * 0.1,
+                    sh * 0.25 + 260.0,
+                    TXT_SCALE,
+                    [0.7, 0.7, 0.7, 1.0],
+                    sw,
+                    sh,
+                );
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, &hint);
             }
         }
 
@@ -604,6 +722,184 @@ impl HudRenderer {
             &["Press 1-5 to select a slot", "Press ESC to cancel"],
         );
     }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// HUD content builders
+// ═════════════════════════════════════════════════════════════════════════
+
+/// Build the modifier breakdown text for the HUD.
+fn build_modifier_breakdown_text(game_state: &GameState) -> String {
+    let Some(breakdown) = compute_hit_chance_for_hover(game_state) else {
+        return String::new();
+    };
+    let mut parts = Vec::new();
+    for m in &breakdown.modifiers {
+        let sign = if m.value >= 0 { "+" } else { "" };
+        parts.push(format!("{}{}", sign, m.value));
+    }
+    let joined = parts.join(" ");
+    format!("Hit chance: {}%  ({})", breakdown.total, joined)
+}
+
+/// Build the sequence strip text (next 8 actors in turn order).
+fn build_sequence_strip(game_state: &GameState) -> String {
+    let Some(ref sim) = game_state.sim else { return String::new() };
+    // Collect alive actors with their next_act_at
+    let mut actors: Vec<(u64, &pb_sim::state::ActorState, ActorId)> = sim
+        .sequence_clock
+        .iter()
+        .filter_map(|(id, tick)| {
+            let actor = sim.actors.get(id)?;
+            if !actor.alive { return None; }
+            Some((*tick, actor, *id))
+        })
+        .collect();
+
+    // Sort by next_act_at, tie-break by sequence desc, then ActorId asc
+    actors.sort_by(|(ta, aa, ida), (tb, ab, idb)| {
+        ta.cmp(tb)
+            .then_with(|| ab.sequence.cmp(&aa.sequence))
+            .then_with(|| ida.cmp(idb))
+    });
+
+    let count = actors.len().min(8);
+    let mut parts = Vec::with_capacity(count);
+    for (tick, actor, _id) in actors.iter().take(count) {
+        let name = if actor.name.len() > 12 {
+            &actor.name[..12]
+        } else {
+            &actor.name
+        };
+        parts.push(format!("{}@{}", name, tick));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("Seq: {}", parts.join(" │ "))
+    }
+}
+use pb_core::ids::ActorId;
+
+/// Build weapon status text for the selected actor.
+fn build_weapon_status_text(game_state: &GameState) -> String {
+    let actor_id = match game_state.phase {
+        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => id,
+        _ => return String::new(),
+    };
+    let Some(ref sim) = game_state.sim else { return String::new() };
+    let Some(actor) = sim.actors.get(&actor_id) else { return String::new() };
+    let jam_str = if actor.jammed { " JAMMED!" } else { "" };
+    format!(
+        "{} {}/{} f{}{}",
+        actor.weapon, actor.loaded_rounds, actor.weapon_capacity, actor.fouling, jam_str
+    )
+}
+
+/// Build wound doll text for the selected actor.
+fn build_wound_doll_text(game_state: &GameState) -> String {
+    let actor_id = match game_state.phase {
+        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => id,
+        _ => return String::new(),
+    };
+    let Some(ref sim) = game_state.sim else { return String::new() };
+    let Some(actor) = sim.actors.get(&actor_id) else { return String::new() };
+
+    // Build wound status for each of the 7 hit locations
+    let all_locs = [
+        HitLocationType::Head,
+        HitLocationType::Eyes,
+        HitLocationType::Torso,
+        HitLocationType::Vitals,
+        HitLocationType::GunArm,
+        HitLocationType::OffArm,
+        HitLocationType::Legs,
+    ];
+    let mut parts = Vec::new();
+    for loc in &all_locs {
+        let wounded = actor.wounds.iter().any(|w| {
+            pb_rules::tables::location_to_wound(*loc) == *w
+        });
+        let mark = if wounded { "✗" } else { "○" };
+        parts.push(format!("{}{}", mark, abbrev_location(*loc)));
+    }
+    format!("Wounds: {}", parts.join(" "))
+}
+
+/// Abbreviate a hit location to 2-4 chars.
+fn abbrev_location(loc: HitLocationType) -> &'static str {
+    match loc {
+        HitLocationType::Head => "Hd",
+        HitLocationType::Eyes => "Ey",
+        HitLocationType::Torso => "To",
+        HitLocationType::Vitals => "Vi",
+        HitLocationType::GunArm => "GA",
+        HitLocationType::OffArm => "OA",
+        HitLocationType::Legs => "Lg",
+    }
+}
+
+/// Build the called shot wheel background rectangles.
+fn build_called_shot_wheel_rects() -> Vec<HudRect> {
+    vec![
+        // Full-screen dim
+        HudRect {
+            x: 0.0,
+            y: 0.0,
+            w: 2000.0,
+            h: 2000.0,
+            color: [0.0, 0.0, 0.0, 0.65],
+        },
+        // Center panel
+        HudRect {
+            x: 50.0,
+            y: 100.0,
+            w: 700.0,
+            h: 300.0,
+            color: [0.1, 0.1, 0.15, 0.9],
+        },
+    ]
+}
+
+/// Build the called shot wheel overlay text.
+fn build_called_shot_wheel_text(game_state: &GameState) -> String {
+    let mut lines = vec!["── CALLED SHOT WHEEL ──".to_string()];
+    for (i, entry) in game_state.called_shot_entries.iter().enumerate() {
+        let marker = if i as u8 == game_state.called_shot_index {
+            "▶"
+        } else {
+            " "
+        };
+        // Compute effective hit chance for this location
+        let chance_str = compute_called_shot_chance(game_state, entry.location)
+            .map(|c| format!("{}%", c))
+            .unwrap_or_else(|| "--".to_string());
+        lines.push(format!(
+            "{} [{}] {:<8} -{}% hit  {}  chance: {}",
+            marker, entry.key, format!("{:?}", entry.location), entry.penalty, entry.crit_effect, chance_str
+        ));
+    }
+    lines.join("\n")
+}
+
+/// Compute the hit chance for a specific called shot location.
+fn compute_called_shot_chance(
+    game_state: &GameState,
+    location: HitLocationType,
+) -> Option<i32> {
+    use pb_sim::shot::compute_hit_chance_breakdown;
+    let sim = game_state.sim.as_ref()?;
+    let (actor_id, aimed) = match game_state.phase {
+        InteractionPhase::SelectedActor(id) => (id, true),
+        InteractionPhase::Targeting { actor, .. } => (actor, true),
+        _ => return None,
+    };
+    let shooter = sim.actors.get(&actor_id)?;
+    // Use the first enemy as a dummy target for display
+    let target = sim.actors.iter()
+        .find(|(_, a)| a.alive && !crate::combat::is_ally(a))?
+        .1;
+    Some(compute_hit_chance_breakdown(shooter, target, aimed, Some(location), 0).total)
 }
 
 // ═════════════════════════════════════════════════════════════════════════

@@ -10,11 +10,13 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use pb_content::load;
 use pb_content::schema::Content;
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
+use pb_core::metrics::MetricsRegistry;
 use pb_render::camera::IsoCamera;
 use pb_render::device::RenderDevice;
 use pb_render::overlay::{OverlaySystem, OverlayTileKind};
@@ -23,6 +25,7 @@ use pb_render::sprites::{SpriteInstance, SpriteSystem};
 use pb_render::tiles::{TileSystem, TileVisual};
 use pb_sim::action::{step, Action, Command};
 use pb_sim::clock::advance_to_next_actor;
+use pb_sim::shot::{compute_hit_chance_breakdown, HitChanceBreakdown};
 use pb_sim::state::{ActorState, SimState, Stance};
 
 use crate::state::{GameScreen, GameState, InteractionPhase, PlayerAction};
@@ -158,6 +161,11 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
             max_sand: actor_data.sand_max,
             stance: parse_stance(&actor_data.stance),
             progression: pb_sim::progression::ActorProgression::new(),
+            weapon: "colt_army_1860".to_string(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
+            fouling: 0,
+            jammed: false,
         };
 
         sim.actors.insert(actor_id, actor_state);
@@ -188,6 +196,8 @@ pub fn render_combat_frame(
     viewport_width: u32,
     viewport_height: u32,
 ) {
+    let _timer = Instant::now();
+
     // ── Camera ──────────────────────────────────────────────────────────
     let camera = IsoCamera {
         center_x: game_state.camera_x,
@@ -261,6 +271,9 @@ pub fn render_combat_frame(
     render_device
         .queue
         .submit(std::iter::once(encoder.finish()));
+
+    let elapsed_ms = _timer.elapsed().as_secs_f64() * 1000.0;
+    MetricsRegistry::global().record_render_frame(elapsed_ms);
 }
 
 /// Handle a mouse click during combat.
@@ -498,6 +511,7 @@ fn play_sfx_from_events(audio: &mut Option<pb_audio::AudioSystem>, events: &[Eve
 /// mapped back to real simulation `ActorId`s via `resolve_ai_target_id`.
 /// Falls back to `Hold` if no player targets exist or if the action fails.
 pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
+    let _timer = Instant::now();
     let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
 
     // Collect alive enemy IDs
@@ -607,7 +621,25 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
     gs.tick = sim.tick.0;
     gs.phase = InteractionPhase::Idle;
 
+    // Record AI turn timing
+    let elapsed_ms = _timer.elapsed().as_secs_f64() * 1000.0;
+    MetricsRegistry::global().record_ai_turn(elapsed_ms);
+
+    // Update combat metrics (alive actors, XP total)
+    update_combat_metrics(gs);
+
     Ok(())
+}
+
+/// Update the `sim.actors.alive` and `progression.xp.total` metric gauges
+/// based on the current game state simulation.
+fn update_combat_metrics(gs: &GameState) {
+    let Some(ref sim) = gs.sim else { return };
+    let alive_count = sim.actors.values().filter(|a| a.alive).count() as u64;
+    let total_xp: u64 = sim.actors.values().map(|a| a.progression.xp).sum();
+    let registry = MetricsRegistry::global();
+    registry.set_sim_actors_alive(alive_count);
+    registry.set_progression_xp_total(total_xp);
 }
 
 /// Check win/lose conditions.
@@ -662,8 +694,31 @@ fn resolve_ai_target_id(action: Action, player_states: &[(ActorId, ActorState)])
 }
 
 /// Run one AI decision for an enemy actor (legacy stub — use run_enemy_ai).
+#[allow(clippy::too_many_arguments)]
 pub fn run_ai_step(game_state: &mut GameState) -> Result<(), String> {
     run_enemy_ai(game_state)
+}
+
+// ── Public hit chance breakdown ───────────────────────────────────────────
+
+/// Compute the hit chance breakdown for the selected actor vs a hovered target.
+pub fn compute_hit_chance_for_hover(game_state: &GameState) -> Option<HitChanceBreakdown> {
+    let sim = game_state.sim.as_ref()?;
+    let (actor_id, aimed, called) = match game_state.phase {
+        InteractionPhase::Targeting { actor, action } => {
+            let aimed = matches!(action, PlayerAction::AimedShot);
+            let called = match action {
+                PlayerAction::CalledShot(loc) => Some(loc),
+                _ => None,
+            };
+            (actor, aimed, called)
+        }
+        _ => return None,
+    };
+    let shooter = sim.actors.get(&actor_id)?;
+    let hovered = TileXY::new(game_state.hovered_tile_x, game_state.hovered_tile_y);
+    let (_, target) = sim.actors.iter().find(|(_, a)| a.position == hovered && a.alive && !is_ally(a))?;
+    Some(compute_hit_chance_breakdown(shooter, target, aimed, called, 0))
 }
 
 // ── Internal rendering helpers ────────────────────────────────────────────
@@ -719,10 +774,20 @@ fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
     tiles
 }
 
-/// Build a smoke density grid from the simulation (currently a stub).
+/// Build a smoke density grid from the simulation state.
 fn build_smoke_grid(game_state: &GameState) -> Vec<SmokeTile> {
-    let _ = game_state;
-    vec![SmokeTile::new(0); (GRID_COLS * GRID_ROWS) as usize]
+    let Some(ref sim) = game_state.sim else {
+        return vec![SmokeTile::new(0); (GRID_COLS * GRID_ROWS) as usize];
+    };
+    let mut tiles = Vec::with_capacity((GRID_COLS * GRID_ROWS) as usize);
+    for y in 0..GRID_ROWS {
+        for x in 0..GRID_COLS {
+            let idx = y as usize * sim.smoke_cols as usize + x as usize;
+            let density = sim.smoke_grid.get(idx).copied().unwrap_or(0);
+            tiles.push(SmokeTile::new(density));
+        }
+    }
+    tiles
 }
 
 /// Build overlay tile highlights based on hovered tile and selected actor.

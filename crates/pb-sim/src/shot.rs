@@ -27,6 +27,103 @@ use crate::state::{SimError, SimState, Stance};
 
 const HANDS: i32 = 5;
 
+/// A named modifier in the hit chance breakdown.
+#[derive(Debug, Clone, Copy)]
+pub struct HitChanceMod {
+    pub label: &'static str,
+    pub value: i32,
+}
+
+/// The full breakdown of a hit chance calculation.
+#[derive(Debug, Clone)]
+pub struct HitChanceBreakdown {
+    pub total: i32,
+    pub modifiers: Vec<HitChanceMod>,
+}
+
+/// Compute the hit chance breakdown for a shot without rolling.
+/// Returns the total hit chance (clamped 5-95) and each constituent modifier.
+pub fn compute_hit_chance_breakdown(
+    shooter_actor: &crate::state::ActorState,
+    target_actor: &crate::state::ActorState,
+    aimed: bool,
+    called_location: Option<HitLocationType>,
+    extra_penalty: i32,
+) -> HitChanceBreakdown {
+    let base = 40i32;
+    let hands_bonus = HANDS * 3; // 15
+    let weapon_accuracy = 5i32;
+
+    let aim_bonus = if let Some(loc) = called_location {
+        -tables::called_shot_penalty(loc)
+    } else if aimed {
+        15
+    } else {
+        0
+    };
+
+    let aim_label = if called_location.is_some() {
+        "called"
+    } else if aimed {
+        "aim"
+    } else {
+        "snap"
+    };
+
+    let range_mod: i32 = 0; // Medium range default
+
+    let stance_acc = stance_accuracy_bonus(shooter_actor.stance);
+    let stance_ev = stance_evasion_bonus(target_actor.stance);
+    let cover_penalty: i32 = 0;
+    let evasion = 5 + HANDS / 2 + stance_ev + cover_penalty;
+
+    let smoke_penalty: i32 = 0; // computed elsewhere in real impl
+    let shooter_morale = crate::morale::morale_state(shooter_actor.sand, shooter_actor.max_sand);
+    let suppression_penalty = crate::morale::morale_accuracy_penalty(shooter_morale);
+    let flanking_bonus = compute_flanking_bonus(
+        target_actor.position,
+        target_actor.facing,
+        shooter_actor.position,
+    );
+
+    let mut total = base
+        + hands_bonus
+        + weapon_accuracy
+        + aim_bonus
+        + range_mod
+        + stance_acc
+        - evasion
+        - smoke_penalty
+        + suppression_penalty
+        + flanking_bonus
+        + extra_penalty;
+
+    total = total.clamp(5, 95);
+
+    let mut modifiers = Vec::new();
+    modifiers.push(HitChanceMod { label: "base", value: base });
+    modifiers.push(HitChanceMod { label: "HANDS×3", value: hands_bonus });
+    modifiers.push(HitChanceMod { label: "weapon", value: weapon_accuracy });
+    modifiers.push(HitChanceMod { label: aim_label, value: aim_bonus });
+    modifiers.push(HitChanceMod { label: "range", value: range_mod });
+    modifiers.push(HitChanceMod { label: "stance", value: stance_acc });
+    modifiers.push(HitChanceMod { label: "evasion", value: -evasion });
+    if smoke_penalty != 0 {
+        modifiers.push(HitChanceMod { label: "smoke", value: -smoke_penalty });
+    }
+    if suppression_penalty != 0 {
+        modifiers.push(HitChanceMod { label: "suppression", value: suppression_penalty });
+    }
+    if flanking_bonus != 0 {
+        modifiers.push(HitChanceMod { label: "flanking", value: flanking_bonus });
+    }
+    if extra_penalty != 0 {
+        modifiers.push(HitChanceMod { label: "extra", value: extra_penalty });
+    }
+
+    HitChanceBreakdown { total, modifiers }
+}
+
 /// Resolve a shot from `shooter` at `target`.
 ///
 /// `called_location` is `Some(loc)` for a called shot, `None` for snap or
@@ -412,6 +509,12 @@ mod tests {
             sand: 10,
             max_sand: 10,
             stance: Stance::Standing,
+            progression: crate::progression::ActorProgression::new(),
+            weapon: "colt_army_1860".to_string(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
+            fouling: 0,
+            jammed: false,
         }
     }
 

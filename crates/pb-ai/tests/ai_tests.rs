@@ -32,6 +32,12 @@ fn make_actor(x: i16, y: i16, hp: i32, ap: i16, alive: bool, name: &str) -> Acto
         sand: 10,
         max_sand: 10,
         stance: Stance::Standing,
+        progression: pb_sim::progression::ActorProgression::new(),
+        weapon: String::new(),
+        loaded_rounds: 0,
+        weapon_capacity: 0,
+        fouling: 0,
+        jammed: false,
     }
 }
 

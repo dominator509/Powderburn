@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use crate::error::ContentError;
 use crate::schema::*;
@@ -17,6 +18,7 @@ pub const MAX_NEST_DEPTH: u32 = 64;
 
 /// Load all content from the content directory tree.
 pub fn load_all(root: &Path) -> Result<Content, ContentError> {
+    let _start = Instant::now();
     let mut content = Content::default();
 
     // Load weapons from content/rules/weapons.ron
@@ -127,6 +129,11 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
     if tables_path.exists() {
         content.tables = Some(load_single_ron(&tables_path)?);
     }
+
+    // Record content load time metric
+    let elapsed_ms = _start.elapsed().as_secs_f64() * 1000.0;
+    pb_core::metrics::MetricsRegistry::global()
+        .set_content_load_ms(elapsed_ms as u64);
 
     Ok(content)
 }

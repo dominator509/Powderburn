@@ -59,8 +59,9 @@ fn run_bench(args: &pb_cli::args::Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(|s| s.as_str()).unwrap_or("");
     match sub {
         "turn" => pb_cli::cmd_bench::run_bench(args),
+        "frame" => pb_cli::cmd_bench::run_bench_frame(args),
         _ => {
-            eprintln!("Usage: pbcli bench turn [options]");
+            eprintln!("Usage: pbcli bench <turn|frame> [options]");
             Err("unknown bench subcommand".to_string())
         }
     }

@@ -102,6 +102,9 @@ impl PbRng {
     ) -> i32 {
         assert!(lo <= hi, "PbRng::draw: lo ({}) > hi ({})", lo, hi);
 
+        // Track RNG draws via the global MetricsRegistry
+        pb_core::metrics::MetricsRegistry::global().increment_rng_draws();
+
         let range = (hi as u64).wrapping_sub(lo as u64).wrapping_add(1);
         if range == 0 {
             // Full u64 range — no rejection needed.

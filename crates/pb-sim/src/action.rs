@@ -8,6 +8,7 @@
 use pb_core::event::{Event, HitLocationType, WoundType};
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
+use pb_core::metrics::MetricsRegistry;
 
 use crate::state::{ActorState, SimError, SimState, Stance};
 
@@ -106,11 +107,22 @@ pub fn action_cost(action: &Action, actor: &ActorState) -> pb_core::ids::Ap {
     }
 }
 
+/// Update the `sim.actors.alive` and `progression.xp.total` metric gauges
+/// based on the current simulation state.
+pub(crate) fn update_alive_and_xp(state: &SimState) {
+    let alive_count = state.actors.values().filter(|a| a.alive).count() as u64;
+    let total_xp: u64 = state.actors.values().map(|a| a.progression.xp).sum();
+    let registry = MetricsRegistry::global();
+    registry.set_sim_actors_alive(alive_count);
+    registry.set_progression_xp_total(total_xp);
+}
+
 /// Step the simulation forward by applying a command.
 ///
 /// Returns a vector of events that describe what happened.
 /// Returns `Err(SimError)` if the action cannot be performed.
 pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> {
+    let _start = std::time::Instant::now();
     let actor = state
         .actors
         .get(&cmd.actor_id)
@@ -135,7 +147,7 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
         actor_mut.ap = new_ap;
     }
 
-    match cmd.action {
+    let result = match cmd.action {
         Action::Move(target) => Ok(execute_move(state, cmd.actor_id, target)),
         Action::SnapShot(target) => Ok(execute_shot(state, cmd.actor_id, target, false, None, 0)),
         Action::AimedShot(target) => Ok(execute_shot(state, cmd.actor_id, target, true, None, 0)),
@@ -163,7 +175,31 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
         Action::DrawBead(target) => Ok(execute_draw_bead(state, cmd.actor_id, target)),
         Action::Rally(target) => Ok(execute_rally(state, cmd.actor_id, target)),
         Action::Loot(_target) => Ok(vec![]), // no-op for now
+    };
+
+    // Process smoke deposition events from the result
+    if let Ok(ref events) = result {
+        for ev in events {
+            if let Event::SmokeDeposited { tile, density } = ev {
+                let idx = tile.y as usize * state.smoke_cols as usize + tile.x as usize;
+                if idx < state.smoke_grid.len() {
+                    let new_dens = (state.smoke_grid[idx] + *density as u8).min(6);
+                    state.smoke_grid[idx] = new_dens;
+                }
+            }
+        }
     }
+
+    // Record metrics after successful execution
+    if let Ok(ref events) = result {
+        let elapsed_ms = _start.elapsed().as_secs_f64() * 1000.0;
+        let registry = MetricsRegistry::global();
+        registry.record_sim_step(elapsed_ms);
+        registry.record_events_per_turn(events.len() as f64);
+        update_alive_and_xp(state);
+    }
+
+    result
 }
 
 /// Execute a move action.
@@ -347,6 +383,12 @@ mod tests {
             sand: 10,
             max_sand: 10,
             stance: Stance::Standing,
+            progression: crate::progression::ActorProgression::new(),
+            weapon: "colt_army_1860".to_string(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
+            fouling: 0,
+            jammed: false,
         }
     }
 

@@ -295,6 +295,12 @@ fn called_shot_determinism_same_result_twice() {
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
+            progression: pb_sim::progression::ActorProgression::new(),
+            weapon: String::new(),
+            loaded_rounds: 0,
+            weapon_capacity: 0,
+            fouling: 0,
+            jammed: false,
         },
     );
     state.actors.insert(
@@ -312,6 +318,12 @@ fn called_shot_determinism_same_result_twice() {
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
+            progression: pb_sim::progression::ActorProgression::new(),
+            weapon: String::new(),
+            loaded_rounds: 0,
+            weapon_capacity: 0,
+            fouling: 0,
+            jammed: false,
         },
     );
 

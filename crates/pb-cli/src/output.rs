@@ -73,6 +73,9 @@ pub const WORST_AI_TURN: &str = "worst-ai-turn-ms: ";
 /// Worst sim step time prefix.
 pub const WORST_SIM_STEP: &str = "worst-sim-step-ms: ";
 
+/// P95 frame render time prefix.
+pub const P95_FRAME_MS: &str = "p95-frame-ms: ";
+
 /// Format an event using string names from simulation state.
 ///
 /// Looks up actor IDs in `state.actors` to produce human-readable names

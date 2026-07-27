@@ -319,6 +319,83 @@ fn main() -> Result<(), String> {
 
                 // ── Combat keyboard actions (ignored when paused) ──────
                 if game_state.screen == GameScreen::Combat && !game_state.paused {
+                    // Handle called shot wheel navigation if active
+                    if game_state.called_shot_active {
+                        match kevent.physical_key {
+                            PhysicalKey::Code(KeyCode::Tab) => {
+                                // Cycle to next location
+                                let count = game_state.called_shot_entries.len() as u8;
+                                game_state.called_shot_index =
+                                    (game_state.called_shot_index + 1) % count;
+                                game_state.message = format!(
+                                    "Called shot: {:?}",
+                                    game_state.called_shot_entries
+                                        [game_state.called_shot_index as usize]
+                                        .location
+                                );
+                            }
+                            PhysicalKey::Code(KeyCode::KeyG) | PhysicalKey::Code(KeyCode::Enter) => {
+                                // Confirm current selection
+                                let idx = game_state.called_shot_index as usize;
+                                if idx < game_state.called_shot_entries.len() {
+                                    let loc = game_state.called_shot_entries[idx].location;
+                                    if let InteractionPhase::SelectedActor(id) = game_state.phase {
+                                        game_state.phase = InteractionPhase::Targeting {
+                                            actor: id,
+                                            action: PlayerAction::CalledShot(loc),
+                                        };
+                                        game_state.called_shot_active = false;
+                                        game_state.message = format!(
+                                            "Called shot to {:?} — click on an enemy",
+                                            loc
+                                        );
+                                    }
+                                }
+                            }
+                            PhysicalKey::Code(KeyCode::Escape) => {
+                                game_state.called_shot_active = false;
+                                game_state.message = "Called shot cancelled".to_string();
+                            }
+                            // Also handle 1-7 to jump to a location directly
+                            key @ (PhysicalKey::Code(KeyCode::Digit1)
+                            | PhysicalKey::Code(KeyCode::Digit2)
+                            | PhysicalKey::Code(KeyCode::Digit3)
+                            | PhysicalKey::Code(KeyCode::Digit4)
+                            | PhysicalKey::Code(KeyCode::Digit5)
+                            | PhysicalKey::Code(KeyCode::Digit6)
+                            | PhysicalKey::Code(KeyCode::Digit7)) => {
+                                let n = match key {
+                                    PhysicalKey::Code(KeyCode::Digit1) => 0,
+                                    PhysicalKey::Code(KeyCode::Digit2) => 1,
+                                    PhysicalKey::Code(KeyCode::Digit3) => 2,
+                                    PhysicalKey::Code(KeyCode::Digit4) => 3,
+                                    PhysicalKey::Code(KeyCode::Digit5) => 4,
+                                    PhysicalKey::Code(KeyCode::Digit6) => 5,
+                                    PhysicalKey::Code(KeyCode::Digit7) => 6,
+                                    _ => unreachable!(),
+                                };
+                                if n < game_state.called_shot_entries.len() as u8 {
+                                    game_state.called_shot_index = n;
+                                    // Auto-confirm on direct key
+                                    let loc = game_state.called_shot_entries[n as usize].location;
+                                    if let InteractionPhase::SelectedActor(id) = game_state.phase {
+                                        game_state.phase = InteractionPhase::Targeting {
+                                            actor: id,
+                                            action: PlayerAction::CalledShot(loc),
+                                        };
+                                        game_state.called_shot_active = false;
+                                        game_state.message = format!(
+                                            "Called shot to {:?} — click on an enemy",
+                                            loc
+                                        );
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+
                     // These keys only work when an actor is selected
                     if let InteractionPhase::SelectedActor(_) = game_state.phase {
                         match kevent.physical_key {
@@ -347,6 +424,13 @@ fn main() -> Result<(), String> {
                                     action: PlayerAction::AimedShot,
                                 };
                                 game_state.message = "Aimed shot — click on an enemy".to_string();
+                            }
+
+                            // 'g' → Called Shot Wheel
+                            PhysicalKey::Code(KeyCode::KeyG) => {
+                                game_state.called_shot_active = true;
+                                game_state.called_shot_index = 0;
+                                game_state.message = "Called shot wheel — TAB to cycle, G or Enter to confirm, ESC to cancel".to_string();
                             }
 
                             // 'h' → Hold (end turn, keep remaining AP)

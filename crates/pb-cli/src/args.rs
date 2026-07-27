@@ -46,6 +46,9 @@ pub struct Args {
     /// Remaining positional arguments.
     pub positional: Vec<String>,
 
+    /// Number of frames for bench frame (--frames).
+    pub frames: Option<u64>,
+
     // === NEW FLAGS (live-fire.sh support) ===
     /// Whether to emit outcome line (campaign play).
     pub emit_outcome: bool,
@@ -63,6 +66,8 @@ pub struct Args {
     pub adapter: Option<String>,
     /// Campaign branch choice (--choice <value>).
     pub choice: Option<String>,
+    /// Whether to emit all SPEC-007 metrics (--emit-metrics).
+    pub emit_metrics: bool,
 }
 
 impl Args {
@@ -100,6 +105,8 @@ impl Args {
         let mut script_path: Option<PathBuf> = None;
         let mut adapter: Option<String> = None;
         let mut choice: Option<String> = None;
+        let mut emit_metrics = false;
+        let mut frames: Option<u64> = None;
 
         let mut i = 1; // skip program name
         while i < raw.len() {
@@ -242,6 +249,19 @@ impl Args {
                     let val = raw.get(i).ok_or("--atlas-output requires a value")?;
                     atlas_output = Some(PathBuf::from(val));
                 }
+                "--emit-metrics" => {
+                    emit_metrics = true;
+                }
+                "--frames" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--frames requires a value")?;
+                    let n: u64 = val
+                        .to_str()
+                        .ok_or("not UTF-8")?
+                        .parse()
+                        .map_err(|e| format!("invalid frames: {}", e))?;
+                    frames = Some(n);
+                }
                 _ if arg.starts_with('-') => {
                     return Err(format!("unknown flag: {}", arg));
                 }
@@ -275,6 +295,7 @@ impl Args {
             image_path,
             atlas_output,
             positional,
+            frames,
             emit_outcome,
             emit_manifest,
             emit_budget,
@@ -283,6 +304,7 @@ impl Args {
             script_path,
             adapter,
             choice,
+            emit_metrics,
         })
     }
 }
