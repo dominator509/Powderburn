@@ -10,6 +10,8 @@ use pb_core::event::WoundType;
 use pb_core::geom::{Facing, TileXY};
 use pb_core::ids::{ActorId, Ap, Tick};
 
+use crate::progression::ActorProgression;
+
 /// An actor's stance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stance {
@@ -45,6 +47,8 @@ pub struct ActorState {
     pub max_sand: i32,
     /// Current stance.
     pub stance: Stance,
+    /// Character progression data (XP, level, skills, marks, way).
+    pub progression: ActorProgression,
 }
 
 /// Top-level simulation state.

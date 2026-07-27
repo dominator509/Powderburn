@@ -107,6 +107,32 @@ pub enum Event {
     CompanionKilled {
         id: String,
     },
+    /// An actor gained XP and may have levelled up.
+    XpGained {
+        actor: ActorId,
+        xp: u64,
+        total_xp: u64,
+        new_level: Option<u32>,
+    },
+    /// An actor levelled up.
+    LevelUp {
+        actor: ActorId,
+        new_level: u32,
+        skill_points_granted: u32,
+        marks_granted: u32,
+    },
+    /// An actor gained a Mark (perk).
+    MarkGained {
+        actor: ActorId,
+        mark_id: String,
+        level: u32,
+    },
+    /// An actor spent a skill point on a skill line.
+    SkillPointSpent {
+        actor: ActorId,
+        skill: String,
+        new_level: u32,
+    },
 }
 
 impl fmt::Display for Event {
@@ -146,6 +172,52 @@ impl fmt::Display for Event {
             }
             Event::CompanionKilled { id } => {
                 write!(f, "event: CompanionKilled id={}", id)
+            }
+            Event::XpGained {
+                actor,
+                xp,
+                total_xp,
+                new_level,
+            } => {
+                write!(
+                    f,
+                    "event: XpGained actor={} xp={} total_xp={} new_level={:?}",
+                    actor, xp, total_xp, new_level
+                )
+            }
+            Event::LevelUp {
+                actor,
+                new_level,
+                skill_points_granted,
+                marks_granted,
+            } => {
+                write!(
+                    f,
+                    "event: LevelUp actor={} new_level={} sp={} marks={}",
+                    actor, new_level, skill_points_granted, marks_granted
+                )
+            }
+            Event::MarkGained {
+                actor,
+                mark_id,
+                level,
+            } => {
+                write!(
+                    f,
+                    "event: MarkGained actor={} mark={} level={}",
+                    actor, mark_id, level
+                )
+            }
+            Event::SkillPointSpent {
+                actor,
+                skill,
+                new_level,
+            } => {
+                write!(
+                    f,
+                    "event: SkillPointSpent actor={} skill={} new_level={}",
+                    actor, skill, new_level
+                )
             }
         }
     }

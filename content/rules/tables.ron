@@ -1,0 +1,203 @@
+GameTables(
+    hit_locations: [
+        (
+            name: "Head",
+            weight_pct: 5.0,
+            damage_multiplier: 3.0,
+            critical_threshold: 1,
+        ),
+        (
+            name: "Eyes",
+            weight_pct: 2.0,
+            damage_multiplier: 4.0,
+            critical_threshold: 1,
+        ),
+        (
+            name: "Torso",
+            weight_pct: 45.0,
+            damage_multiplier: 1.0,
+            critical_threshold: 5,
+        ),
+        (
+            name: "Vitals",
+            weight_pct: 8.0,
+            damage_multiplier: 2.5,
+            critical_threshold: 2,
+        ),
+        (
+            name: "Gun Arm",
+            weight_pct: 12.0,
+            damage_multiplier: 1.0,
+            critical_threshold: 6,
+        ),
+        (
+            name: "Off Arm",
+            weight_pct: 10.0,
+            damage_multiplier: 1.0,
+            critical_threshold: 7,
+        ),
+        (
+            name: "Legs",
+            weight_pct: 18.0,
+            damage_multiplier: 1.0,
+            critical_threshold: 6,
+        ),
+    ],
+    range_bands: [
+        (
+            name: "Point Blank",
+            min_tiles: 0,
+            max_tiles: 3,
+            accuracy_mod: 10,
+        ),
+        (
+            name: "Short",
+            min_tiles: 4,
+            max_tiles: 8,
+            accuracy_mod: 0,
+        ),
+        (
+            name: "Medium",
+            min_tiles: 9,
+            max_tiles: 15,
+            accuracy_mod: -10,
+        ),
+        (
+            name: "Long",
+            min_tiles: 16,
+            max_tiles: 25,
+            accuracy_mod: -20,
+        ),
+        (
+            name: "Extreme",
+            min_tiles: 26,
+            max_tiles: 40,
+            accuracy_mod: -40,
+        ),
+    ],
+    stance_modifiers: [
+        (
+            name: "Standing",
+            evasion_bonus: 0,
+            accuracy_bonus: 0,
+        ),
+        (
+            name: "Crouched",
+            evasion_bonus: 2,
+            accuracy_bonus: 1,
+        ),
+        (
+            name: "Prone",
+            evasion_bonus: 4,
+            accuracy_bonus: 2,
+        ),
+    ],
+    cover_modifiers: [
+        (
+            name: "Soft Cover",
+            accuracy_penalty: -15,
+        ),
+        (
+            name: "Hard Cover",
+            accuracy_penalty: -30,
+        ),
+        (
+            name: "Full Cover",
+            accuracy_penalty: -99,
+        ),
+    ],
+    called_shot_penalties: [
+        (
+            hit_location: "Head",
+            penalty: -20,
+        ),
+        (
+            hit_location: "Eyes",
+            penalty: -35,
+        ),
+        (
+            hit_location: "Vitals",
+            penalty: -15,
+        ),
+        (
+            hit_location: "Gun Arm",
+            penalty: -10,
+        ),
+        (
+            hit_location: "Legs",
+            penalty: -10,
+        ),
+    ],
+    critical_effects: [
+        (
+            roll_range: (1, 3),
+            effect_name: "Flesh Wound",
+            description: "The bullet grazes you. Nothing serious. +1 bonus damage, no lasting effect.",
+        ),
+        (
+            roll_range: (4, 6),
+            effect_name: "Deep Wound",
+            description: "The bullet bites deep. +1d4 bonus damage and the target loses 2 Sand.",
+        ),
+        (
+            roll_range: (7, 9),
+            effect_name: "Shattering Hit",
+            description: "Bone chips and torn muscle. +1d6 bonus damage, target is stunned for 1 turn.",
+        ),
+        (
+            roll_range: (10, 12),
+            effect_name: "Knockdown",
+            description: "The force of the impact sends you sprawling. +1d8 bonus damage, target knocked prone.",
+        ),
+        (
+            roll_range: (13, 15),
+            effect_name: "Disabling Blow",
+            description: "You hit something vital. +1d10 bonus damage, target loses use of hit location for 1d4 turns.",
+        ),
+        (
+            roll_range: (16, 18),
+            effect_name: "Grievous Wound",
+            description: "Arterial damage. +1d12 bonus damage, target bleeds for 1d3 damage per turn until treated.",
+        ),
+        (
+            roll_range: (19, 19),
+            effect_name: "Maiming Strike",
+            description: "The hit location is permanently damaged. +2d10 bonus damage, permanent -1 to relevant stat.",
+        ),
+        (
+            roll_range: (20, 20),
+            effect_name: "Instant Kill",
+            description: "A perfect shot. The target is killed instantly regardless of remaining HP.",
+        ),
+    ],
+    wound_healing_times: [
+        (
+            wound_name: "Flesh Wound",
+            camp_days: 1,
+        ),
+        (
+            wound_name: "Deep Wound",
+            camp_days: 3,
+        ),
+        (
+            wound_name: "Shattering Hit",
+            camp_days: 5,
+        ),
+        (
+            wound_name: "Knockdown",
+            camp_days: 1,
+        ),
+        (
+            wound_name: "Disabling Blow",
+            camp_days: 7,
+        ),
+        (
+            wound_name: "Grievous Wound",
+            camp_days: 10,
+        ),
+        (
+            wound_name: "Maiming Strike",
+            camp_days: 21,
+        ),
+    ],
+)

@@ -8,6 +8,7 @@ pub mod hash;
 pub mod ids;
 pub mod log;
 pub mod metrics;
+pub mod progression;
 pub mod redact;
 
 pub use fix32::Fix32;

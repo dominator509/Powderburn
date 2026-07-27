@@ -7,6 +7,7 @@ pub mod environment;
 pub mod explosive;
 pub mod hash;
 pub mod morale;
+pub mod progression;
 pub mod shot;
 pub mod state;
 pub mod wounds;

@@ -12,6 +12,7 @@
 #![allow(clippy::float_arithmetic)]
 
 mod afteraction;
+mod camp;
 mod combat;
 mod hud;
 mod menu;

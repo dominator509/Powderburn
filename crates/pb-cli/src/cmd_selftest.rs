@@ -74,6 +74,7 @@ pub fn run_selftest(args: &Args) -> Result<(), String> {
         sand: 10,
         max_sand: 10,
         stance: Stance::Standing,
+        progression: pb_sim::progression::ActorProgression::new(),
     };
     let cost = action_cost(&Action::Reload, &actor);
     assert_eq!(cost, Ap(3));

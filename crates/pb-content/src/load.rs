@@ -86,6 +86,48 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
         }
     }
 
+    // Load items from content/rules/items.ron
+    let items_path = root.join("rules").join("items.ron");
+    if items_path.exists() {
+        let items_list: Vec<ItemData> = load_ron_file(&items_path)?;
+        for item in items_list {
+            content.items.insert(item.id.clone(), item);
+        }
+    }
+
+    // Load marks from content/rules/marks.ron
+    let marks_path = root.join("rules").join("marks.ron");
+    if marks_path.exists() {
+        let marks_list: Vec<MarkData> = load_ron_file(&marks_path)?;
+        for m in marks_list {
+            content.marks.insert(m.id.clone(), m);
+        }
+    }
+
+    // Load ways from content/rules/ways.ron
+    let ways_path = root.join("rules").join("ways.ron");
+    if ways_path.exists() {
+        let ways_list: Vec<WayData> = load_ron_file(&ways_path)?;
+        for w in ways_list {
+            content.ways.insert(w.id.clone(), w);
+        }
+    }
+
+    // Load factions from content/rules/factions.ron
+    let factions_path = root.join("rules").join("factions.ron");
+    if factions_path.exists() {
+        let factions_list: Vec<FactionData> = load_ron_file(&factions_path)?;
+        for f in factions_list {
+            content.factions.insert(f.id.clone(), f);
+        }
+    }
+
+    // Load tables from content/rules/tables.ron (single record)
+    let tables_path = root.join("rules").join("tables.ron");
+    if tables_path.exists() {
+        content.tables = Some(load_single_ron(&tables_path)?);
+    }
+
     Ok(content)
 }
 

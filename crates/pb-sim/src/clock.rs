@@ -112,6 +112,7 @@ pub fn build_actor(
         sand,
         max_sand: sand,
         stance: Stance::Standing,
+        progression: crate::progression::ActorProgression::new(),
     }
 }
 

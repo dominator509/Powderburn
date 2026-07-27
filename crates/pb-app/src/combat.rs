@@ -157,6 +157,7 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
             sand: actor_data.sand,
             max_sand: actor_data.sand_max,
             stance: parse_stance(&actor_data.stance),
+            progression: pb_sim::progression::ActorProgression::new(),
         };
 
         sim.actors.insert(actor_id, actor_state);

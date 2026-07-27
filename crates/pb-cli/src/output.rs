@@ -127,5 +127,57 @@ pub fn format_event(event: &Event, state: &SimState) -> String {
         Event::CompanionKilled { id } => {
             format!("event: CompanionKilled id={}", id)
         }
+        Event::XpGained {
+            actor,
+            xp,
+            total_xp,
+            new_level,
+        } => {
+            format!(
+                "event: XpGained actor={} xp={} total_xp={} new_level={:?}",
+                name(actor),
+                xp,
+                total_xp,
+                new_level
+            )
+        }
+        Event::LevelUp {
+            actor,
+            new_level,
+            skill_points_granted,
+            marks_granted,
+        } => {
+            format!(
+                "event: LevelUp actor={} new_level={} sp={} marks={}",
+                name(actor),
+                new_level,
+                skill_points_granted,
+                marks_granted
+            )
+        }
+        Event::MarkGained {
+            actor,
+            mark_id,
+            level,
+        } => {
+            format!(
+                "event: MarkGained actor={} mark={} level={}",
+                name(actor),
+                mark_id,
+                level
+            )
+        }
+        Event::SkillPointSpent {
+            actor,
+            skill,
+            new_level,
+        } => {
+            format!(
+                "event: SkillPointSpent actor={} skill={} new_level={}",
+                name(actor),
+                skill,
+                new_level
+            )
+        }
     }
 }

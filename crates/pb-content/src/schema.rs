@@ -11,13 +11,13 @@ pub struct ItemStack {
 /// The seven core attributes (1-10 each).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attributes {
-    pub grit: u32,
-    pub nerve: u32,
-    pub wind: u32,
-    pub hands: u32,
-    pub eyes: u32,
-    pub savvy: u32,
-    pub luck: u32,
+    pub grit: i32,
+    pub nerve: i32,
+    pub wind: i32,
+    pub hands: i32,
+    pub eyes: i32,
+    pub savvy: i32,
+    pub luck: i32,
 }
 
 /// A dice roll expression.
@@ -198,6 +198,137 @@ pub struct SaveFileData {
     pub written_at_tick: u64,
 }
 
+/// An item definition (consumable, quest, or misc).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemData {
+    pub id: String,
+    pub display_name: String,
+    pub item_type: String,
+    pub weight_lbs: f32,
+    pub description: String,
+    pub effects: Option<ItemEffects>,
+    pub quest_id: Option<String>,
+}
+
+/// Effects that a consumable item provides.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemEffects {
+    pub sand_restore: Option<i32>,
+    pub hp_restore: Option<i32>,
+    pub bleed_stop: Option<bool>,
+    pub ap_restore: Option<i16>,
+    pub suppress_clear: Option<bool>,
+}
+
+/// A mark (perk gained every 3rd level).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkData {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub effects: MarkEffects,
+}
+
+/// Effects provided by a mark.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkEffects {
+    pub stat_mods: Option<Attributes>,
+    pub ability_grant: Option<String>,
+    pub passive: Option<String>,
+    pub ap_bonus: Option<i16>,
+    pub accuracy_bonus: Option<i32>,
+    pub penalty_reduction: Option<i32>,
+    pub cost_reduction: Option<i32>,
+}
+
+/// A way (starting trait chosen at character creation).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WayData {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub stat_mods: Attributes,
+    pub starting_items: Vec<String>,
+}
+
+/// A faction record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FactionData {
+    pub id: String,
+    pub display_name: String,
+    pub interests: Vec<String>,
+    pub sand_multiplier: f32,
+    pub default_hostility: String,
+    pub description: String,
+}
+
+/// A hit location entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HitLocationEntry {
+    pub name: String,
+    pub weight_pct: f32,
+    pub damage_multiplier: f32,
+    pub critical_threshold: i32,
+}
+
+/// A range band definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RangeBand {
+    pub name: String,
+    pub min_tiles: i32,
+    pub max_tiles: i32,
+    pub accuracy_mod: i32,
+}
+
+/// A stance modifier.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StanceMod {
+    pub name: String,
+    pub evasion_bonus: i32,
+    pub accuracy_bonus: i32,
+}
+
+/// A cover modifier.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoverMod {
+    pub name: String,
+    pub accuracy_penalty: i32,
+}
+
+/// A called shot penalty entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalledShotPenalty {
+    pub hit_location: String,
+    pub penalty: i32,
+}
+
+/// A critical effect entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CriticalEffect {
+    pub roll_range: (i32, i32),
+    pub effect_name: String,
+    pub description: String,
+}
+
+/// A wound healing time entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WoundHealingTime {
+    pub wound_name: String,
+    pub camp_days: i32,
+}
+
+/// Game balance tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameTables {
+    pub hit_locations: Vec<HitLocationEntry>,
+    pub range_bands: Vec<RangeBand>,
+    pub stance_modifiers: Vec<StanceMod>,
+    pub cover_modifiers: Vec<CoverMod>,
+    pub called_shot_penalties: Vec<CalledShotPenalty>,
+    pub critical_effects: Vec<CriticalEffect>,
+    pub wound_healing_times: Vec<WoundHealingTime>,
+}
+
 /// Loaded content container.
 #[derive(Debug, Clone, Default)]
 pub struct Content {
@@ -205,4 +336,9 @@ pub struct Content {
     pub weapons: BTreeMap<String, WeaponData>,
     pub companions: BTreeMap<String, CompanionData>,
     pub campaign_nodes: BTreeMap<String, CampaignNodeData>,
+    pub items: BTreeMap<String, ItemData>,
+    pub marks: BTreeMap<String, MarkData>,
+    pub ways: BTreeMap<String, WayData>,
+    pub factions: BTreeMap<String, FactionData>,
+    pub tables: Option<GameTables>,
 }
