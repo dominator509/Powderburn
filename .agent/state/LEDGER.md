@@ -66,3 +66,5 @@
 2026-07-28T10:45:03Z | Codex | EP-009 | NOTE | ROLLBACK DRILL COMPLETED
 2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M5 rollback drill complete
 2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M6 manual itch step documented and never executed
+2026-07-28T12:00:42Z | Codex | EP-010 | MILESTONE_PASS | M1-M3 verify ok, 561 tests, coverage 70.19/85.58, thirteen invariants and live-fire 10/10
+2026-07-28T12:00:55Z | Codex | EP-010 | RUN_COMPLETE | v1.0.1 commit=2e8f0739dad6a5ba594d19ae2318eecc67afef30; signed self-hosted release; live-fire 10/10; manual itch step not executed
