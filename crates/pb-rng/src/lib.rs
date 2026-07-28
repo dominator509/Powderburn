@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 use core::fmt;
+use std::cell::RefCell;
 
 /// Tag identifying which gameplay stream is drawing a random number.
 ///
@@ -82,6 +83,53 @@ fn splitmix64(mut x: u64) -> u64 {
 #[derive(Debug)]
 pub struct PbRng;
 
+/// One real draw observed by the optional, off-by-default trace sink.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RngDraw {
+    pub seed: u64,
+    pub scenario_id: u32,
+    pub tick: u64,
+    pub actor_id: u32,
+    pub stream: StreamTag,
+    pub index: u32,
+    pub lo: i32,
+    pub hi: i32,
+    pub value: i32,
+}
+
+#[derive(Default)]
+struct TraceState {
+    enabled: bool,
+    draws: Vec<RngDraw>,
+}
+
+thread_local! {
+    static TRACE_STATE: RefCell<TraceState> = RefCell::new(TraceState::default());
+}
+
+/// Enable or disable the diagnostic draw trace and clear old observations.
+pub fn set_trace_enabled(enabled: bool) {
+    TRACE_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        state.enabled = enabled;
+        state.draws.clear();
+    });
+}
+
+/// Drain every draw observed since the last call.
+pub fn take_trace() -> Vec<RngDraw> {
+    TRACE_STATE.with(|state| std::mem::take(&mut state.borrow_mut().draws))
+}
+
+fn record_trace(draw: RngDraw) {
+    TRACE_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if state.enabled {
+            state.draws.push(draw);
+        }
+    });
+}
+
 impl PbRng {
     /// Draw a deterministic integer in `[lo, hi]` (inclusive).
     ///
@@ -100,6 +148,25 @@ impl PbRng {
         lo: i32,
         hi: i32,
     ) -> i32 {
+        Self::draw_indexed(seed, scenario_id, tick, actor_id, stream, 0, lo, hi)
+    }
+
+    /// Draw from an independently addressed position within a stream.
+    ///
+    /// Index zero is bit-for-bit identical to [`Self::draw`]. Non-zero
+    /// indexes support multi-die rolls without mutable RNG state or accidental
+    /// correlation between dice.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_indexed(
+        seed: u64,
+        scenario_id: u32,
+        tick: u64,
+        actor_id: u32,
+        stream: StreamTag,
+        index: u32,
+        lo: i32,
+        hi: i32,
+    ) -> i32 {
         assert!(lo <= hi, "PbRng::draw: lo ({}) > hi ({})", lo, hi);
 
         // Track RNG draws via the global MetricsRegistry
@@ -109,14 +176,36 @@ impl PbRng {
         if range == 0 {
             // Full u64 range — no rejection needed.
             // But this can't happen for i32 range since hi-lo+1 fits in u64.
+            record_trace(RngDraw {
+                seed,
+                scenario_id,
+                tick,
+                actor_id,
+                stream,
+                index,
+                lo,
+                hi,
+                value: lo,
+            });
             return lo;
         }
         if range == 1 {
+            record_trace(RngDraw {
+                seed,
+                scenario_id,
+                tick,
+                actor_id,
+                stream,
+                index,
+                lo,
+                hi,
+                value: lo,
+            });
             return lo;
         }
 
         // Mix the five inputs into a single 64-bit seed for splitmix64.
-        let mix_key: u64 = seed
+        let mut mix_key: u64 = seed
             .wrapping_mul(0x9e3779b97f4a7c15u64)
             .wrapping_add(scenario_id as u64)
             .wrapping_mul(0xbf58476d1ce4e5b9u64)
@@ -125,6 +214,11 @@ impl PbRng {
             .wrapping_add(actor_id as u64)
             .wrapping_mul(0x9e3779b97f4a7c15u64)
             .wrapping_add(stream.discriminant());
+        if index != 0 {
+            mix_key = mix_key
+                .wrapping_mul(0xd6e8feb86659fd93u64)
+                .wrapping_add(u64::from(index));
+        }
 
         // Rejection sampling: compute threshold = floor(U64_MAX / range) * range
         // If the hash is >= threshold, try again (but since we re-mix, the next
@@ -132,16 +226,28 @@ impl PbRng {
         let threshold = u64::MAX - (u64::MAX % range);
 
         let mut attempt = mix_key;
-        loop {
+        let value = loop {
             let hash = splitmix64(attempt);
             if hash < threshold {
                 let offset = hash % range;
                 // Safe: lo + offset fits in i32 because offset < range <= hi-lo+1.
-                return (lo as u64).wrapping_add(offset) as i32;
+                break (lo as u64).wrapping_add(offset) as i32;
             }
             // Mix attempt for next iteration.
             attempt = attempt.wrapping_add(0x9e3779b97f4a7c15u64);
-        }
+        };
+        record_trace(RngDraw {
+            seed,
+            scenario_id,
+            tick,
+            actor_id,
+            stream,
+            index,
+            lo,
+            hi,
+            value,
+        });
+        value
     }
 }
 
@@ -159,6 +265,26 @@ mod tests {
         let a = PbRng::draw(42, 1, 100, 5, StreamTag::ToHit, 0, 100);
         let b = PbRng::draw(42, 1, 100, 5, StreamTag::ToHit, 0, 100);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn indexed_zero_preserves_draw_and_dice_are_independently_addressed() {
+        let base = PbRng::draw(42, 1, 100, 5, StreamTag::Damage, 1, 20);
+        assert_eq!(
+            base,
+            PbRng::draw_indexed(42, 1, 100, 5, StreamTag::Damage, 0, 1, 20)
+        );
+        let indexed = PbRng::draw_indexed(42, 1, 100, 5, StreamTag::Damage, 1, 1, 20);
+        assert_eq!(
+            indexed,
+            PbRng::draw_indexed(42, 1, 100, 5, StreamTag::Damage, 1, 1, 20)
+        );
+        assert!(
+            (1..=16).any(|index| {
+                PbRng::draw_indexed(42, 1, 100, 5, StreamTag::Damage, index, 1, 20) != base
+            }),
+            "addressed draws unexpectedly collapsed to one value"
+        );
     }
 
     #[test]
@@ -205,6 +331,29 @@ mod tests {
     fn draw_zero_range() {
         let val = PbRng::draw(42, 1, 100, 5, StreamTag::ToHit, 0, 0);
         assert_eq!(val, 0);
+    }
+
+    #[test]
+    fn trace_records_exact_address_and_value_only_when_enabled() {
+        set_trace_enabled(true);
+        let value = PbRng::draw(42, 7, 11, 3, StreamTag::ToHit, 1, 100);
+        assert_eq!(
+            take_trace(),
+            vec![RngDraw {
+                seed: 42,
+                scenario_id: 7,
+                tick: 11,
+                actor_id: 3,
+                stream: StreamTag::ToHit,
+                index: 0,
+                lo: 1,
+                hi: 100,
+                value,
+            }]
+        );
+        set_trace_enabled(false);
+        let _ = PbRng::draw(42, 7, 12, 3, StreamTag::Damage, 1, 6);
+        assert!(take_trace().is_empty());
     }
 
     #[test]

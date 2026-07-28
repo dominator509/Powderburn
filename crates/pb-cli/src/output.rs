@@ -85,102 +85,149 @@ pub fn format_event(event: &Event, state: &SimState) -> String {
         state
             .actors
             .get(actor_id)
-            .map(|a| a.name.as_str())
-            .unwrap_or("unknown")
+            .map_or("unknown", |actor| actor.name.as_str())
     };
 
     match event {
+        Event::TurnBegin { actor, tick } => format!("event: TurnBegin actor={} tick={tick}", name(actor)),
+        Event::TurnEnd { actor, tick } => format!("event: TurnEnd actor={} tick={tick}", name(actor)),
+        Event::Moved { actor, from, to } => {
+            format!("event: Moved actor={} from={from} to={to}", name(actor))
+        }
+        Event::StanceChanged { actor, stance } => {
+            format!("event: StanceChanged actor={} stance={stance}", name(actor))
+        }
+        Event::FacingChanged { actor, facing } => {
+            format!("event: FacingChanged actor={} facing={facing}", name(actor))
+        }
+        Event::Fired { actor, target } => {
+            format!("event: Fired actor={} target={}", name(actor), name(target))
+        }
+        Event::Misfire { actor } => format!("event: Misfire actor={}", name(actor)),
+        Event::Jammed { actor } => format!("event: Jammed actor={}", name(actor)),
+        Event::Missed { actor, target } => {
+            format!("event: Missed actor={} target={}", name(actor), name(target))
+        }
+        Event::ShotHit { actor, target, hit } => format!(
+            "event: ShotHit actor={} target={} hit={hit}",
+            name(actor),
+            name(target)
+        ),
         Event::HitLocation { actor, location } => {
-            format!(
-                "event: HitLocation actor={} location={}",
-                name(actor),
-                location
-            )
+            format!("event: HitLocation actor={} location={location}", name(actor))
         }
         Event::DamageApplied { actor, damage } => {
-            format!(
-                "event: DamageApplied actor={} damage={}",
-                name(actor),
-                damage
-            )
+            format!("event: DamageApplied actor={} damage={damage}", name(actor))
         }
         Event::WoundApplied { actor, wound } => {
-            format!("event: WoundApplied actor={} wound={}", name(actor), wound)
+            format!("event: WoundApplied actor={} wound={wound}", name(actor))
+        }
+        Event::Critical { actor, effect } => {
+            format!("event: Critical actor={} effect={effect}", name(actor))
         }
         Event::WeaponDropped { actor, item } => {
-            format!("event: WeaponDropped actor={} item={}", name(actor), item)
-        }
-        Event::Misfire { actor } => {
-            format!("event: Misfire actor={}", name(actor))
-        }
-        Event::ShotHit { actor, target, hit } => {
-            format!(
-                "event: ShotHit actor={} target={} hit={}",
-                name(actor),
-                name(target),
-                hit
-            )
-        }
-        Event::ActorKilled { actor } => {
-            format!("event: ActorKilled actor={}", name(actor))
+            format!("event: WeaponDropped actor={} item={item}", name(actor))
         }
         Event::SmokeDeposited { tile, density } => {
-            format!("event: SmokeDeposited tile={} density={}", tile, density)
+            format!("event: SmokeDeposited tile={tile} density={density}")
         }
-        Event::CompanionKilled { id } => {
-            format!("event: CompanionKilled id={}", id)
+        Event::SmokeDecayed { tile, density } => {
+            format!("event: SmokeDecayed tile={tile} density={density}")
         }
+        Event::SmokeDrifted { from, to, density } => {
+            format!("event: SmokeDrifted from={from} to={to} density={density}")
+        }
+        Event::OverwatchSet {
+            actor,
+            reaction_points,
+        } => format!(
+            "event: OverwatchSet actor={} reaction_points={reaction_points}",
+            name(actor)
+        ),
+        Event::ReactionShot { actor, target } => format!(
+            "event: ReactionShot actor={} target={}",
+            name(actor),
+            name(target)
+        ),
+        Event::DynamiteLit {
+            actor,
+            tile,
+            detonate_at,
+        } => format!(
+            "event: DynamiteLit actor={} tile={tile} detonate_at={detonate_at}",
+            name(actor)
+        ),
+        Event::DynamiteCaught { actor, tile } => {
+            format!("event: DynamiteCaught actor={} tile={tile}", name(actor))
+        }
+        Event::DynamiteRethrown {
+            actor,
+            tile,
+            detonate_at,
+        } => format!(
+            "event: DynamiteRethrown actor={} tile={tile} detonate_at={detonate_at}",
+            name(actor)
+        ),
+        Event::DynamiteExploded { actor, tile } => {
+            format!("event: DynamiteExploded actor={} tile={tile}", name(actor))
+        }
+        Event::CoverDamaged {
+            tile,
+            facing,
+            level,
+        } => format!("event: CoverDamaged tile={tile} facing={facing} level={level}"),
+        Event::Revealed { actor, until_tick } => format!(
+            "event: Revealed actor={} until_tick={until_tick}",
+            name(actor)
+        ),
+        Event::TrackLeft { actor, tile } => {
+            format!("event: TrackLeft actor={} tile={tile}", name(actor))
+        }
+        Event::SandLost { actor, amount } => {
+            format!("event: SandLost actor={} amount={amount}", name(actor))
+        }
+        Event::SandGained { actor, amount } => {
+            format!("event: SandGained actor={} amount={amount}", name(actor))
+        }
+        Event::MoraleStateChanged { actor, state } => {
+            format!("event: MoraleStateChanged actor={} state={state}", name(actor))
+        }
+        Event::Routed { actor } => format!("event: Routed actor={}", name(actor)),
+        Event::ActorKilled { actor } => format!("event: ActorKilled actor={}", name(actor)),
+        Event::CompanionKilled { id } => format!("event: CompanionKilled id={id}"),
+        Event::ObjectiveComplete { id } => format!("event: ObjectiveComplete id={id}"),
+        Event::LedgerEntryWritten { index } => format!("event: LedgerEntryWritten index={index}"),
+        Event::ScenarioEnded { outcome } => format!("event: ScenarioEnded outcome={outcome}"),
         Event::XpGained {
             actor,
             xp,
             total_xp,
             new_level,
-        } => {
-            format!(
-                "event: XpGained actor={} xp={} total_xp={} new_level={:?}",
-                name(actor),
-                xp,
-                total_xp,
-                new_level
-            )
-        }
+        } => format!(
+            "event: XpGained actor={} xp={xp} total_xp={total_xp} new_level={new_level:?}",
+            name(actor)
+        ),
         Event::LevelUp {
             actor,
             new_level,
             skill_points_granted,
             marks_granted,
-        } => {
-            format!(
-                "event: LevelUp actor={} new_level={} sp={} marks={}",
-                name(actor),
-                new_level,
-                skill_points_granted,
-                marks_granted
-            )
-        }
+        } => format!(
+            "event: LevelUp actor={} new_level={new_level} sp={skill_points_granted} marks={marks_granted}",
+            name(actor)
+        ),
         Event::MarkGained {
             actor,
             mark_id,
             level,
-        } => {
-            format!(
-                "event: MarkGained actor={} mark={} level={}",
-                name(actor),
-                mark_id,
-                level
-            )
-        }
+        } => format!("event: MarkGained actor={} mark={mark_id} level={level}", name(actor)),
         Event::SkillPointSpent {
             actor,
             skill,
             new_level,
-        } => {
-            format!(
-                "event: SkillPointSpent actor={} skill={} new_level={}",
-                name(actor),
-                skill,
-                new_level
-            )
-        }
+        } => format!(
+            "event: SkillPointSpent actor={} skill={skill} new_level={new_level}",
+            name(actor)
+        ),
     }
 }

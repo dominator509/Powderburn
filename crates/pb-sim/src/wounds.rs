@@ -57,6 +57,9 @@ mod tests {
 
     fn make_actor() -> ActorState {
         ActorState {
+            faction_id: String::new(),
+            is_companion: false,
+            attributes: pb_core::Attributes::BALANCED,
             ap: Ap(10),
             position: TileXY::new(0, 0),
             facing: Facing::South,
@@ -65,12 +68,14 @@ mod tests {
             max_hp: 20,
             name: "Test".to_string(),
             alive: true,
+            routed: false,
             wounds: vec![],
             sand: 10,
             max_sand: 10,
             stance: Stance::Standing,
             progression: crate::progression::ActorProgression::new(),
             weapon: "colt_army_1860".to_string(),
+            weapon_profile: Default::default(),
             loaded_rounds: 6,
             weapon_capacity: 6,
             fouling: 0,

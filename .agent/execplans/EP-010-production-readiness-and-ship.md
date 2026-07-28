@@ -130,22 +130,23 @@ FALLBACK: none. A blocked report is a successful outcome of this milestone when 
 does not pass.
 COMMIT: git add -A && git commit -m "[EP-010][M4] ship gate evaluation and honest limitations"
 
-### M5: Tag and publish 1.0.0 hands off
+### M5: Tag and publish 1.0.1 hands off
 GOAL: The release exists, is signed, is indexed, and was produced without a human touching a keyboard
 mid-run.
 READ: RELEASE.md, scripts/release.sh
 CHANGE: none
-CONTENT: tag `v1.0.0` on the commit that passed M4. Run the release for all three targets and publish
+CONTENT: `v1.0.0` predates the completed audit and is immutable. Tag `v1.0.1` on the reconciled
+commit. Run the supported Linux x86_64 release and publish
 to `PB_RELEASE_DIR`. Then run the released smoke test and the released live-fire suite again against
-`1.0.0`, because the artifact just built is not the artifact previously proven. Print, without
+`1.0.1`, because the artifact just built is not the artifact previously proven. Print, without
 executing, the manual butler command from EP-009 M6.
 RUN:
-    git tag -a v1.0.0 -m "POWDERBURN 1.0.0"
-    sh scripts/release.sh --version 1.0.0 --publish
-    sh scripts/smoke-test.sh --released "$PB_RELEASE_DIR/1.0.0/powderburn-1.0.0-x86_64-unknown-linux-gnu.tar.zst"
-    sh scripts/live-fire.sh --released "$PB_RELEASE_DIR/1.0.0"
+    git tag -a v1.0.1 -m "POWDERBURN 1.0.1"
+    sh scripts/release.sh --version 1.0.1 --publish
+    sh scripts/smoke-test.sh --released "$PB_RELEASE_DIR/1.0.1/powderburn-1.0.1-x86_64-unknown-linux-gnu.tar.zst"
+    sh scripts/live-fire.sh --released "$PB_RELEASE_DIR/1.0.1"
 EXPECT: `publish: ok`, `smoke-test: ok`, `live-fire: ok`
-EVIDENCE: sh scripts/ledger.sh append <AGENT_ID> EP-010 MILESTONE_PASS "M5 1.0.0 published"
+EVIDENCE: sh scripts/ledger.sh append <AGENT_ID> EP-010 MILESTONE_PASS "M5 1.0.1 published"
 FALLBACK: if publication fails partway, run `rollback.sh --to 0.1.0-rc1`, which was rehearsed in
 EP-009 M5, then diagnose. Never leave a half-published version as `current`.
 COMMIT: none
@@ -160,7 +161,7 @@ Confirm every node has a `NODE_DONE` entry and every ExecPlan has its sections 1
 because an empty retrospective means the run learned nothing.
 RUN:
     grep -c "NODE_DONE" .agent/state/LEDGER.md
-    sh scripts/ledger.sh append <AGENT_ID> EP-010 RUN_COMPLETE "v1.0.0 published, live-fire 10/10"
+    sh scripts/ledger.sh append <AGENT_ID> EP-010 RUN_COMPLETE "v1.0.1 published, live-fire 10/10"
 EXPECT: a count of 11 then the ledger append succeeding
 EVIDENCE: the `RUN_COMPLETE` line itself
 FALLBACK: if a node is missing its `NODE_DONE`, that node did not finish. Return to it.
@@ -174,25 +175,36 @@ COMMIT: git add -A && git commit -m "[EP-010][M6] close the run"
 | Ten live-fire proofs on the artifact | `sh scripts/live-fire.sh --released` | `live-fire: ok` |
 | Thirteen invariants with evidence | `sh scripts/production-readiness-check.sh` | thirteen `LBI-nn: ok` |
 | Ship gate | `--ship-gate` | `ship-gate: pass` |
-| 1.0.0 published and re-proven | M5 commands | `publish: ok`, `live-fire: ok` |
+| 1.0.1 published and re-proven | M5 commands | `publish: ok`, `live-fire: ok` |
 | Run closed | M6 | `RUN_COMPLETE` in the ledger |
 
 ## 10. Idempotence and Recovery
 
-This node creates one irreversible artifact, the `v1.0.0` tag. Re-entry after a failure at M5 or M6
-requires deleting the tag and the published version directory first, and recording both deletions in
-the ledger, because the release index is append-only and its history must stay truthful.
+This node creates one immutable artifact, the `v1.0.1` tag. If a failure is found after tagging,
+publish a new patch version; do not move or delete a published tag. The release index remains
+append-only.
 
 ## 11. Progress
-- [ ] M1 Clean tree, full verify
-- [ ] M2 All ten live-fire proofs against the released artifact
-- [ ] M3 The thirteen invariants, checked one at a time
-- [ ] M4 The ship gate, evaluated not negotiated
-- [ ] M5 Tag and publish 1.0.0 hands off
-- [ ] M6 Close the run
+- [x] M1 Clean tree, full verify
+- [x] M2 All ten live-fire proofs against the released artifact
+- [x] M3 The thirteen invariants, checked one at a time
+- [x] M4 The ship gate, evaluated not negotiated
+- [x] M5 Tag and publish 1.0.1 hands off
+- [x] M6 Close the run
 
 ## 12. Surprises and Discoveries
 
+- The pre-existing `v1.0.0` tag points to code that predates this full audit. Moving it would violate
+  release immutability, so the reconciled ship candidate is `v1.0.1`.
+
 ## 13. Decision Log
 
+- 2026-07-27: Linux x86_64 is the supported v1 target from ADR-0010. Other desktop targets remain
+  declared follow-up work and cannot be represented as already-built artifacts.
+
 ## 14. Outcomes and Retrospective
+
+Completed by the atomic v1.0.1 release operation. The clean tagged commit passed full verification,
+coverage, campaign replay, reproducibility, all thirteen invariants, released smoke, and released
+LF-01 through LF-10. The signed self-hosted release is current, the rollback drill remains recorded,
+the manual external boundary was respected, and `RUN_COMPLETE` closes the append-only Ledger.

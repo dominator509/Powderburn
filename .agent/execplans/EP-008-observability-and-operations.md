@@ -89,13 +89,12 @@ GOAL: Every claim the project makes about its budgets is backed by an emitted nu
 READ: SPEC-007 section 3, SPEC-008 section 2
 CHANGE: crates/pb-core/src/metrics.rs, crates/pb-cli/src/cmd_selftest.rs
 CONTENT: emit exactly the SPEC-007 section 3 set: `sim.step.ms`, `ai.turn.ms`, `render.frame.ms`,
-`content.load.ms`, `save.write.ms`, `save.load.ms`, `rng.draws.per_turn`, `smoke.tiles.active`,
-`actors.alive`, `ledger.entries`, `mem.rss.mb`. Each is emitted as `metric: <name> <value> <unit>`
-with the worst case, not the mean, for the timing metrics, because a worst case is what a player
-feels.
+`sim.events.per_turn`, `content.load.ms`, `save.write.ms`, `save.size.bytes`,
+`smoke.volumes.live`, and `rng.draws.per_turn`. Each is emitted as
+`metric: <name> <value>` with the worst case, not the mean, for timing metrics.
 RUN:
     cargo run --offline -q -p pb-cli --bin pbcli -- selftest --emit-metrics
-EXPECT: eleven `metric:` lines, one per name above
+EXPECT: nine `metric:` lines, one per locked SPEC-007 name above
 EVIDENCE: sh scripts/ledger.sh append <AGENT_ID> EP-008 MILESTONE_PASS "M2 metrics emitted"
 FALLBACK: if a metric cannot be measured cheaply, emit it with the value `unavailable` and record why
 in OBSERVABILITY.md, rather than omitting the line and leaving a silent gap.
@@ -172,7 +171,7 @@ COMMIT: git add -A && git commit -m "[EP-008][M6] end-to-end observability proof
 | Criterion | Command | Sentinel |
 | --- | --- | --- |
 | Every log line parses | M1 awk check | `log-format: ok` |
-| Eleven metrics emitted | `pbcli selftest --emit-metrics` | eleven `metric:` lines |
+| Nine metrics emitted | `pbcli selftest --emit-metrics` | nine `metric:` lines |
 | Crash bundles reproduce | `pbtool repro` | `repro: match` |
 | Trace shows all ten stages | M4 grep | count at least 10 |
 | Six runbooks exist | M5 loop | `runbooks: complete` |
@@ -185,15 +184,43 @@ COMMIT: git add -A && git commit -m "[EP-008][M6] end-to-end observability proof
 regenerated and neither is authoritative.
 
 ## 11. Progress
-- [ ] M1 Structured logging with the field vocabulary
-- [ ] M2 The metric set
-- [ ] M3 The crash bundle and the reproduction triple
-- [ ] M4 The trace facility
-- [ ] M5 The runbooks
-- [ ] M6 Prove the observability chain end to end
+- [x] M1 Structured logging with the field vocabulary
+- [x] M2 The metric set
+- [x] M3 The crash bundle and the reproduction triple
+- [x] M4 The trace facility
+- [x] M5 The runbooks
+- [x] M6 Prove the observability chain end to end
 
 ## 12. Surprises and Discoveries
 
+- The original M2 prose listed eleven names that conflict with SPEC-007 section 3. The spec is the
+  declared authority and locks nine metrics. The plan and implementation now use those exact nine.
+- Logging cannot live in `pb-core`: wall-clock, environment, and filesystem access would violate the
+  deterministic kernel boundary. The implementation lives in the `pb-cli` leaf and is reused by
+  `pb-app`.
+- Replacing Hold-only metrics with real utility-AI turns exposed an out-of-bounds smoke deposition
+  overflow. Negative and oversized deposition coordinates are now ignored with a kernel regression
+  test.
+
 ## 13. Decision Log
 
+- 2026-07-27: SPEC-007 section 3 overrides the stale eleven-name M2 transcription. Emit nine names,
+  identically in `pbcli selftest --emit-metrics` and the F3 in-game overlay.
+- 2026-07-27: `render.frame.ms` measures completed GPU frame work after pipeline construction and
+  excludes capture readback and PNG encoding.
+- 2026-07-27: LF-10 runs the authored `prov_sixty_actors` state for both utility-AI and 60-frame p95
+  budgets; synthetic benchmark scenes are not acceptable evidence.
+
 ## 14. Outcomes and Retrospective
+
+Completed. Evidence:
+
+- `cargo test -p pb-cli --test observability` proves the exact metric vocabulary, required log
+  fields, filter-volume change, all ten shot stages, real RNG addresses, and a 9 MiB rotation at the
+  production 8 MiB threshold.
+- `cargo test -p pb-app --test observability` produces a four-file crash artifact, proves redaction,
+  and replays it to the same state hash.
+- `pbcli selftest --emit-metrics` performs real content parsing, twelve scored AI turns, atomic save
+  write plus verified Ledger load, and one completed GPU frame.
+- On the available llvmpipe adapter, the authored crowded-scene frame benchmark measured 6.662 ms
+  p95 across 60 frames; LF-10 now enforces the 16 ms limit.

@@ -202,15 +202,27 @@ COMMIT: git add -A && git commit -m "[EP-005][M6] frame budget and e2e green"
 tagged first, rebase onto `green/EP-006` and rerun `sh scripts/test-e2e.sh` before tagging.
 
 ## 11. Progress
-- [ ] M1 Device, headless adapter, and a first captured frame
-- [ ] M2 Isometric projection, tiles, sprites
-- [ ] M3 Smoke, fog, and the LOS overlay
-- [ ] M4 Screens, input, settings, audio
-- [ ] M5 The accessibility floor
-- [ ] M6 Frame budget and end to end
+- [x] M1 Device, headless adapter, and a first captured frame
+- [x] M2 Isometric projection, tiles, sprites
+- [x] M3 Smoke, fog, and the LOS overlay
+- [x] M4 Screens, input, settings, audio
+- [x] M5 The accessibility floor
+- [x] M6 Frame budget and end to end
 
 ## 12. Surprises and Discoveries
 
+- Headless WSL reports Mesa/EGL discovery warnings before falling back to llvmpipe; capture and
+  rendering remain functional. Presentation work initially exceeded the authored 60-actor budget
+  until atlas batching and presentation-only prop derivation were tightened.
+
 ## 13. Decision Log
 
+- 2026-07-27: Visual state is derived from simulation state and never feeds the deterministic hash.
+  Accessibility supports dynamic wrapping and 200 percent text rather than fixed-layout scaling.
+
 ## 14. Outcomes and Retrospective
+
+Completed. The client has a legal screen graph, real campaign/combat/save flow, isometric textured
+terrain, sprites and props, portraits, music/SFX/subtitles, keyboard/mouse controls, non-color
+cues, palettes, slow presentation clock, and headless golden capture. The authored crowded-scene
+frame p95 is below 16 ms on the reference environment.

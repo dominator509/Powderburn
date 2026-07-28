@@ -47,6 +47,7 @@ it fails, the build is wrong; nothing else is worth investigating first.
 | Capture produces a blank frame | `pbtool image stats` unique-colors near 1 | Wrong adapter, missing software driver, or the scene failed to load assets |
 | Startup slower than 900ms | `pbcli selftest --emit-metrics` reading `content.load.ms` | Content growth; the pre-decided fallback is the build-time binary cache from ADR-0004 |
 | AI turn over budget | `pbcli bench turn --emit-budget` | Utility scoring is evaluating too many candidate tiles; cap the candidate set, do not parallelize |
+| Frame p95 over budget | `pbcli bench frame --scenario content/scenarios/prov_sixty_actors.ron --frames 60 --emit-budget` | Renderer work or draw volume regressed; inspect the authored state and render passes before changing the budget |
 | Smoke volumes growing without bound | `selftest --emit-metrics` reading `smoke.volumes.live` | Decay not running on the shared clock |
 
 ## Backup and restore

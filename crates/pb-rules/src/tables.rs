@@ -1,7 +1,8 @@
 //! Rule tables for the POWDERBURN simulation kernel.
 //!
-//! Provides hit-location tables, weapon-stat tables, called-shot accuracy
-//! modifiers, and basic lookup functions used by the shot pipeline.
+//! Provides hit-location tables, called-shot accuracy modifiers, and basic
+//! lookup functions used by the shot pipeline. Weapon rules are authored
+//! content and are deliberately absent from this crate.
 //!
 //! All values are deterministic — no floats, no randomness.
 
@@ -106,70 +107,6 @@ pub fn select_hit_location(roll: i32) -> Option<HitLocationType> {
         }
     }
     None
-}
-
-// ---------------------------------------------------------------------------
-// Weapon table entries
-// ---------------------------------------------------------------------------
-
-/// A row in the weapon statistics table.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WeaponEntry {
-    /// Unique weapon identifier.
-    pub id: &'static str,
-    /// Display name.
-    pub name: &'static str,
-    /// Base damage (before hit-location multiplier).
-    pub base_damage: i32,
-    /// Accuracy bonus (added to base hit chance).
-    pub accuracy: i32,
-    /// Maximum effective range in tiles.
-    pub max_range: i32,
-    /// Number of rounds the weapon can hold.
-    pub capacity: i32,
-    /// Whether the weapon is cap-and-ball (true) or cartridge (false).
-    pub cap_and_ball: bool,
-    /// Base misfire chance (0-100, rolled against on every shot).
-    pub misfire_chance: i32,
-}
-
-/// The weapon table.
-pub const WEAPON_TABLE: &[WeaponEntry] = &[
-    WeaponEntry {
-        id: "colt_army_1860",
-        name: "Colt Army Model 1860",
-        base_damage: 14,
-        accuracy: 5,
-        max_range: 24,
-        capacity: 6,
-        cap_and_ball: true,
-        misfire_chance: 5,
-    },
-    WeaponEntry {
-        id: "winchester_1866",
-        name: "Winchester Model 1866",
-        base_damage: 12,
-        accuracy: 8,
-        max_range: 40,
-        capacity: 13,
-        cap_and_ball: false,
-        misfire_chance: 3,
-    },
-    WeaponEntry {
-        id: "sharps_1874",
-        name: "Sharps 1874",
-        base_damage: 22,
-        accuracy: 12,
-        max_range: 60,
-        capacity: 1,
-        cap_and_ball: false,
-        misfire_chance: 2,
-    },
-];
-
-/// Look up a weapon entry by its string identifier.
-pub fn weapon_entry(id: &str) -> Option<&'static WeaponEntry> {
-    WEAPON_TABLE.iter().find(|w| w.id == id)
 }
 
 // ---------------------------------------------------------------------------
@@ -283,18 +220,6 @@ mod tests {
     fn hit_location_entry_lookup() {
         let e = hit_location_entry(HitLocationType::Head).expect("head exists");
         assert_eq!(e.damage_mult, 200);
-    }
-
-    #[test]
-    fn weapon_entry_lookup() {
-        let w = weapon_entry("colt_army_1860").expect("colt exists");
-        assert_eq!(w.base_damage, 14);
-        assert_eq!(w.cap_and_ball, true);
-    }
-
-    #[test]
-    fn weapon_entry_missing() {
-        assert!(weapon_entry("nonexistent").is_none());
     }
 
     #[test]

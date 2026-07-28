@@ -1,0 +1,3 @@
+[
+  (id:"dlg_act3_news_arrives",act:3,node_id:Some("camp_09_four_days_late"),requires_flags:["a3_adobe_walls_survived"],requires_alive:["c_elias"],max_ledger_weight:None,lines:[(speaker_id:"c_elias",language:"en",original:"The dispatch is four days old. Whatever we feel now cannot change what happened there.",translation:None,subtitle:"Elias says the delayed dispatch cannot change the distant battle.")]),
+]

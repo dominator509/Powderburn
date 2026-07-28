@@ -64,10 +64,10 @@ impl SmokeSystem {
                 let iso_y = (x as f32 + y as f32) * half_h;
                 let z = 10.0; // smoke renders above tiles and units
 
-                // Opacity increases with density
-                let alpha = 0.5; // Force visible smoke
-                                 // Smoke is a grey-white color
-                let gray = 0.9;
+                // Preserve the kernel's 0-6 density as a readable opacity.
+                let normalized = f32::from(tile.density) / 6.0;
+                let alpha = 0.12 + normalized * 0.58;
+                let gray = 0.78 + normalized * 0.16;
 
                 #[repr(C)]
                 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -236,6 +236,9 @@ impl SmokeSystem {
 
     /// Draw the smoke overlay.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
+        if self.num_indices == 0 {
+            return;
+        }
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

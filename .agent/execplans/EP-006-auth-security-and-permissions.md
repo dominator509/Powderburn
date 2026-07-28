@@ -205,15 +205,25 @@ that reset, which is correct: a fixture that survives a reset is a fixture nobod
 EP-005 tagged first, rebase onto `green/EP-005` and rerun this node's VERIFY before tagging.
 
 ## 11. Progress
-- [ ] M1 The trust boundary inventory becomes limits
-- [ ] M2 Adversarial fixtures and the tests that consume them
-- [ ] M3 Prove the no-network guarantee at the symbol level
-- [ ] M4 Prove the check fires
-- [ ] M5 Redaction and crash artifacts
-- [ ] M6 A short fuzz run in the gate
+- [x] M1 The trust boundary inventory becomes limits
+- [x] M2 Adversarial fixtures and the tests that consume them
+- [x] M3 Prove the no-network guarantee at the symbol level
+- [x] M4 Prove the check fires
+- [x] M5 Redaction and crash artifacts
+- [x] M6 A short fuzz run in the gate
 
 ## 12. Surprises and Discoveries
 
+- A required development replay server and a zero-network shipped binary coexist only if the
+  server is feature-gated and the release gate inspects the default binary itself.
+
 ## 13. Decision Log
 
+- 2026-07-27: Parser limits are enforced before allocation; save/content/mod failures are explicit
+  refusals; no silent repair or migration is permitted. The default release has no network feature.
+
 ## 14. Outcomes and Retrospective
+
+Completed. Hostile RON, saves, journals, paths, symlinks, executable payloads, and oversized inputs
+are bounded and tested; redaction/crash artifacts are proven; seeded fuzzing runs in the gate; and
+the release binary has no network symbols.

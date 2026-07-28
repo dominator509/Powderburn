@@ -25,6 +25,82 @@ pub const FIRST_CHAR: u8 = 32; // space
 /// Last ASCII code (exclusive) stored in the atlas.
 pub const LAST_CHAR: u8 = 127;
 
+/// One measured line returned by the production word-wrapping algorithm.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextLineLayout {
+    pub text: String,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Wrap text to the largest whole-glyph line that fits `max_width`.
+///
+/// The renderer consumes the returned strings and measurements directly;
+/// the accessibility gate calls the same function at 200 percent scale.
+pub fn layout_wrapped_text(text: &str, scale: f32, max_width: f32) -> Vec<TextLineLayout> {
+    if text.is_empty() || scale <= 0.0 || max_width <= 0.0 {
+        return Vec::new();
+    }
+    let glyph_width = GLYPH_W as f32 * scale;
+    let glyph_height = GLYPH_H as f32 * scale;
+    let max_chars = (max_width / glyph_width).floor().max(1.0) as usize;
+    let mut output = Vec::new();
+    let mut current = String::new();
+
+    let push_line = |line: String, output: &mut Vec<TextLineLayout>| {
+        let char_count = line.chars().count() as f32;
+        output.push(TextLineLayout {
+            text: line,
+            width: char_count * glyph_width,
+            height: glyph_height,
+        });
+    };
+
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+        if word_len > max_chars {
+            if !current.is_empty() {
+                push_line(std::mem::take(&mut current), &mut output);
+            }
+            let chars: Vec<_> = word.chars().collect();
+            for chunk in chars.chunks(max_chars) {
+                push_line(chunk.iter().collect(), &mut output);
+            }
+            continue;
+        }
+        let separator = usize::from(!current.is_empty());
+        if current.chars().count() + separator + word_len > max_chars {
+            push_line(std::mem::take(&mut current), &mut output);
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        push_line(current, &mut output);
+    }
+    output
+}
+
+/// Fit a single-line label to a measured width, adding an ellipsis when
+/// content cannot fit. This is used for the compact top status strip.
+pub fn fit_text(text: &str, scale: f32, max_width: f32) -> String {
+    if scale <= 0.0 || max_width <= 0.0 {
+        return String::new();
+    }
+    let max_chars = (max_width / (GLYPH_W as f32 * scale)).floor() as usize;
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+    let mut fitted: String = text.chars().take(max_chars - 3).collect();
+    fitted.push_str("...");
+    fitted
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // Vertex & Mesh types
 // ═════════════════════════════════════════════════════════════════════════
@@ -455,3 +531,38 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return texel * input.color;
 }
 "#;
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui_contract::{
+        HUD_ACTION_SELECTED, HUD_INSTRUCTION_IDLE, HUD_INSTRUCTION_SELECTED,
+        HUD_INSTRUCTION_TARGETING,
+    };
+
+    #[test]
+    fn shipped_hud_copy_fits_at_two_hundred_percent() {
+        let scale = 4.0;
+        let max_width = 1920.0 - 24.0;
+        let strings = [
+            HUD_ACTION_SELECTED,
+            HUD_INSTRUCTION_IDLE,
+            HUD_INSTRUCTION_SELECTED,
+            HUD_INSTRUCTION_TARGETING,
+        ];
+        let lines: Vec<_> = strings
+            .into_iter()
+            .flat_map(|text| layout_wrapped_text(text, scale, max_width))
+            .collect();
+        assert!(lines.iter().all(|line| line.width <= max_width));
+        let total_height: f32 = lines.iter().map(|line| line.height + 6.0).sum();
+        assert!(total_height <= 1080.0 * 0.45);
+    }
+
+    #[test]
+    fn long_unbroken_words_are_hard_wrapped() {
+        let lines = layout_wrapped_text("abcdefghijkl", 1.0, 32.0);
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().all(|line| line.width <= 32.0));
+    }
+}

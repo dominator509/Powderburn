@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pb_core::event::Event;
 use pb_core::ids::ActorId;
@@ -16,7 +16,7 @@ use pb_core::progression::{
 };
 
 /// Per-actor progression data tracked within the simulation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ActorProgression {
     /// Total experience points earned.
     pub xp: u64,
@@ -30,6 +30,15 @@ pub struct ActorProgression {
     pub marks: Vec<String>,
     /// Way (trait) string ID chosen at creation, if any.
     pub way: Option<String>,
+    /// Data-authored passive effect identifiers resolved by the content layer.
+    #[serde(default)]
+    pub passives: BTreeSet<String>,
+    /// Data-authored active ability identifiers resolved by the content layer.
+    #[serde(default)]
+    pub abilities: BTreeSet<String>,
+    /// Numeric effect values by stable semantic key.
+    #[serde(default)]
+    pub effect_values: BTreeMap<String, i32>,
 }
 
 impl ActorProgression {
@@ -42,6 +51,9 @@ impl ActorProgression {
             skill_levels: BTreeMap::new(),
             marks: Vec::new(),
             way: None,
+            passives: BTreeSet::new(),
+            abilities: BTreeSet::new(),
+            effect_values: BTreeMap::new(),
         }
     }
 
@@ -59,6 +71,9 @@ impl ActorProgression {
             skill_levels: BTreeMap::new(),
             marks: Vec::new(),
             way: None,
+            passives: BTreeSet::new(),
+            abilities: BTreeSet::new(),
+            effect_values: BTreeMap::new(),
         }
     }
 
@@ -103,6 +118,18 @@ impl ActorProgression {
         }
         self.way = Some(way_id.to_string());
         Ok(())
+    }
+
+    pub fn has_passive(&self, passive: &str) -> bool {
+        self.passives.contains(passive)
+    }
+
+    pub fn has_ability(&self, ability: &str) -> bool {
+        self.abilities.contains(ability)
+    }
+
+    pub fn effect_value(&self, key: &str) -> i32 {
+        self.effect_values.get(key).copied().unwrap_or(0)
     }
 }
 
@@ -165,7 +192,11 @@ pub fn award_xp(
         actor: actor_id,
         xp: xp_amount,
         total_xp: progression.xp,
-        new_level: if levelled_up { Some(progression.level) } else { None },
+        new_level: if levelled_up {
+            Some(progression.level)
+        } else {
+            None
+        },
     });
 
     XpAwardResult {
@@ -255,18 +286,20 @@ mod tests {
         assert_eq!(prog.level, 5);
         assert_eq!(prog.xp, 1000);
         assert_eq!(prog.skill_points, 4);
-        assert_eq!(prog.marks.len(), 1); // level 3 grants 1 mark
+        // Higher-level actors have an earned slot, but marks require an
+        // explicit content-backed choice and are never fabricated here.
+        assert_eq!(marks_earned_by_level(prog.level), 1);
+        assert!(prog.marks.is_empty());
     }
 
     #[test]
     fn spend_skill_point_increases_skill() {
-        let mut prog = ActorProgression::at_level(3);
-        let sp_before = prog.skill_points;
-        let result = prog.spend_skill_point(SkillLine::Pistols);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1);
-        assert_eq!(prog.skill_points, sp_before - 1);
-        assert_eq!(prog.skill_level(SkillLine::Pistols), 1);
+        let mut progression = ActorProgression::at_level(3);
+        let points_before = progression.skill_points;
+        let result = progression.spend_skill_point(SkillLine::Pistols);
+        assert_eq!(result, Ok(1));
+        assert_eq!(progression.skill_points, points_before - 1);
+        assert_eq!(progression.skill_level(SkillLine::Pistols), 1);
     }
 
     #[test]
@@ -355,14 +388,12 @@ mod tests {
 
     #[test]
     fn award_xp_grant_mark_at_level_3() {
-        let mut prog = ActorProgression::new();
-        // Start with 300 XP to be at level 3
-        let mut prog = ActorProgression::at_level(2);
-        prog.xp = 99; // just below level 3
-        prog.skill_points = 1;
-        let result = award_xp(ActorId(1), &mut prog, 201); // 99+201=300, hits level 3
+        let mut progression = ActorProgression::at_level(2);
+        progression.xp = 99;
+        progression.skill_points = 1;
+        let result = award_xp(ActorId(1), &mut progression, 201);
         assert!(result.levelled_up);
-        assert_eq!(prog.level, 3);
+        assert_eq!(progression.level, 3);
         assert_eq!(result.new_marks, 1);
     }
 

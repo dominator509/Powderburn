@@ -1,0 +1,11 @@
+POWDERBURN release reference machine
+Captured: 2026-07-27
+Host: Windows 11 with Ubuntu under WSL2
+Kernel: Linux 6.18.33.2-microsoft-standard-WSL2
+Architecture: x86_64
+CPU: Intel Core i7-4790 at 3.60 GHz, 4 cores / 8 threads
+Memory available to WSL: 15 GiB
+Rust: rustc 1.85.0 (4d91de4e4 2025-02-17)
+LLVM: 19.1.7
+Release target: x86_64-unknown-linux-gnu
+Headless renderer: wgpu GL backend with software rendering where selected

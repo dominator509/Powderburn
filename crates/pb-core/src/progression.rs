@@ -40,7 +40,9 @@ impl fmt::Display for WayId {
 /// The 8 skill lines in the game.
 ///
 /// These govern weapon accuracy, utility, and social effectiveness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum SkillLine {
     Pistols,
     LongGuns,
@@ -127,8 +129,7 @@ pub const fn xp_for_level(level: u32) -> u64 {
 ///
 /// Returns the highest level for which `xp_for_level(level) <= total_xp`.
 pub fn level_from_xp(total_xp: u64) -> u32 {
-    // Level is capped at 20 in the progression system.
-    for level in (1..=20).rev() {
+    for level in (1..=MAX_CHARACTER_LEVEL).rev() {
         if xp_for_level(level) <= total_xp {
             return level;
         }
@@ -139,6 +140,9 @@ pub fn level_from_xp(total_xp: u64) -> u32 {
 /// Check whether the given total XP would cause a level-up from the given
 /// current level. Returns `Some(new_level)` if a level-up occurs.
 pub fn check_level_up(current_level: u32, total_xp: u64) -> Option<u32> {
+    if current_level >= MAX_CHARACTER_LEVEL {
+        return None;
+    }
     let next_level = current_level + 1;
     if xp_for_level(next_level) <= total_xp {
         Some(next_level)

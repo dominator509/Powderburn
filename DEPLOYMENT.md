@@ -90,12 +90,14 @@ would overwrite a previously published artifact.
 
 ## External publication (MANUAL, never executed by the run)
 
-    butler push "$PB_RELEASE_DIR/$VER/powderburn-$VER-x86_64-linux.tar.zst" <user>/powderburn:linux --userversion "$VER"
+    butler push "$PB_RELEASE_DIR/$VER" <user>/powderburn:linux --userversion "$VER"
 
-The run prints this line and stops clean.
+The run prints this line and stops clean. No script in this repository runs it, and no agent may
+run it.
 
 ## Production verification commands
 
-    minisign -Vm "$PB_RELEASE_DIR/$VER/powderburn-$VER-x86_64-linux.tar.zst" -p "$PB_RELEASE_DIR/powderburn.pub"
-    sha256sum -c "$PB_RELEASE_DIR/$VER/SHA256SUMS"
-    sh scripts/smoke-test.sh --released
+    ARTIFACT="$PB_RELEASE_DIR/$VER/powderburn-$VER-x86_64-unknown-linux-gnu.tar.zst"
+    minisign -Vm "$ARTIFACT" -x "$ARTIFACT.sig" -p "$PB_RELEASE_DIR/powderburn.pub"
+    (cd "$PB_RELEASE_DIR/$VER" && sha256sum -c "$(basename "$ARTIFACT").sha256")
+    sh scripts/smoke-test.sh --released "$ARTIFACT"

@@ -190,15 +190,29 @@ COMMIT: git add -A && git commit -m "[EP-009][M6] document the manual itch.io pu
 and note the cleanup in the ledger so the append-only index's history stays honest.
 
 ## 11. Progress
-- [ ] M1 Reproducible builds
-- [ ] M2 Checksums, signatures, and the index
-- [ ] M3 Smoke test the released artifact, not the build tree
-- [ ] M4 Publish to the self-hosted release directory
-- [ ] M5 Rehearse the rollback
-- [ ] M6 Document the manual itch.io step
+- [x] M1 Reproducible builds
+- [x] M2 Checksums, signatures, and the index
+- [x] M3 Smoke test the released artifact, not the build tree
+- [x] M4 Publish to the self-hosted release directory
+- [x] M5 Rehearse the rollback
+- [x] M6 Document the manual itch.io step
 
 ## 12. Surprises and Discoveries
 
+- Released live fire found that the first package omitted `tests/fixtures`, proving why a release
+  must be tested without borrowing worktree files. The corrected immutable drill candidate was
+  published as `0.1.0-rc3`; earlier candidate directories were not overwritten.
+- Smoke cleanup initially restored the wrong cache path. Preserving the original cache root fixed
+  retry and rollback behavior.
+
 ## 13. Decision Log
 
+- 2026-07-27: Release directories and signed artifacts are immutable. An incorrect candidate gets a
+  new version; idempotent publication validates an existing version instead of replacing it.
+
 ## 14. Outcomes and Retrospective
+
+Completed. Two isolated builds produced identical archives, minisign verification and the index are
+fail-closed, released-only smoke and all ten live-fire proofs pass for RC3, repeat publication is a
+safe no-op, and a deliberately broken RC2 was detected and rolled back to a green RC1. The itch.io
+step is documented and remains manual.

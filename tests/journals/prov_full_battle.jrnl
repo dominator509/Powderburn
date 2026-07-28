@@ -7,50 +7,48 @@
 #
 # Strategy: Move allies toward enemies and shoot them with SnapShot.
 # Combat timeline (from trace):
-#   Round 1: allies move forward
-#   Round 2: ally_02 MISS, ally_01 HIT (15 dmg, Vitals), e_enemy_01 wounded
-#   Round 3: ally_02 HIT (11 dmg, GunArm), ally_01 HIT (14 dmg, Torso) KILLS e_enemy_01
-#            -> e_enemy_01 dead from round 3 onwards
-#   Round 4: ally_02 MISS
-#   Round 5: ally_02 HIT (12 dmg, OffArm)
-#   Round 6: ally_02 HIT (13 dmg, Vitals) KILLS e_enemy_02
+#   Ticks 0-84: both allies sprint into close range.
+#   Tick 144: ally_02 wounds enemy_02's gun arm.
+#   Tick 160: ally_01 wounds enemy_01 and rattles enemy_02.
+#   Tick 216: ally_02 inflicts a bleeding vitals wound on enemy_02.
+#   Tick 228: enemy_02 bleeds out; enemy_01 breaks and must retreat.
+#   Ticks 240-320: the allies wound enemy_01 until he routes.
 #
-# Note: e_enemy_01 commands removed after round 2 (died tick 160).
+# Every first column is the exact sequence-clock tick, not a round number.
 
 # Round 1 - move forward
-0 3037190930 move x=8 y=6
+0 3037190930 Sprint x=7 y=6
 0 3769966676 Hold
-0 2180853174 move x=8 y=5
+0 2180853174 Sprint x=7 y=5
 0 3916335308 Hold
 
-# Round 2 - shoot at enemies
-1 3037190930 SnapShot target=3769966676
-1 3769966676 Hold
-1 2180853174 SnapShot target=3916335308
-1 3916335308 Hold
+# Round 2 - sprint into close range
+72 3037190930 Sprint x=9 y=6
+76 3769966676 Hold
+80 2180853174 Sprint x=9 y=5
+84 3916335308 Hold
 
-# Round 3 - e_enemy_01 dies during this round
-2 3037190930 SnapShot target=3769966676
-2 3769966676 Hold
-2 2180853174 SnapShot target=3916335308
-# e_enemy_01 (3916335308) dies at tick 160 - no more commands
+# Round 3 - shoot at enemies
+144 3037190930 SnapShot target=3769966676
+144 3037190930 Hold
+152 3769966676 Hold
+160 2180853174 SnapShot target=3916335308
+160 2180853174 Hold
+168 3916335308 Hold
+# e_ally_01 clears the deterministic round-2 misfire before firing again.
 
 # Round 4
-3 3037190930 SnapShot target=3769966676
-3 3769966676 Hold
-3 2180853174 Hold
+216 3037190930 SnapShot target=3769966676
+216 3037190930 Hold
+228 3769966676 Hold
+240 2180853174 SnapShot target=3916335308
+240 2180853174 Hold
+252 3916335308 Move x=15 y=5
+252 3916335308 Move x=16 y=5
+252 3916335308 Hold
 
 # Round 5
-4 3037190930 SnapShot target=3769966676
-4 3769966676 Hold
-4 2180853174 Hold
-
-# Round 6
-5 3037190930 SnapShot target=3769966676
-5 3769966676 Hold
-5 2180853174 Hold
-
-# Round 7
-6 3037190930 SnapShot target=3769966676
-6 3769966676 Hold
-6 2180853174 Hold
+288 3037190930 SnapShot target=3916335308
+288 3037190930 Hold
+320 2180853174 SnapShot target=3916335308
+320 2180853174 Hold

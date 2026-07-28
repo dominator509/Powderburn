@@ -12,3 +12,4 @@ workspace = true
     pb-core = { path = "../pb-core" }
     pb-rng = { path = "../pb-rng" }
     pb-rules = { path = "../pb-rules" }
+    serde = { workspace = true }

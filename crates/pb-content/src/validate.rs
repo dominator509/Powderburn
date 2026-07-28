@@ -75,25 +75,79 @@ pub fn validate(content: &Content) -> Vec<Diagnostic> {
     // 4. Unknown scenario references in campaign nodes.
     check_scenario_references(content, &mut diagnostics);
 
-    // 5. ActorData structural invariants.
+    // 5. Dialogue structure, references, translation, and act coverage.
+    check_dialogue(content, &mut diagnostics);
+
+    // 6. ActorData structural invariants.
     check_actor_structure(content, &mut diagnostics);
 
-    // 6. Weapon structural invariants (range_bands sorted ascending).
+    // 7. Weapon structural invariants (range_bands sorted ascending).
     check_weapon_structure(content, &mut diagnostics);
 
-    // 7. DiceRoll structural invariants.
+    // 8. DiceRoll structural invariants.
     check_dice_rolls(content, &mut diagnostics);
 
-    // 8. Faction / archetype non-empty checks.
+    // 9. Faction / archetype non-empty checks.
     check_faction_and_archetype(content, &mut diagnostics);
 
-    // 9. Scenario objective actor references.
+    // 10. Scenario objective actor references.
     check_objective_actor_references(content, &mut diagnostics);
 
-    // 10. Anachronistic weapons — E-ANACHRONISM-001.
+    // 11. Anachronistic weapons — E-ANACHRONISM-001.
     check_anachronisms(content, &mut diagnostics);
 
+    // 12. Every Ledger writing category offers exactly three usable lines.
+    check_ledger_line_sets(content, &mut diagnostics);
+
     diagnostics
+}
+
+fn check_ledger_line_sets(content: &Content, out: &mut Vec<Diagnostic>) {
+    let mut categories = BTreeSet::new();
+    for line_set in content.ledger_line_sets.values() {
+        if line_set.id.trim().is_empty() {
+            out.push(Diagnostic::new(
+                "E-CONTENT-002",
+                "Ledger line-set id may not be empty",
+            ));
+        }
+        if !matches!(line_set.applies_to.as_str(), "companion" | "combatant") {
+            out.push(Diagnostic::new(
+                "E-CONTENT-002",
+                format!(
+                    "Ledger line set `{}` has invalid applies_to `{}`",
+                    line_set.id, line_set.applies_to
+                ),
+            ));
+        } else {
+            categories.insert(line_set.applies_to.as_str());
+        }
+        if line_set.lines.iter().any(|line| line.trim().is_empty()) {
+            out.push(Diagnostic::new(
+                "E-CONTENT-002",
+                format!("Ledger line set `{}` contains an empty line", line_set.id),
+            ));
+        }
+        if line_set.default_index >= 3 {
+            out.push(Diagnostic::new(
+                "E-CONTENT-002",
+                format!(
+                    "Ledger line set `{}` default index {} is outside 0..3",
+                    line_set.id, line_set.default_index
+                ),
+            ));
+        }
+    }
+    if !content.ledger_line_sets.is_empty() {
+        for required in ["companion", "combatant"] {
+            if !categories.contains(required) {
+                out.push(Diagnostic::new(
+                    "E-CONTENT-002",
+                    format!("no Ledger line set applies to `{required}`"),
+                ));
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,8 +255,8 @@ fn check_weapon_references(content: &Content, out: &mut Vec<Diagnostic>) {
     }
 }
 
-/// E-REF-COMPANION — check that companion_gates values in campaign nodes
-/// refer to a known companion.
+/// E-REF-COMPANION — check that gates and authored recruits in campaign nodes
+/// refer to known companions.
 fn check_companion_references(content: &Content, out: &mut Vec<Diagnostic>) {
     let companion_ids: BTreeSet<&str> = content.companions.keys().map(String::as_str).collect();
 
@@ -214,6 +268,17 @@ fn check_companion_references(content: &Content, out: &mut Vec<Diagnostic>) {
                     format!(
                         "campaign node `{}` references unknown companion `{}` in companion_gates",
                         node.id, gate_id
+                    ),
+                ));
+            }
+        }
+        for recruit_id in &node.recruits {
+            if !companion_ids.contains(recruit_id.as_str()) {
+                out.push(Diagnostic::new(
+                    "E-REF-COMPANION",
+                    format!(
+                        "campaign node `{}` references unknown companion `{}` in recruits",
+                        node.id, recruit_id
                     ),
                 ));
             }
@@ -241,10 +306,137 @@ fn check_scenario_references(content: &Content, out: &mut Vec<Diagnostic>) {
     }
 }
 
+/// Validate dialogue references, accessibility fields, translation law, and act coverage.
+fn check_dialogue(content: &Content, out: &mut Vec<Diagnostic>) {
+    if content.dialogue.is_empty() {
+        return;
+    }
+
+    let companion_ids: BTreeSet<&str> = content.companions.keys().map(String::as_str).collect();
+    let node_ids: BTreeSet<&str> = content.campaign_nodes.keys().map(String::as_str).collect();
+
+    for scene in content.dialogue.values() {
+        if scene.id.is_empty() || !(1..=4).contains(&scene.act) || scene.lines.is_empty() {
+            out.push(Diagnostic::new(
+                "E-DIALOGUE-STRUCT",
+                format!(
+                    "dialogue scene `{}` has an invalid id, act, or empty line list",
+                    scene.id
+                ),
+            ));
+        }
+        if matches!(
+            (scene.min_ledger_weight, scene.max_ledger_weight),
+            (Some(minimum), Some(maximum)) if minimum > maximum
+        ) {
+            out.push(Diagnostic::new(
+                "E-DIALOGUE-STRUCT",
+                format!(
+                    "dialogue scene `{}` has minimum Ledger Weight above its maximum",
+                    scene.id
+                ),
+            ));
+        }
+        if let Some(node_id) = &scene.node_id {
+            if !node_ids.contains(node_id.as_str()) {
+                out.push(Diagnostic::new(
+                    "E-REF-DIALOGUE-NODE",
+                    format!(
+                        "dialogue scene `{}` references unknown node `{node_id}`",
+                        scene.id
+                    ),
+                ));
+            }
+        }
+        for companion_id in &scene.requires_alive {
+            if !companion_ids.contains(companion_id.as_str()) {
+                out.push(Diagnostic::new(
+                    "E-REF-DIALOGUE-COMPANION",
+                    format!(
+                        "dialogue scene `{}` requires unknown companion `{companion_id}`",
+                        scene.id
+                    ),
+                ));
+            }
+        }
+        for line in &scene.lines {
+            if !companion_ids.contains(line.speaker_id.as_str()) {
+                out.push(Diagnostic::new(
+                    "E-REF-DIALOGUE-COMPANION",
+                    format!(
+                        "dialogue scene `{}` has unknown speaker `{}`",
+                        scene.id, line.speaker_id
+                    ),
+                ));
+            }
+            if !scene.requires_alive.contains(&line.speaker_id) {
+                out.push(Diagnostic::new(
+                    "E-PERMADEATH-DIALOGUE",
+                    format!(
+                        "dialogue scene `{}` does not gate living speaker `{}`",
+                        scene.id, line.speaker_id
+                    ),
+                ));
+            }
+            if line.original.trim().is_empty()
+                || line.subtitle.trim().is_empty()
+                || line.language.trim().is_empty()
+            {
+                out.push(Diagnostic::new(
+                    "E-DIALOGUE-STRUCT",
+                    format!(
+                        "dialogue scene `{}` has an empty authored line field",
+                        scene.id
+                    ),
+                ));
+            }
+            if line.language != "en"
+                && line
+                    .translation
+                    .as_deref()
+                    .is_none_or(|translation| translation.trim().is_empty())
+            {
+                out.push(Diagnostic::new(
+                    "E-REPRESENTATION-TRANSLATION",
+                    format!(
+                        "dialogue scene `{}` has untranslated `{}` dialogue",
+                        scene.id, line.language
+                    ),
+                ));
+            }
+        }
+    }
+
+    for companion_id in content.companions.keys() {
+        for act in 1..=4 {
+            if !content
+                .dialogue
+                .values()
+                .any(|scene| scene.act == act && scene.requires_alive.contains(companion_id))
+            {
+                out.push(Diagnostic::new(
+                    "E-DIALOGUE-COVERAGE",
+                    format!("companion `{companion_id}` has no gated dialogue in act {act}"),
+                ));
+            }
+        }
+    }
+}
+
 /// E-STRUCT — check that ActorData has non-empty id, and that it has
 /// non-empty faction_id and archetype_id (also checked under
 /// check_faction_and_archetype).
 fn check_actor_structure(content: &Content, out: &mut Vec<Diagnostic>) {
+    const SKILL_IDS: [&str; 8] = [
+        "Pistols",
+        "LongGuns",
+        "Scatterguns",
+        "Blades",
+        "Explosives",
+        "FieldMedicine",
+        "Scouting",
+        "Talk",
+    ];
     for scenario in content.scenarios.values() {
         for actor in &scenario.actors {
             if actor.id.is_empty() {
@@ -252,6 +444,17 @@ fn check_actor_structure(content: &Content, out: &mut Vec<Diagnostic>) {
                     "E-STRUCT",
                     format!("actor in scenario `{}` has empty id", scenario.id),
                 ));
+            }
+            for (skill, level) in &actor.skill_levels {
+                if !SKILL_IDS.contains(&skill.as_str()) || *level > 10 {
+                    out.push(Diagnostic::new(
+                        "E-STRUCT",
+                        format!(
+                            "actor `{}` has invalid skill `{skill}` at level {level}",
+                            actor.id
+                        ),
+                    ));
+                }
             }
         }
     }
@@ -464,6 +667,9 @@ mod tests {
                 luck: 5,
             },
             level: 1,
+            xp: 0,
+            skill_points: 0,
+            skill_levels: std::collections::BTreeMap::new(),
             hp: 20,
             hp_max: 20,
             sand: 10,
@@ -547,6 +753,7 @@ mod tests {
             historical_tag: None,
             citations: vec![],
             companion_gates: vec![],
+            recruits: vec![],
             scenario_id: None,
         }
     }

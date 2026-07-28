@@ -162,7 +162,7 @@ pub fn can_see_through_smoke(system: &SmokeSystem, from: TileXY, to: TileXY) -> 
 }
 
 /// Lighting conditions that affect sight range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LightLevel {
     /// Full daylight: no sight range penalty.
     Day,
@@ -174,6 +174,12 @@ pub enum LightLevel {
     Moonlit,
     /// Lantern illumination: moderate reduction.
     Lanternlit,
+}
+
+impl Default for LightLevel {
+    fn default() -> Self {
+        Self::Day
+    }
 }
 
 /// Return the sight radius multiplier for a given light level.
@@ -195,7 +201,7 @@ pub fn sight_radius_multiplier(light: LightLevel) -> Fix32 {
 }
 
 /// Weather conditions affecting the battlefield.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Weather {
     /// Clear skies: no penalties.
     Clear,
@@ -207,6 +213,12 @@ pub enum Weather {
     Dust,
     /// Wind: projectile drift.
     Wind,
+}
+
+impl Default for Weather {
+    fn default() -> Self {
+        Self::Clear
+    }
 }
 
 /// Cover type providing protection.

@@ -46,7 +46,7 @@ impl RenderDevice {
             .ok_or_else(|| "no wgpu adapter available".to_string())?;
 
         let adapter_info = adapter.get_info();
-        println!(
+        eprintln!(
             "render: adapter = {} ({:?})",
             adapter_info.name, adapter_info.backend
         );

@@ -8,7 +8,6 @@ use std::collections::BTreeSet;
 use pb_core::event::HitLocationType;
 use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
-use pb_rules::tables::weapon_entry;
 use pb_sim::action::{Action, Command};
 use pb_sim::state::ActorState;
 
@@ -56,7 +55,7 @@ const W_DISTANCE: i32 = -3;
 /// Generate a bounded set of candidate actions for `actor`.
 ///
 /// - At most 24 movement positions are sampled from Chebyshev-distance rings
-///   1, 2, and 3 around the actor.
+///   1 and 2 around the actor.
 /// - At most 6 enemy targets are selected (nearest first, then lowest HP).
 /// - For each target: SnapShot, AimedShot, CalledShot (Torso), Melee – up to
 ///   24 target-action candidates.
@@ -71,8 +70,13 @@ pub fn generate_candidates(
     // -- Movement candidates (at most 24) --
     let positions = generate_movement_positions(actor, allies);
     for pos in positions.iter().take(MAX_MOVEMENT_CANDIDATES) {
+        let action = if actor.position.chebyshev_distance(*pos) == 1 {
+            Action::Move(*pos)
+        } else {
+            Action::Sprint(*pos)
+        };
         candidates.push(AiCandidate {
-            action: Action::Move(*pos),
+            action,
             score: 0,
             target: None,
             destination: Some(*pos),
@@ -171,21 +175,18 @@ pub fn select_best(candidates: Vec<AiCandidate>) -> Option<AiCandidate> {
         .map(|(_idx, c)| c)
 }
 
-/// Convenience: generate, score, select, return a `Command`.
+/// Generate, score, and select one command for the supplied actor.
 ///
-/// If no candidates are available, returns `Command { action: Action::Hold,
-/// actor_id: ??? }` – see `decide_action` below.  **Note**: the caller must
-/// supply an `ActorId` for the final `Command`.  The signature below uses a
-/// **default ActorId(0)** as a placeholder because the actor is identified by
-/// `ActorState` not by ID.  Production callers should replace it.
-///
-/// If `candidates` is empty, returns `Hold`.
-pub fn decide_action(actor: &ActorState, allies: &[ActorState], enemies: &[ActorState]) -> Command {
-    // We need an ActorId for the Command.  Since ActorState doesn't carry one,
-    // we use ActorId(0) as a formal placeholder.  Callers with a SimState
-    // should look up the real ID.
-    let actor_id = ActorId(0);
-
+/// The caller supplies the real simulation id. Target ids remain stable
+/// one-based indices into `enemies` so clients that keep actor state and ids in
+/// separate deterministic vectors can translate them without name parsing.
+/// If no candidate is available, the actor Holds.
+pub fn decide_action(
+    actor_id: ActorId,
+    actor: &ActorState,
+    allies: &[ActorState],
+    enemies: &[ActorState],
+) -> Command {
     let candidates = generate_candidates(actor, allies, enemies);
     if candidates.is_empty() {
         return Command {
@@ -231,8 +232,8 @@ fn generate_movement_positions(actor: &ActorState, allies: &[ActorState]) -> Vec
 
     let mut result = Vec::new();
 
-    // Rings at Chebyshev distances 1, 2, 3
-    for d in 1i16..=3i16 {
+    // Rings at Chebyshev distances 1 and 2: Move and Sprint respectively.
+    for d in 1i16..=2i16 {
         // All tiles where max(|dx|, |dy|) == d
         for dx in -d..=d {
             for dy in -d..=d {
@@ -301,18 +302,6 @@ fn select_targets(
 // Scoring components
 // ---------------------------------------------------------------------------
 
-/// Look up a default weapon's base damage for range calculations.
-///
-/// Uses the first weapon entry (Colt Army 1860) as the default sidearm.
-fn default_base_damage() -> i32 {
-    weapon_entry("colt_army_1860").map_or(10, |w| w.base_damage)
-}
-
-/// Look up a default weapon's max range.
-fn default_max_range() -> i32 {
-    weapon_entry("colt_army_1860").map_or(24, |w| w.max_range)
-}
-
 /// Compute expected damage for a candidate.
 ///
 /// - Shooting actions: (base_damage * 100) / max(1, distance)
@@ -330,7 +319,9 @@ fn compute_expected_damage(
                 None => return 0,
             };
             let dist = distance_to_enemy_by_id(target_id, actor, enemies);
-            let base = default_base_damage();
+            let weapon = &actor.weapon_profile;
+            let base = weapon.damage_count.max(1) * (weapon.damage_sides.max(1) + 1) / 2
+                + weapon.damage_bonus;
             let range_penalty = core::cmp::max(1_i16, dist);
             // Returns base_damage adjusted for range (integer, no floats)
             (base * 100) / (range_penalty as i32)
@@ -361,7 +352,7 @@ fn compute_cover_gained(
     enemies: &[ActorState],
 ) -> i32 {
     match candidate.action {
-        Action::Move(dest) => {
+        Action::Move(dest) | Action::Sprint(dest) => {
             let current_min_dist = min_enemy_distance(actor.position, enemies);
             let dest_min_dist = min_enemy_distance(dest, enemies);
             let gain = dest_min_dist - current_min_dist;
@@ -385,7 +376,7 @@ fn compute_flanking_gained(
     enemies: &[ActorState],
 ) -> i32 {
     match candidate.action {
-        Action::Move(dest) => {
+        Action::Move(dest) | Action::Sprint(dest) => {
             let nearest = nearest_alive_enemy(dest, enemies);
             match nearest {
                 Some((_, enemy_pos)) => {
@@ -417,10 +408,10 @@ fn compute_flanking_gained(
 /// Returns 0..MAX_TARGET_CANDIDATES.
 fn compute_sand_risk(candidate: &AiCandidate, actor: &ActorState, enemies: &[ActorState]) -> i32 {
     let pos = match candidate.action {
-        Action::Move(dest) => dest,
+        Action::Move(dest) | Action::Sprint(dest) => dest,
         _ => actor.position,
     };
-    let max_range = default_max_range();
+    let max_range = actor.weapon_profile.range_bands[3];
     let count: i32 = enemies
         .iter()
         .filter(|e| e.alive)
@@ -437,7 +428,7 @@ fn compute_distance_to_objective(
     enemies: &[ActorState],
 ) -> i32 {
     let pos = match candidate.action {
-        Action::Move(dest) => dest,
+        Action::Move(dest) | Action::Sprint(dest) => dest,
         _ => actor.position,
     };
     let dist = min_enemy_distance(pos, enemies);
@@ -499,6 +490,9 @@ mod tests {
     /// in its name.
     fn make_actor(x: i16, y: i16, hp: i32, ap_val: i16, alive: bool, name: &str) -> ActorState {
         ActorState {
+            faction_id: String::new(),
+            is_companion: false,
+            attributes: pb_core::Attributes::BALANCED,
             ap: Ap(ap_val),
             position: TileXY::new(x, y),
             facing: Facing::South,
@@ -507,12 +501,14 @@ mod tests {
             max_hp: 20,
             name: name.to_string(),
             alive,
+            routed: false,
             wounds: vec![],
             sand: 10,
             max_sand: 10,
             stance: Stance::Standing,
             progression: pb_sim::progression::ActorProgression::new(),
             weapon: String::new(),
+            weapon_profile: Default::default(),
             loaded_rounds: 0,
             weapon_capacity: 0,
             fouling: 0,
@@ -590,7 +586,8 @@ mod tests {
         let allies = vec![];
         let enemies = vec![make_actor(3, 0, 10, 10, true, "Enemy1")];
 
-        let cmd = decide_action(&actor, &allies, &enemies);
+        let cmd = decide_action(ActorId(99), &actor, &allies, &enemies);
+        assert_eq!(cmd.actor_id, ActorId(99));
         // The AI should pick a shooting action (SnapShot, AimedShot, CalledShot) over Hold
         assert!(
             matches!(

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use pb_core::geom::TileXY;
 use pb_core::ids::{ActorId, Tick};
+use pb_sim::action::{step, Action, Command};
 use pb_sim::clock::{self, turn_length};
 use pb_sim::state::SimState;
 
@@ -41,6 +42,17 @@ fn ap_economy_sequence_clock_counts() {
                 break;
             }
             *counts.get_mut(&actor).unwrap() += 1;
+            assert!(
+                step(
+                    &mut state,
+                    Command {
+                        actor_id: actor,
+                        action: Action::Hold,
+                    },
+                )
+                .is_ok(),
+                "scheduled actor must be able to end its turn"
+            );
         } else {
             break;
         }

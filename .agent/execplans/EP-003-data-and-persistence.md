@@ -222,16 +222,27 @@ COMMIT: git add -A && git commit -m "[EP-003][M7] mod sandbox and asset provenan
 `content/` tree this node creates. No external state exists.
 
 ## 11. Progress
-- [ ] M1 Schema and loader
-- [ ] M2 The rule tables as data
-- [ ] M3 The validator: history, representation, anachronism
-- [ ] M4 The campaign graph and permadeath propagation
-- [ ] M5 Saves and the Ledger chain
-- [ ] M6 Prove the loader is faithful
-- [ ] M7 Mod sandbox and provenance
+- [x] M1 Schema and loader
+- [x] M2 The rule tables as data
+- [x] M3 The validator: history, representation, anachronism
+- [x] M4 The campaign graph and permadeath propagation
+- [x] M5 Saves and the Ledger chain
+- [x] M6 Prove the loader is faithful
+- [x] M7 Mod sandbox and provenance
 
 ## 12. Surprises and Discoveries
 
+- The inherited 26-record weapon file contained nine unreferenced fantasy, alien, or god weapons
+  despite the historical product claim. They were replaced with sourced period-correct records,
+  and the unused alien faction was removed.
+
 ## 13. Decision Log
 
+- 2026-07-27: Historical-fixed outcomes, representation metadata, weapon introduction years, and
+  the 1867-1878 setting apply to optional data as well as the reachable campaign.
+
 ## 14. Outcomes and Retrospective
+
+Completed. Bounded RON schemas, historical/representation/anachronism validators, the connected
+24-mission/12-camp graph, permadeath propagation, strict saves, append-only Ledger chain, faithful
+hashing, confined mods, and complete provenance are executable and tested.

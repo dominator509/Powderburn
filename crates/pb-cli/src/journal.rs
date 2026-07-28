@@ -87,22 +87,37 @@ pub fn parse_journal(path: &Path) -> Result<Vec<(u64, u32, Command)>, JournalErr
 /// Parse an Action from a command name and arguments.
 fn parse_action(name: &str, args: &[&str], line_no: usize) -> Result<Action, JournalError> {
     match name {
-        "hold" | "Hold" => Ok(Action::Hold),
+        "hold" | "Hold" | "endturn" | "EndTurn" => Ok(Action::Hold),
         "reload" | "Reload" => Ok(Action::Reload),
+        "clearjam" | "ClearJam" => Ok(Action::ClearJam),
         "useitem" | "UseItem" => Ok(Action::UseItem),
+        "stance" | "Stance" => match named_arg(args, "stance").unwrap_or("Standing") {
+            "Crouched" | "crouched" => Ok(Action::StanceCrouch),
+            "Prone" | "prone" => Ok(Action::StanceProne),
+            "Standing" | "standing" => Ok(Action::RiseFromProne),
+            value => Err(JournalError::Illegal(format!(
+                "line {}: unknown stance '{}'",
+                line_no + 1,
+                value
+            ))),
+        },
         "move" | "Move" => {
             let (x, y) = parse_xy(args, "Move", line_no)?;
             Ok(Action::Move(TileXY::new(x, y)))
         }
-        "snapshot" | "SnapShot" => {
+        "sprint" | "Sprint" => {
+            let (x, y) = parse_xy(args, "Sprint", line_no)?;
+            Ok(Action::Sprint(TileXY::new(x, y)))
+        }
+        "snap" | "Snap" | "snapshot" | "SnapShot" => {
             let target = parse_target(args, "SnapShot", line_no)?;
             Ok(Action::SnapShot(target))
         }
-        "aimedshot" | "AimedShot" => {
+        "aimed" | "Aimed" | "aimedshot" | "AimedShot" => {
             let target = parse_target(args, "AimedShot", line_no)?;
             Ok(Action::AimedShot(target))
         }
-        "calledshot" | "CalledShot" => {
+        "called" | "Called" | "calledshot" | "CalledShot" => {
             let target = parse_target(args, "CalledShot", line_no)?;
             let loc = parse_location(args, line_no)?;
             Ok(Action::CalledShot(target, loc))
@@ -115,16 +130,27 @@ fn parse_action(name: &str, args: &[&str], line_no: usize) -> Result<Action, Jou
             let target = parse_target(args, "Melee", line_no)?;
             Ok(Action::Melee(target))
         }
-        "throwdynamite" | "ThrowDynamite" => {
+        "throw" | "Throw" | "throwdynamite" | "ThrowDynamite" => {
             let (x, y) = parse_xy(args, "ThrowDynamite", line_no)?;
             Ok(Action::ThrowDynamite(TileXY::new(x, y)))
         }
+        "fan" | "Fan" => Ok(Action::FanHammer(parse_target(args, "Fan", line_no)?)),
+        "drawbead" | "DrawBead" => Ok(Action::DrawBead(parse_target(args, "DrawBead", line_no)?)),
+        "rally" | "Rally" => Ok(Action::Rally(parse_target(args, "Rally", line_no)?)),
+        "loot" | "Loot" => Ok(Action::Loot(parse_target(args, "Loot", line_no)?)),
         _ => Err(JournalError::Illegal(format!(
             "line {}: unknown command '{}'",
             line_no + 1,
             name
         ))),
     }
+}
+
+fn named_arg<'a>(args: &'a [&str], name: &str) -> Option<&'a str> {
+    args.iter().find_map(|arg| {
+        arg.strip_prefix(name)
+            .and_then(|value| value.strip_prefix('='))
+    })
 }
 
 /// Parse x,y from args (format: x=<i16> y=<i16> or just two integers).

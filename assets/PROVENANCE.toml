@@ -3,8 +3,36 @@
 # Every asset must have a source, license, and attribution.
 
 [asset_root]
-path = "/root/powderburn/assets"
-last_verified = "2026-07-26"
+path = "assets"
+last_verified = "2026-07-27"
 
 [sprite_files]
 sprites = { source = "generated", license = "GPL-3.0-only", attribution = "POWDERBURN Project" }
+
+[generated_art]
+title_backdrop = { path = "art/title_backdrop.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "cinematic frontier dawn title key art with a weathered ledger and no text" }
+companion_portraits = { path = "art/companion_portraits.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "nine respectful period-grounded companion portraits matching the authored roster and named nations" }
+frontier_terrain_atlas = { path = "art/frontier_terrain_atlas.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-two orthographic frontier terrain atlas: prairie, road, creek, brush, timber, snow, adobe, and railroad ballast" }
+frontier_scout_atlas = { path = "sprites/frontier_scout_atlas.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-two frontier scout pose atlas for isometric tactical combat" }
+frontier_company_atlas_v2 = { path = "sprites/frontier_company_atlas_v2.png", source = "OpenAI ImageGen plus project chroma-key post-processing", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-two atlas of eight distinct, period-grounded company identities on a flat chroma-green field" }
+frontier_prop_atlas = { path = "props/frontier_prop_atlas.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-four atlas of period-grounded frontier battlefield props on a flat chroma-green field" }
+
+[procedural_audio]
+generator = "scripts/gensfx.py"
+source = "deterministic project-authored synthesis"
+license = "GPL-3.0-only"
+attribution = "POWDERBURN Project"
+seed = 6247
+files = [
+  "audio/pistol_shot.wav",
+  "audio/rifle_shot.wav",
+  "audio/hit.wav",
+  "audio/miss.wav",
+  "audio/click.wav",
+  "audio/select.wav",
+  "audio/victory.wav",
+  "audio/death.wav",
+  "audio/move.wav",
+  "audio/reload.wav",
+  "audio/frontier_theme.wav",
+]

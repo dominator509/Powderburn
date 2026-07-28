@@ -160,14 +160,25 @@ This node creates no code. To re-enter cold: `git reset --hard <first commit>` i
 otherwise simply re-run from M1. Every milestone here is idempotent by construction.
 
 ## 11. Progress
-- [ ] M1 Confirm the environment
-- [ ] M2 Initialize the repository
-- [ ] M3 Create the directory skeleton
-- [ ] M4 Prove every command resolves
-- [ ] M5 Record the discovery inventory
+- [x] M1 Confirm the environment
+- [x] M2 Initialize the repository
+- [x] M3 Create the directory skeleton
+- [x] M4 Prove every command resolves
+- [x] M5 Record the discovery inventory
 
 ## 12. Surprises and Discoveries
 
+- The Windows host shell did not expose a usable POSIX build environment. Ubuntu under WSL became
+  the canonical build host, with zstd, minisign, clang/binutils, and the pinned Rust components
+  installed there.
+
 ## 13. Decision Log
 
+- 2026-07-27: Treat `/home/doministic/Powderburn-audit` as the canonical Linux release worktree and
+  use the Windows directory only as the orchestration surface.
+
 ## 14. Outcomes and Retrospective
+
+Completed. The exact 1.85.0 toolchain and required native tools are present, the repository and
+command surface resolve, preflight is executable, and later nodes successfully consumed the
+discovery inventory.

@@ -11,24 +11,45 @@
     weather: "Clear",
     wind_dir: "N",
     deployment_zones: {
-        "attacker": [(x: 5, y: 5)],
-        "defender": [(x: 8, y: 5)],
+        "attacker": [
+            /*[0]*/ (
+                x: 5,
+                y: 5,
+            ),
+        ],
+        "defender": [
+            /*[0]*/ (
+                x: 8,
+                y: 5,
+            ),
+        ],
     },
     actors: [
-        (
+        /*[0]*/ (
             id: "e_shooter",
             archetype_id: "sharpshooter",
             faction_id: "player",
-            attributes: (grit: 5, nerve: 6, wind: 6, hands: 7, eyes: 8, savvy: 5, luck: 6),
+            attributes: (
+                grit: 5,
+                nerve: 6,
+                wind: 6,
+                hands: 10,
+                eyes: 10,
+                savvy: 5,
+                luck: 6,
+            ),
             level: 3,
             hp: 35,
-            hp_max: 35,
+            hp_max: 41,
             sand: 14,
-            sand_max: 14,
+            sand_max: 22,
             ap: 8,
             ap_max: 8,
             sequence: 7,
-            pos: (x: 5, y: 5),
+            pos: (
+                x: 5,
+                y: 5,
+            ),
             facing: 1,
             stance: "Standing",
             wounds: [],
@@ -40,20 +61,31 @@
             is_companion: false,
             is_dead: false,
         ),
-        (
+        /*[1]*/ (
             id: "e_bandit_02",
             archetype_id: "target",
             faction_id: "neutral",
-            attributes: (grit: 4, nerve: 4, wind: 5, hands: 4, eyes: 4, savvy: 3, luck: 3),
+            attributes: (
+                grit: 4,
+                nerve: 4,
+                wind: 5,
+                hands: 4,
+                eyes: 3,
+                savvy: 3,
+                luck: 3,
+            ),
             level: 1,
-            hp: 40,
-            hp_max: 40,
+            hp: 34,
+            hp_max: 34,
             sand: 10,
-            sand_max: 10,
+            sand_max: 18,
             ap: 6,
-            ap_max: 6,
+            ap_max: 7,
             sequence: 3,
-            pos: (x: 8, y: 5),
+            pos: (
+                x: 8,
+                y: 5,
+            ),
             facing: 3,
             stance: "Standing",
             wounds: [],
@@ -67,15 +99,21 @@
         ),
     ],
     objectives: [
-        (
+        /*[0]*/ (
             id: "obj_called_shot",
             description: "Hit the target with a called shot to the gun arm",
             kind: "HitLocation",
-            actor_ids: ["e_bandit_02"],
+            actor_ids: [
+                /*[0]*/ "e_bandit_02",
+            ],
         ),
     ],
-    victory_conditions: ["target_hit_at_gun_arm"],
-    defeat_conditions: ["shooter_killed"],
+    victory_conditions: [
+        /*[0]*/ "target_hit_at_gun_arm",
+    ],
+    defeat_conditions: [
+        /*[0]*/ "shooter_killed",
+    ],
     historical_tag: None,
     citations: [],
 )

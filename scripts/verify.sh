@@ -8,6 +8,7 @@ sh scripts/format-check.sh
 sh scripts/lint.sh
 sh scripts/typecheck.sh
 sh scripts/reality-gate.sh
+sh scripts/spec-coverage-check.sh
 sh scripts/test-unit.sh
 sh scripts/test-integration.sh
 sh scripts/build.sh

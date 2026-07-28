@@ -4,7 +4,10 @@ pub mod cmd_bench;
 pub mod cmd_campaign;
 pub mod cmd_capture;
 pub mod cmd_replay;
+#[cfg(feature = "replay-server")]
+pub mod cmd_replay_server;
 pub mod cmd_selftest;
 pub mod cmd_sim;
 pub mod journal;
+pub mod observability;
 pub mod output;

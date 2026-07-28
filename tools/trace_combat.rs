@@ -13,7 +13,7 @@ fn actor_data_id(id: &str) -> pb_core::ids::ActorId {
     pb_core::ids::ActorId(u32::from_le_bytes([h[0], h[1], h[2], h[3]]))
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print all actor IDs
     let names = [
         "e_ally_01",
@@ -30,12 +30,12 @@ fn main() {
     }
 
     // Load content
-    let content = pb_content::load::load_all(Path::new("content")).expect("content load failed");
+    let content = pb_content::load::load_all(Path::new("content"))?;
     let scenario_id = "prov_full_battle";
     let scenario = content
         .scenarios
         .get(scenario_id)
-        .expect("scenario not found");
+        .ok_or_else(|| std::io::Error::other(format!("scenario `{scenario_id}` not found")))?;
 
     let seed = 1867u64;
     let mut state = pb_sim::state::SimState::new(seed, hash_scenario_id(scenario_id));
@@ -70,8 +70,10 @@ fn main() {
         let actor_order = [ally_02, enemy_02, ally_01, enemy_01];
 
         for &actor_id in &actor_order {
-            let actor_state = state.actors.get(&actor_id);
-            if actor_state.is_none_or(|a| !a.alive) {
+            let Some(actor_state) = state.actors.get(&actor_id) else {
+                continue;
+            };
+            if !actor_state.alive {
                 // Dead actor - still need to advance clock for next actor
                 // Actually, advance_to_next_actor only picks alive actors, so we skip dead ones
                 continue;
@@ -88,11 +90,11 @@ fn main() {
                 let target_alive = state.actors.get(&target).is_some_and(|a| a.alive);
                 if target_alive {
                     // Check if we have enough AP for SnapShot (cost 4)
-                    if actor_state.unwrap().ap.0 >= 4 {
+                    if actor_state.ap.0 >= 4 {
                         Action::SnapShot(target)
-                    } else if actor_state.unwrap().ap.0 >= 2 {
+                    } else if actor_state.ap.0 >= 2 {
                         // Move toward enemy
-                        let current = actor_state.unwrap().position;
+                        let current = actor_state.position;
                         Action::Move(pb_core::geom::TileXY::new(current.x + 4, current.y))
                     } else {
                         Action::Hold
@@ -146,4 +148,5 @@ fn main() {
             id.0, actor.hit_points, actor.alive
         );
     }
+    Ok(())
 }

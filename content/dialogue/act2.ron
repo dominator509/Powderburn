@@ -1,0 +1,3 @@
+[
+  (id:"dlg_act2_patron_falls",act:2,node_id:Some("camp_06_broken_ties"),requires_flags:["a2_promontory_present"],requires_alive:["c_elias"],max_ledger_weight:None,lines:[(speaker_id:"c_elias",language:"en",original:"The patron called it a temporary panic. His creditors used a more permanent word.",translation:None,subtitle:"Elias says the patron underestimated the Panic of 1873.")]),
+]

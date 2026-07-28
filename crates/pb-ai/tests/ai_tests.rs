@@ -20,6 +20,9 @@ use pb_sim::state::{ActorState, Stance};
 /// Helper to create an actor at a given position.
 fn make_actor(x: i16, y: i16, hp: i32, ap: i16, alive: bool, name: &str) -> ActorState {
     ActorState {
+        faction_id: String::new(),
+        is_companion: false,
+        attributes: pb_core::Attributes::BALANCED,
         ap: Ap(ap),
         position: TileXY::new(x, y),
         facing: Facing::South,
@@ -28,12 +31,14 @@ fn make_actor(x: i16, y: i16, hp: i32, ap: i16, alive: bool, name: &str) -> Acto
         max_hp: 20,
         name: name.to_string(),
         alive,
+        routed: false,
         wounds: vec![],
         sand: 10,
         max_sand: 10,
         stance: Stance::Standing,
         progression: pb_sim::progression::ActorProgression::new(),
         weapon: String::new(),
+        weapon_profile: Default::default(),
         loaded_rounds: 0,
         weapon_capacity: 0,
         fouling: 0,

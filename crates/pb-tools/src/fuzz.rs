@@ -7,7 +7,7 @@
 //!
 //! # Usage (from the workspace root)
 //!
-//! ```ignore
+//! ```no_run
 //! use pb_tools::fuzz::{fuzz_content, run_fuzz};
 //! run_fuzz(&std::path::Path::new("tests/fixtures/adversarial"), 100_000, 42);
 //! ```

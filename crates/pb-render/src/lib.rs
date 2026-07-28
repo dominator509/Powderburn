@@ -4,14 +4,17 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::float_arithmetic, clippy::unnecessary_cast, dead_code)]
 
+pub mod backdrop;
 pub mod camera;
 pub mod capture;
 pub mod device;
 pub mod overlay;
+pub mod props;
 pub mod smoke;
 pub mod sprites;
 pub mod text;
 pub mod tiles;
+pub mod ui_contract;
 
 /// A color with 8-bit channels.
 #[derive(Debug, Clone, Copy)]

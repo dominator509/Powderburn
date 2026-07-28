@@ -59,3 +59,17 @@ Plan: EP-010.
 Windows cross-build; controller support; macOS; a scenario editor; the Ledger as an exportable
 document; a second campaign in the Southwest, 1879 to 1886. None of these are implementable from this
 file. They become graphs of their own.
+
+## v1.0.1 reconciliation
+
+The audited patch release ships the complete four-act, 24-mission, 12-interlude campaign; all
+thirteen load-bearing invariants; deterministic combat and replay; strict local saves and Ledger
+integrity; the wgpu client; the full accessibility contract; authored art, portraits, terrain,
+props, music and effects; offline tooling; observability/runbooks; and signed reproducible
+Linux-x86_64 packaging with released-artifact live fire.
+
+Deliberately deferred: Windows and macOS packages require their own reproducible build and hardware
+proofs; controller support requires a new input/accessibility plan; localization requires translated
+content and layout QA; cloud sync and multiplayer conflict with the offline/no-network v1 boundary;
+the scenario editor and exportable Ledger are separate products; and itch.io publication remains a
+human account-owner action.

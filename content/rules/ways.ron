@@ -13,6 +13,11 @@
             luck: 0,
         ),
         starting_items: ["it_painkillers"],
+        effects: (
+            passives: [],
+            sequence_bonus: 0,
+            sand_percent: 100,
+        ),
     ),
     (
         id: "wy_quick_and_loud",
@@ -28,6 +33,11 @@
             luck: 0,
         ),
         starting_items: [],
+        effects: (
+            passives: ["quick_and_loud"],
+            sequence_bonus: 2,
+            sand_percent: 80,
+        ),
     ),
     (
         id: "wy_church_voice",
@@ -43,6 +53,11 @@
             luck: 0,
         ),
         starting_items: [],
+        effects: (
+            passives: ["rally_radius_3"],
+            sequence_bonus: 0,
+            sand_percent: 100,
+        ),
     ),
     (
         id: "wy_sighted_in",
@@ -58,6 +73,11 @@
             luck: 0,
         ),
         starting_items: [],
+        effects: (
+            passives: ["sighted_in"],
+            sequence_bonus: 0,
+            sand_percent: 100,
+        ),
     ),
     (
         id: "wy_frontier_child",

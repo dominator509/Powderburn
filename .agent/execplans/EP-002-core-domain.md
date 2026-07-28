@@ -249,15 +249,26 @@ COMMIT: git add -A && git commit -m "[EP-002][M6] determinism proof and golden h
 this node and is deleted by that reset, so no stale golden can survive a re-entry.
 
 ## 11. Progress
-- [ ] M1 pb-core and pb-rng
-- [ ] M2 The sequence clock and the AP economy
-- [ ] M3 The shot pipeline, hit locations, wounds
-- [ ] M4 Environment, explosives, morale
-- [ ] M5 The utility AI
-- [ ] M6 Determinism proof and the first golden
+- [x] M1 pb-core and pb-rng
+- [x] M2 The sequence clock and the AP economy
+- [x] M3 The shot pipeline, hit locations, wounds
+- [x] M4 Environment, explosives, morale
+- [x] M5 The utility AI
+- [x] M6 Determinism proof and the first golden
 
 ## 12. Surprises and Discoveries
 
+- Process-global diagnostic RNG tracing raced under concurrent coverage execution. Making trace
+  state thread-local preserved addresses and removed cross-test perturbation.
+
 ## 13. Decision Log
 
+- 2026-07-27: Diagnostic timing and tracing stay outside hashed simulation state. The kernel uses
+  only Q22.10 fixed-point or integers, ordered collections, explicit seed/stream/address RNG, and
+  authored tie breaks.
+
 ## 14. Outcomes and Retrospective
+
+Completed. AP conservation, the full shot pipeline, environment, explosives, morale, progression,
+and bounded utility AI are implemented. Three identical runs match the committed terminal hash
+`250fe4b8d9cc08e901906cc2ed1f01ca6282e60f640ade6a1b82012a64122fbe`.

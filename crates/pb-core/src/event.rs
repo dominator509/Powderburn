@@ -15,7 +15,9 @@ use crate::geom::TileXY;
 use crate::ids::ActorId;
 
 /// Which hit location was struck during a called shot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum HitLocationType {
     Head,
     Eyes,
@@ -41,7 +43,9 @@ impl fmt::Display for HitLocationType {
 }
 
 /// The type of a wound applied to an actor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum WoundType {
     Bleeding,
     Broken,
@@ -73,6 +77,47 @@ impl fmt::Display for WoundType {
 /// with fields in declaration order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    TurnBegin {
+        actor: ActorId,
+        tick: u64,
+    },
+    TurnEnd {
+        actor: ActorId,
+        tick: u64,
+    },
+    Moved {
+        actor: ActorId,
+        from: TileXY,
+        to: TileXY,
+    },
+    StanceChanged {
+        actor: ActorId,
+        stance: String,
+    },
+    FacingChanged {
+        actor: ActorId,
+        facing: String,
+    },
+    Fired {
+        actor: ActorId,
+        target: ActorId,
+    },
+    Misfire {
+        actor: ActorId,
+    },
+    Jammed {
+        actor: ActorId,
+    },
+    Missed {
+        actor: ActorId,
+        target: ActorId,
+    },
+    /// Compatibility detail event retained for consumers that need a hit boolean.
+    ShotHit {
+        actor: ActorId,
+        target: ActorId,
+        hit: bool,
+    },
     HitLocation {
         actor: ActorId,
         location: HitLocationType,
@@ -85,27 +130,95 @@ pub enum Event {
         actor: ActorId,
         wound: WoundType,
     },
+    Critical {
+        actor: ActorId,
+        effect: String,
+    },
     WeaponDropped {
         actor: ActorId,
         item: String,
-    },
-    Misfire {
-        actor: ActorId,
-    },
-    ShotHit {
-        actor: ActorId,
-        target: ActorId,
-        hit: bool,
-    },
-    ActorKilled {
-        actor: ActorId,
     },
     SmokeDeposited {
         tile: TileXY,
         density: u32,
     },
+    SmokeDecayed {
+        tile: TileXY,
+        density: u32,
+    },
+    SmokeDrifted {
+        from: TileXY,
+        to: TileXY,
+        density: u32,
+    },
+    OverwatchSet {
+        actor: ActorId,
+        reaction_points: u8,
+    },
+    ReactionShot {
+        actor: ActorId,
+        target: ActorId,
+    },
+    DynamiteLit {
+        actor: ActorId,
+        tile: TileXY,
+        detonate_at: u64,
+    },
+    DynamiteCaught {
+        actor: ActorId,
+        tile: TileXY,
+    },
+    DynamiteRethrown {
+        actor: ActorId,
+        tile: TileXY,
+        detonate_at: u64,
+    },
+    DynamiteExploded {
+        actor: ActorId,
+        tile: TileXY,
+    },
+    CoverDamaged {
+        tile: TileXY,
+        facing: String,
+        level: String,
+    },
+    Revealed {
+        actor: ActorId,
+        until_tick: u64,
+    },
+    TrackLeft {
+        actor: ActorId,
+        tile: TileXY,
+    },
+    SandLost {
+        actor: ActorId,
+        amount: i32,
+    },
+    SandGained {
+        actor: ActorId,
+        amount: i32,
+    },
+    MoraleStateChanged {
+        actor: ActorId,
+        state: String,
+    },
+    Routed {
+        actor: ActorId,
+    },
+    ActorKilled {
+        actor: ActorId,
+    },
     CompanionKilled {
         id: String,
+    },
+    ObjectiveComplete {
+        id: String,
+    },
+    LedgerEntryWritten {
+        index: u32,
+    },
+    ScenarioEnded {
+        outcome: String,
     },
     /// An actor gained XP and may have levelled up.
     XpGained {
@@ -138,87 +251,148 @@ pub enum Event {
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::HitLocation { actor, location } => {
-                write!(
-                    f,
-                    "event: HitLocation actor={} location={}",
-                    actor, location
-                )
+            Event::TurnBegin { actor, tick } => write!(f, "event: TurnBegin actor={actor} tick={tick}"),
+            Event::TurnEnd { actor, tick } => write!(f, "event: TurnEnd actor={actor} tick={tick}"),
+            Event::Moved { actor, from, to } => {
+                write!(f, "event: Moved actor={actor} from={from} to={to}")
             }
-            Event::DamageApplied { actor, damage } => {
-                write!(f, "event: DamageApplied actor={} damage={}", actor, damage)
+            Event::StanceChanged { actor, stance } => {
+                write!(f, "event: StanceChanged actor={actor} stance={stance}")
             }
-            Event::WoundApplied { actor, wound } => {
-                write!(f, "event: WoundApplied actor={} wound={}", actor, wound)
+            Event::FacingChanged { actor, facing } => {
+                write!(f, "event: FacingChanged actor={actor} facing={facing}")
             }
-            Event::WeaponDropped { actor, item } => {
-                write!(f, "event: WeaponDropped actor={} item={}", actor, item)
+            Event::Fired { actor, target } => {
+                write!(f, "event: Fired actor={actor} target={target}")
             }
-            Event::Misfire { actor } => {
-                write!(f, "event: Misfire actor={}", actor)
+            Event::Misfire { actor } => write!(f, "event: Misfire actor={actor}"),
+            Event::Jammed { actor } => write!(f, "event: Jammed actor={actor}"),
+            Event::Missed { actor, target } => {
+                write!(f, "event: Missed actor={actor} target={target}")
             }
             Event::ShotHit { actor, target, hit } => {
-                write!(
-                    f,
-                    "event: ShotHit actor={} target={} hit={}",
-                    actor, target, hit
-                )
+                write!(f, "event: ShotHit actor={actor} target={target} hit={hit}")
             }
-            Event::ActorKilled { actor } => {
-                write!(f, "event: ActorKilled actor={}", actor)
+            Event::HitLocation { actor, location } => {
+                write!(f, "event: HitLocation actor={actor} location={location}")
+            }
+            Event::DamageApplied { actor, damage } => {
+                write!(f, "event: DamageApplied actor={actor} damage={damage}")
+            }
+            Event::WoundApplied { actor, wound } => {
+                write!(f, "event: WoundApplied actor={actor} wound={wound}")
+            }
+            Event::Critical { actor, effect } => {
+                write!(f, "event: Critical actor={actor} effect={effect}")
+            }
+            Event::WeaponDropped { actor, item } => {
+                write!(f, "event: WeaponDropped actor={actor} item={item}")
             }
             Event::SmokeDeposited { tile, density } => {
-                write!(f, "event: SmokeDeposited tile={} density={}", tile, density)
+                write!(f, "event: SmokeDeposited tile={tile} density={density}")
             }
-            Event::CompanionKilled { id } => {
-                write!(f, "event: CompanionKilled id={}", id)
+            Event::SmokeDecayed { tile, density } => {
+                write!(f, "event: SmokeDecayed tile={tile} density={density}")
+            }
+            Event::SmokeDrifted { from, to, density } => {
+                write!(f, "event: SmokeDrifted from={from} to={to} density={density}")
+            }
+            Event::OverwatchSet {
+                actor,
+                reaction_points,
+            } => write!(
+                f,
+                "event: OverwatchSet actor={actor} reaction_points={reaction_points}"
+            ),
+            Event::ReactionShot { actor, target } => {
+                write!(f, "event: ReactionShot actor={actor} target={target}")
+            }
+            Event::DynamiteLit {
+                actor,
+                tile,
+                detonate_at,
+            } => write!(
+                f,
+                "event: DynamiteLit actor={actor} tile={tile} detonate_at={detonate_at}"
+            ),
+            Event::DynamiteCaught { actor, tile } => {
+                write!(f, "event: DynamiteCaught actor={actor} tile={tile}")
+            }
+            Event::DynamiteRethrown {
+                actor,
+                tile,
+                detonate_at,
+            } => write!(
+                f,
+                "event: DynamiteRethrown actor={actor} tile={tile} detonate_at={detonate_at}"
+            ),
+            Event::DynamiteExploded { actor, tile } => {
+                write!(f, "event: DynamiteExploded actor={actor} tile={tile}")
+            }
+            Event::CoverDamaged {
+                tile,
+                facing,
+                level,
+            } => write!(
+                f,
+                "event: CoverDamaged tile={tile} facing={facing} level={level}"
+            ),
+            Event::Revealed { actor, until_tick } => {
+                write!(f, "event: Revealed actor={actor} until_tick={until_tick}")
+            }
+            Event::TrackLeft { actor, tile } => {
+                write!(f, "event: TrackLeft actor={actor} tile={tile}")
+            }
+            Event::SandLost { actor, amount } => {
+                write!(f, "event: SandLost actor={actor} amount={amount}")
+            }
+            Event::SandGained { actor, amount } => {
+                write!(f, "event: SandGained actor={actor} amount={amount}")
+            }
+            Event::MoraleStateChanged { actor, state } => {
+                write!(f, "event: MoraleStateChanged actor={actor} state={state}")
+            }
+            Event::Routed { actor } => write!(f, "event: Routed actor={actor}"),
+            Event::ActorKilled { actor } => write!(f, "event: ActorKilled actor={actor}"),
+            Event::CompanionKilled { id } => write!(f, "event: CompanionKilled id={id}"),
+            Event::ObjectiveComplete { id } => write!(f, "event: ObjectiveComplete id={id}"),
+            Event::LedgerEntryWritten { index } => {
+                write!(f, "event: LedgerEntryWritten index={index}")
+            }
+            Event::ScenarioEnded { outcome } => {
+                write!(f, "event: ScenarioEnded outcome={outcome}")
             }
             Event::XpGained {
                 actor,
                 xp,
                 total_xp,
                 new_level,
-            } => {
-                write!(
-                    f,
-                    "event: XpGained actor={} xp={} total_xp={} new_level={:?}",
-                    actor, xp, total_xp, new_level
-                )
-            }
+            } => write!(
+                f,
+                "event: XpGained actor={actor} xp={xp} total_xp={total_xp} new_level={new_level:?}"
+            ),
             Event::LevelUp {
                 actor,
                 new_level,
                 skill_points_granted,
                 marks_granted,
-            } => {
-                write!(
-                    f,
-                    "event: LevelUp actor={} new_level={} sp={} marks={}",
-                    actor, new_level, skill_points_granted, marks_granted
-                )
-            }
+            } => write!(
+                f,
+                "event: LevelUp actor={actor} new_level={new_level} sp={skill_points_granted} marks={marks_granted}"
+            ),
             Event::MarkGained {
                 actor,
                 mark_id,
                 level,
-            } => {
-                write!(
-                    f,
-                    "event: MarkGained actor={} mark={} level={}",
-                    actor, mark_id, level
-                )
-            }
+            } => write!(f, "event: MarkGained actor={actor} mark={mark_id} level={level}"),
             Event::SkillPointSpent {
                 actor,
                 skill,
                 new_level,
-            } => {
-                write!(
-                    f,
-                    "event: SkillPointSpent actor={} skill={} new_level={}",
-                    actor, skill, new_level
-                )
-            }
+            } => write!(
+                f,
+                "event: SkillPointSpent actor={actor} skill={skill} new_level={new_level}"
+            ),
         }
     }
 }

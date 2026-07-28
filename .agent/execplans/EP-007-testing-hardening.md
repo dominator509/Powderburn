@@ -204,16 +204,28 @@ COMMIT: git add -A && git commit -m "[EP-007][M7] regression fixtures for every 
 re-entry is safe and repeatable.
 
 ## 11. Progress
-- [ ] M1 Rebase and reconcile the branches
-- [ ] M2 Acts II, III, and IV as content
-- [ ] M3 Property tests for the stated universals
-- [ ] M4 Forced-failure tests for every gate
-- [ ] M5 Coverage floors
-- [ ] M6 The flake hunt
-- [ ] M7 Regression fixtures for every defect found so far
+- [x] M1 Rebase and reconcile the branches
+- [x] M2 Acts II, III, and IV as content
+- [x] M3 Property tests for the stated universals
+- [x] M4 Forced-failure tests for every gate
+- [x] M5 Coverage floors
+- [x] M6 The flake hunt
+- [x] M7 Regression fixtures for every defect found so far
 
 ## 12. Surprises and Discoveries
 
+- Initial measured workspace line coverage was 63.49 percent, below the declared floor. Real
+  campaign, combat, validator, tooling, benchmark, and parser tests raised it above 70 percent;
+  aggregate kernel coverage is above 85 percent.
+- Repetition under coverage exposed the RNG trace race fixed in EP-002.
+
 ## 13. Decision Log
 
+- 2026-07-27: Coverage is measured by `cargo-llvm-cov` and enforced by
+  `scripts/coverage-check.sh`; tests must exercise promised behavior rather than hollow calls.
+
 ## 14. Outcomes and Retrospective
+
+Completed. All four acts contain battle-ready scenarios, properties and forced-failure regressions
+cover the stated invariants, zero tests are ignored, the suite is stable under repeated execution,
+and the measured line floors are enforced at 70 percent workspace and 85 percent aggregate kernel.

@@ -20,6 +20,9 @@ fn build_shot_scenario(seed: u64) -> SimState {
     state.actors.insert(
         ActorId(1),
         ActorState {
+            faction_id: String::new(),
+            is_companion: false,
+            attributes: pb_core::Attributes::BALANCED,
             ap: Ap(10),
             position: TileXY::new(0, 0),
             facing: Facing::South,
@@ -28,14 +31,16 @@ fn build_shot_scenario(seed: u64) -> SimState {
             max_hp: 30,
             name: "Shooter".into(),
             alive: true,
+            routed: false,
             wounds: vec![],
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
             progression: pb_sim::progression::ActorProgression::new(),
-            weapon: String::new(),
-            loaded_rounds: 0,
-            weapon_capacity: 0,
+            weapon: "colt_army_1860".into(),
+            weapon_profile: Default::default(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
             fouling: 0,
             jammed: false,
         },
@@ -44,6 +49,9 @@ fn build_shot_scenario(seed: u64) -> SimState {
     state.actors.insert(
         ActorId(2),
         ActorState {
+            faction_id: String::new(),
+            is_companion: false,
+            attributes: pb_core::Attributes::BALANCED,
             ap: Ap(10),
             position: TileXY::new(5, 0),
             facing: Facing::North,
@@ -52,14 +60,16 @@ fn build_shot_scenario(seed: u64) -> SimState {
             max_hp: 35,
             name: "Target".into(),
             alive: true,
+            routed: false,
             wounds: vec![],
             sand: 20,
             max_sand: 20,
             stance: Stance::Standing,
             progression: pb_sim::progression::ActorProgression::new(),
-            weapon: String::new(),
-            loaded_rounds: 0,
-            weapon_capacity: 0,
+            weapon: "colt_army_1860".into(),
+            weapon_profile: Default::default(),
+            loaded_rounds: 6,
+            weapon_capacity: 6,
             fouling: 0,
             jammed: false,
         },
@@ -128,9 +138,15 @@ fn called_shot_gunarm_deterministic() {
     let events_b = result_b.unwrap();
     assert_eq!(events_a, events_b);
 
-    // Both should contain at least a ShotHit event
+    // The attempt is recorded before its deterministic hit result.
     assert!(!events_a.is_empty(), "Called shot should produce events");
-    assert_eq!(events_a[0].to_string().starts_with("event: ShotHit"), true);
+    assert!(events_a[0].to_string().starts_with("event: Fired"));
+    assert!(
+        events_a
+            .iter()
+            .any(|event| event.to_string().starts_with("event: ShotHit")),
+        "Called shot must record a hit result"
+    );
 }
 
 /// A called shot to Eyes should also be deterministic.

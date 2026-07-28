@@ -19,6 +19,10 @@ in `.agent/templates/adr-template.md`. Never change an accepted ADR; supersede i
 | ADR-0010 | Linux x86_64 only for v1 | Accepted | 2026-07-25 |
 | ADR-0011 | minisign for artifact signing | Accepted | 2026-07-25 |
 | ADR-0012 | Auto-deploy authorized to the self-hosted release directory only; external publication is MANUAL | Accepted | 2026-07-25 |
+| ADR-0013 | Accept the wgpu dependency expansion and target-only license waivers | Accepted | 2026-07-25 |
+| ADR-0014 | Hash every future-affecting simulation-state field | Accepted | 2026-07-27 |
+| ADR-0015 | Record the completed mechanics and presentation-facelift goldens | Accepted | 2026-07-28 |
+| ADR-0016 | Bound presentation texture working sets and remove the runtime terrain blur | Accepted | 2026-07-28 |
 
 ## ADR-0001 Continuous turn based sequence clock
 
@@ -136,3 +140,62 @@ they are never linked into the Linux binary and do not affect the shipped artifa
 
 Consequences. Larger vendor tree (~280 MB). CI wall clock for `cargo check --offline` increases
 correspondingly. The dependency audit now checks for 180 total, with waivers for Apple-only deps.
+
+## ADR-0014 Complete simulation-state hashing
+
+Context. The original terminal hash omitted seed, scenario, sequence clock, smoke, overwatch,
+weapon state, ammunition, fouling, jams, and progression. Materially different future simulations
+could therefore share a terminal hash, making LF-03 and the old LF-04 stored-hash comparison
+insufficient.
+
+Decision. Canonically length-prefix and hash every current `SimState` field that can affect future
+simulation. Enforce loaded and jammed shot legality, make failed commands atomic, and update the
+proving journal to clear its deterministic misfires before refreshing the golden.
+
+Consequences. The proving hash intentionally changes from
+`6a2153f09c58264d6faaece4921486003ffcbab9c6cc1113a4c93f9ce05897df` to the
+strict-journal hash
+`6bdc39fcb80123feb316cf7b1574b77882fa35ecc537ab312913d7a3bffed39b`.
+A regression test mutates each state category independently and requires the hash to change. CLI
+mid-combat saves now serialize, reconstruct, and re-hash real state instead of echoing a stored hash.
+Journal replay now rejects any tick or actor that disagrees with the deterministic scheduler.
+
+## ADR-0015 Completed mechanics and presentation-facelift goldens
+
+Context. After ADR-0014, the implementation added the remaining canonical combat mechanics and
+events, campaign-state hydration, authored weapon runtime fields, deterministic facing, exact
+movement-preview consequences, and stricter journal legality. These intentional state-boundary
+changes moved the proving simulation hash again. The production-art pass also replaced placeholder
+terrain and identity rendering, added presentation-only props, and assigned a distinct non-color
+pattern to every tactical overlay. LF-08 therefore needed an intentional visual golden refresh.
+
+Decision. Keep ADR-0014 as the historical record of its strict-state milestone. The current
+`prov_full_battle` simulation golden is
+`250fe4b8d9cc08e901906cc2ed1f01ca6282e60f640ade6a1b82012a64122fbe`. The current llvmpipe
+Vulkan 1920x1080 frame golden is
+`e08f21a4ab34f8e5e13859d9b3ee02e762d0746c5bc1f9333cf5962ef4dcf059`, reproduced in two
+independent captures before acceptance.
+
+Consequences. Simulation and presentation goldens remain separate. Environmental props are derived
+from canonical terrain and cover but never enter `SimState` or its hash. Any future change to either
+golden requires a new append-only ADR, a repeated reproduction, and the full live-fire suite.
+
+## ADR-0016 Bounded presentation textures and single-sample terrain
+
+Context. The first completed art pass made LF-08 materially stronger but its nine-tap terrain blur
+plus two trigonometric fragment operations regressed the authored sixty-actor llvmpipe workload to
+29.700ms p95. Source atlas cells were between three and seven times larger than their normal display
+footprint, so the renderer was paying for sampling detail the player could not see. The frame bench
+also omitted the new environmental-prop pass and therefore no longer represented the live renderer.
+
+Decision. Decode the original lossless source assets unchanged, upload triangle-filtered
+presentation textures bounded to 512x256 for terrain and 768x512 for sprite atlases, and sample the
+terrain atlas once per fragment. Replace trigonometric grit with a cheap coordinate hash. Include
+the prop system in `pbcli bench frame`.
+
+Consequences. The complete authored sixty-actor scene, now including props, measures 14.481ms p95
+across 60 synchronized llvmpipe Vulkan frames on the reference machine. Visual inspection confirmed
+the material and identity art remains legible. The intentional LF-08 frame golden is now
+`6c9304c28138fcce9a401535185134aa3e70b23c65b23abb1ed03f9db9caa105`, reproduced in two
+independent release captures before acceptance. Original source assets and simulation hashes are
+unchanged.

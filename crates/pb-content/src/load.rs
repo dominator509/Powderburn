@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
 
 use crate::error::ContentError;
 use crate::schema::*;
@@ -18,8 +17,19 @@ pub const MAX_NEST_DEPTH: u32 = 64;
 
 /// Load all content from the content directory tree.
 pub fn load_all(root: &Path) -> Result<Content, ContentError> {
-    let _start = Instant::now();
     let mut content = Content::default();
+
+    load_dialogue(root, &mut content)?;
+
+    let ledger_lines_path = root.join("rules").join("ledger_lines.ron");
+    if ledger_lines_path.exists() {
+        let line_sets: Vec<LedgerLineSetData> = load_ron_file(&ledger_lines_path)?;
+        for line_set in line_sets {
+            content
+                .ledger_line_sets
+                .insert(line_set.id.clone(), line_set);
+        }
+    }
 
     // Load weapons from content/rules/weapons.ron
     let weapons_path = root.join("rules").join("weapons.ron");
@@ -130,12 +140,36 @@ pub fn load_all(root: &Path) -> Result<Content, ContentError> {
         content.tables = Some(load_single_ron(&tables_path)?);
     }
 
-    // Record content load time metric
-    let elapsed_ms = _start.elapsed().as_secs_f64() * 1000.0;
-    pb_core::metrics::MetricsRegistry::global()
-        .set_content_load_ms(elapsed_ms as u64);
-
     Ok(content)
+}
+
+fn load_dialogue(root: &Path, content: &mut Content) -> Result<(), ContentError> {
+    let dialogue_dir = root.join("dialogue");
+    if !dialogue_dir.is_dir() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&dialogue_dir).map_err(|error| {
+        ContentError::new(
+            "E-CONTENT-001",
+            format!("cannot read dialogue dir: {error}"),
+        )
+    })? {
+        let entry = entry.map_err(|error| {
+            ContentError::new(
+                "E-CONTENT-001",
+                format!("dialogue dir entry error: {error}"),
+            )
+        })?;
+        let path = entry.path();
+        if path.extension().is_some_and(|extension| extension == "ron") {
+            let scenes: Vec<DialogueSceneData> = load_ron_file(&path)?;
+            for scene in scenes {
+                content.dialogue.insert(scene.id.clone(), scene);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Load a RON file that contains a Vec of records.

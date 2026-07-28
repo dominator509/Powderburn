@@ -6,7 +6,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use pb_content::load::load_all;
 use pb_content::schema::Content;
@@ -183,17 +183,110 @@ fn each_scenario_has_actors() {
                 "Scenario '{}' has an actor with empty id",
                 scenario_id
             );
-            // Each actor must have at least one objective reference or be self-contained
+            // Player-side factions are built in; every other authored faction
+            // must exist in the faction rule table.
             assert!(
                 actor.faction_id == "player"
+                    || actor.faction_id == "ally"
                     || actor.faction_id == "enemy"
-                    || actor.faction_id == "neutral",
+                    || actor.faction_id == "neutral"
+                    || content.factions.contains_key(&actor.faction_id),
                 "Scenario '{}' actor '{}' has unrecognized faction '{}'",
                 scenario_id,
                 actor.id,
                 actor.faction_id
             );
         }
+    }
+}
+
+/// Every campaign mission is a distinct, playable authored battlefield.
+#[test]
+fn campaign_missions_have_unique_battle_ready_scenarios() {
+    let content = load_project_content();
+    let missions: Vec<_> = content
+        .campaign_nodes
+        .values()
+        .filter(|node| node.kind == "Mission")
+        .collect();
+    assert_eq!(missions.len(), 24, "the campaign must contain 24 missions");
+
+    let mut scenario_ids = BTreeSet::new();
+    for mission in missions {
+        let scenario_id = mission
+            .scenario_id
+            .as_deref()
+            .unwrap_or_else(|| panic!("mission '{}' has no scenario", mission.id));
+        assert!(
+            !scenario_id.starts_with("prov_"),
+            "mission '{}' still points at proof scenario '{}'",
+            mission.id,
+            scenario_id
+        );
+        assert!(
+            scenario_ids.insert(scenario_id),
+            "mission '{}' reuses scenario '{}'",
+            mission.id,
+            scenario_id
+        );
+
+        let scenario = content.scenarios.get(scenario_id).unwrap_or_else(|| {
+            panic!(
+                "mission '{}' references missing scenario '{}'",
+                mission.id, scenario_id
+            )
+        });
+        assert!(
+            !scenario.map.tiles.is_empty(),
+            "mission '{}' scenario '{}' has no authored terrain",
+            mission.id,
+            scenario_id
+        );
+        assert!(
+            !scenario.objectives.is_empty(),
+            "mission '{}' scenario '{}' has no objectives",
+            mission.id,
+            scenario_id
+        );
+        assert!(
+            !scenario.victory_conditions.is_empty(),
+            "mission '{}' scenario '{}' has no victory condition",
+            mission.id,
+            scenario_id
+        );
+        assert!(
+            !scenario.defeat_conditions.is_empty(),
+            "mission '{}' scenario '{}' has no defeat condition",
+            mission.id,
+            scenario_id
+        );
+
+        let player_count = scenario
+            .actors
+            .iter()
+            .filter(|actor| actor.faction_id == "player" || actor.faction_id == "ally")
+            .count();
+        let hostile_count = scenario
+            .actors
+            .iter()
+            .filter(|actor| {
+                actor.faction_id != "player"
+                    && actor.faction_id != "ally"
+                    && actor.faction_id != "neutral"
+            })
+            .count();
+        assert!(
+            player_count >= 1,
+            "mission '{}' scenario '{}' has no player deployment actor",
+            mission.id,
+            scenario_id
+        );
+        assert!(
+            hostile_count >= 3,
+            "mission '{}' scenario '{}' needs at least three hostile actors",
+            mission.id,
+            scenario_id
+        );
     }
 }
 

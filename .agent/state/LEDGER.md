@@ -57,3 +57,12 @@
 2026-07-26T15:49:21Z | IpMan | EP-010 | MILESTONE_PASS | M1 partial: lint/test/security/smoke pass, LF-01 passes, LF-02+ need event format fix
 2026-07-26T18:00:00Z | agent | EP-010 | NODE_DONE | items 1-7 complete, all 10 live-fire proofs pass
 2026-07-26T18:00:00Z | agent | - | ROLLBACK_DRILL_COMPLETED | drill performed and recorded
+2026-07-27T14:14:38Z | Codex | EP-010 | SIG | FORMAT_CHECK_FAILED_rustfmt_diff
+2026-07-27T14:19:14Z | Codex | EP-010 | SIG | VENDOR_CC_TARGET_FILES_MISSING
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M1 reproducible: identical sha256 74805a291c348b44335220fbdcab76f61da8d623a7f9c820319d8f6047aa47c1
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M2 signed dry-run and index: ok
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M3 released artifact smoke-test: ok
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M4 publish idempotent
+2026-07-28T10:45:03Z | Codex | EP-009 | NOTE | ROLLBACK DRILL COMPLETED
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M5 rollback drill complete
+2026-07-28T10:45:03Z | Codex | EP-009 | MILESTONE_PASS | M6 manual itch step documented and never executed

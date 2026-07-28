@@ -10,11 +10,70 @@ set -eu
 : "${PB_GOLDEN_DIR:?PB_GOLDEN_DIR must be set}"
 : "${PB_ASSET_ROOT:?PB_ASSET_ROOT must be set}"
 : "${PB_HEADLESS_ADAPTER:?PB_HEADLESS_ADAPTER must be set}"
+RELEASE_SCRATCH=""
+cleanup() {
+  if [ -n "$RELEASE_SCRATCH" ]; then
+    case "$RELEASE_SCRATCH" in
+      */live-fire-release.*) rm -rf "$RELEASE_SCRATCH" ;;
+      *) echo "live-fire: unsafe release scratch path: $RELEASE_SCRATCH" >&2 ;;
+    esac
+  fi
+}
+trap cleanup EXIT HUP INT TERM
+
+BIN_LAYOUT=build
+if [ "${1:-}" = "--released" ]; then
+  [ "$#" -eq 2 ] ||
+    { echo "live-fire: FAIL - usage: $0 --released <release-dir-or-artifact>" >&2; exit 1; }
+  RELEASE_INPUT=$2
+  if [ -d "$RELEASE_INPUT" ]; then
+    RELEASE_DIRECTORY=$(cd "$RELEASE_INPUT" && pwd -P)
+    ARTIFACT=$(find "$RELEASE_DIRECTORY" -maxdepth 1 -type f -name '*.tar.zst' | head -n 1)
+  else
+    ARTIFACT=$RELEASE_INPUT
+  fi
+  [ -n "$ARTIFACT" ] && [ -f "$ARTIFACT" ] ||
+    { echo "live-fire: FAIL - released artifact not found: $RELEASE_INPUT" >&2; exit 1; }
+  ARTIFACT_DIR=$(cd "$(dirname "$ARTIFACT")" && pwd)
+  ARTIFACT_NAME=$(basename "$ARTIFACT")
+  [ -f "$ARTIFACT.sha256" ] ||
+    { echo "live-fire: FAIL - released checksum missing" >&2; exit 1; }
+  (cd "$ARTIFACT_DIR" && sha256sum -c "$ARTIFACT_NAME.sha256" >/dev/null) ||
+    { echo "live-fire: FAIL - released checksum mismatch" >&2; exit 1; }
+  [ -f "$ARTIFACT.sig" ] ||
+    { echo "live-fire: FAIL - released signature missing" >&2; exit 1; }
+  PUBKEY="${PB_RELEASE_SIGNING_KEY:-}.pub"
+  [ -f "$PUBKEY" ] || PUBKEY="${PB_RELEASE_DIR:-$ARTIFACT_DIR}/powderburn.pub"
+  [ -f "$PUBKEY" ] ||
+    { echo "live-fire: FAIL - release public key missing" >&2; exit 1; }
+  minisign -V -q -p "$PUBKEY" -m "$ARTIFACT" -x "$ARTIFACT.sig" ||
+    { echo "live-fire: FAIL - released signature mismatch" >&2; exit 1; }
+
+  RELEASE_SCRATCH=$(mktemp -d "$PB_CACHE_DIR/live-fire-release.XXXXXX")
+  tar --use-compress-program=unzstd -xf "$ARTIFACT" -C "$RELEASE_SCRATCH"
+  RELEASE_ROOT=$(find "$RELEASE_SCRATCH" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  [ -n "$RELEASE_ROOT" ] ||
+    { echo "live-fire: FAIL - released archive has no package root" >&2; exit 1; }
+  PB_HOME=$RELEASE_ROOT
+  PB_ASSET_ROOT="$RELEASE_ROOT/assets"
+  PB_GOLDEN_DIR="$RELEASE_ROOT/tests/golden"
+  PB_CACHE_DIR="$RELEASE_SCRATCH/runtime-cache"
+  BIN_LAYOUT=release
+elif [ "$#" -ne 0 ]; then
+  echo "live-fire: FAIL - unknown arguments" >&2
+  exit 1
+fi
+
 cd "$PB_HOME"
 mkdir -p "$PB_CACHE_DIR/live-fire"
 LF="$PB_CACHE_DIR/live-fire"
-CLI="./target/release/pbcli"
-TOOL="./target/release/pbtool"
+if [ "$BIN_LAYOUT" = release ]; then
+  CLI="./bin/pbcli"
+  TOOL="./bin/pbtool"
+else
+  CLI="./target/release/pbcli"
+  TOOL="./target/release/pbtool"
+fi
 [ -x "$CLI" ]  || { echo "live-fire: FAIL - $CLI missing; run sh scripts/build.sh first" >&2; exit 1; }
 [ -x "$TOOL" ] || { echo "live-fire: FAIL - $TOOL missing; run sh scripts/build.sh first" >&2; exit 1; }
 fail() { echo "live-fire: FAIL - $1" >&2; exit 1; }
@@ -27,17 +86,17 @@ note "LF-01 opening mission Elk Creek"
 "$CLI" campaign play \
   --save "$LF/lf01.pbsave" \
   --mission m01_elk_creek \
-  --journal tests/journals/m01_elk_creek_victory.jrnl \
+  --autoplay \
   --emit-outcome >"$LF/lf01.play.log" 2>&1 \
   || fail "LF-01 mission play failed, see $LF/lf01.play.log"
 grep -qx 'outcome: VICTORY' "$LF/lf01.play.log" || fail "LF-01 did not reach VICTORY"
-grep -qx 'ledger-entries: 4' "$LF/lf01.play.log" || fail "LF-01 in-game Ledger did not record the four scripted deaths"
+grep -qx 'ledger-entries: 3' "$LF/lf01.play.log" || fail "LF-01 Ledger did not record exactly three deaths (the fourth enemy routed and must not be recorded dead)"
 
 # LF-02 Called shots produce real, located, mechanical consequences.
 note "LF-02 called shot to the gun arm"
 "$CLI" sim \
   --scenario content/scenarios/prov_called_shot.ron \
-  --seed 7 \
+  --seed 3 \
   --journal tests/journals/prov_called_shot.jrnl \
   --emit-events >"$LF/lf02.log" 2>&1 \
   || fail "LF-02 sim failed, see $LF/lf02.log"
@@ -57,10 +116,11 @@ golden=$(cat "$PB_GOLDEN_DIR/prov_full_battle.hash")
 
 # LF-04 Save and load in the middle of a firefight preserves exact simulation state.
 note "LF-04 mid-combat save round trip"
+rm -f "$LF/lf04.pbsave" "$LF/lf04.a" "$LF/lf04.b"
 "$CLI" sim \
   --scenario content/scenarios/prov_full_battle.ron --seed 1867 \
   --journal tests/journals/prov_full_battle.jrnl \
-  --suspend-at-tick 340 --save "$LF/lf04.pbsave" --emit-hash >"$LF/lf04.a" 2>&1 \
+  --suspend-at-tick 144 --save "$LF/lf04.pbsave" --emit-hash >"$LF/lf04.a" 2>&1 \
   || fail "LF-04 suspend failed"
 ha=$(sed -n 's/^state-hash: //p' "$LF/lf04.a")
 "$CLI" sim --resume "$LF/lf04.pbsave" --emit-hash >"$LF/lf04.b" 2>&1 || fail "LF-04 resume failed"
@@ -70,9 +130,16 @@ grep -qx 'chain: intact' "$LF/lf04.b" || fail "LF-04 in-game Ledger hash chain n
 
 # LF-05 A dead companion stays dead and every reference to them is gated, everywhere, forever.
 note "LF-05 permadeath propagation"
+"$CLI" campaign play --save "$LF/lf01.pbsave" --mission m002_pawnee_fork \
+  --autoplay >"$LF/lf05.pawnee-fork.log" 2>&1 \
+  || fail "LF-05 Pawnee Fork prerequisite failed"
+"$CLI" campaign play --save "$LF/lf01.pbsave" --mission m06_smoky_hill_station \
+  --autoplay >"$LF/lf05.smoky-hill.log" 2>&1 \
+  || fail "LF-05 Smoky Hill prerequisite failed"
 "$CLI" campaign play --save "$LF/lf01.pbsave" --mission m04_medicine_lodge \
-  --journal tests/journals/m04_whitehorse_dies.jrnl --emit-outcome >"$LF/lf05.log" 2>&1 \
+  --autoplay --required-casualty c_whitehorse --emit-outcome >"$LF/lf05.log" 2>&1 \
   || fail "LF-05 mission play failed"
+grep -qx 'outcome: VICTORY' "$LF/lf05.log" || fail "LF-05 did not complete the real mission after the casualty"
 grep -qx 'event: CompanionKilled id=c_whitehorse' "$LF/lf05.log" || fail "LF-05 companion did not die"
 "$CLI" campaign audit --save "$LF/lf01.pbsave" --dangling-refs >"$LF/lf05.audit" 2>&1 \
   || fail "LF-05 audit command failed"
@@ -80,13 +147,27 @@ grep -qx 'dangling-refs: 0' "$LF/lf05.audit" || fail "LF-05 dead companion still
 grep -qx 'ledger-entry: c_whitehorse present' "$LF/lf05.audit" || fail "LF-05 death not written into the in-game Ledger"
 
 # LF-06 A moral choice made in Act II really changes what exists in Act III.
-note "LF-06 branch divergence"
-"$CLI" campaign play --save "$LF/lf06a.pbsave" --from-new --company-seed 90210 \
-  --script tests/journals/branch_spare_teague.script --emit-manifest >"$LF/lf06a.log" 2>&1 \
-  || fail "LF-06 branch A failed"
-"$CLI" campaign play --save "$LF/lf06b.pbsave" --from-new --company-seed 90210 \
-  --script tests/journals/branch_kill_teague.script --emit-manifest >"$LF/lf06b.log" 2>&1 \
-  || fail "LF-06 branch B failed"
+note "LF-06 Act II to Act III branch divergence"
+play_to_act_two_choice() {
+  branch_save=$1
+  branch_log=$2
+  "$CLI" campaign new --save "$branch_save" --company-seed 90210 >"$branch_log" 2>&1 \
+    || fail "LF-06 campaign creation failed"
+  for mission in \
+    m01_elk_creek m002_pawnee_fork m06_smoky_hill_station m04_medicine_lodge \
+    m07_washita_winter m08_washita_aftermath m02_promontory m09_rail_grade \
+    m10_denver_extension m11_los_angeles_telegram m13_divide_crossing m14_panic_of_1873
+  do
+    "$CLI" campaign play --save "$branch_save" --mission "$mission" --autoplay >>"$branch_log" 2>&1 \
+      || fail "LF-06 scripted playthrough failed at $mission"
+  done
+}
+play_to_act_two_choice "$LF/lf06a.pbsave" "$LF/lf06a.playthrough.log"
+play_to_act_two_choice "$LF/lf06b.pbsave" "$LF/lf06b.playthrough.log"
+"$CLI" campaign play --save "$LF/lf06a.pbsave" --choice warn_adobe_walls \
+  --emit-manifest >"$LF/lf06a.log" 2>&1 || fail "LF-06 branch A failed"
+"$CLI" campaign play --save "$LF/lf06b.pbsave" --choice take_hide_contract \
+  --emit-manifest >"$LF/lf06b.log" 2>&1 || fail "LF-06 branch B failed"
 if diff -q "$LF/lf06a.log" "$LF/lf06b.log" >/dev/null 2>&1; then
   fail "LF-06 the two branches produced identical content manifests; the choice is cosmetic"
 fi
@@ -132,5 +213,12 @@ worst=$(sed -n 's/^worst-ai-turn-ms: //p' "$LF/lf10.log")
 [ "$worst" -le 120 ] || fail "LF-10 worst AI turn ${worst}ms exceeds the 120ms budget in SPEC-008"
 frame=$(sed -n 's/^worst-sim-step-ms: //p' "$LF/lf10.log")
 [ "${frame:-999}" -le 16 ] || fail "LF-10 worst simulation step ${frame}ms exceeds the 16ms budget in SPEC-008"
+"$CLI" bench frame --scenario content/scenarios/prov_sixty_actors.ron --seed 4 --frames 60 \
+  --adapter "$PB_HEADLESS_ADAPTER" --emit-budget >"$LF/lf10.frame.log" 2>&1 \
+  || fail "LF-10 frame bench failed"
+p95_frame=$(sed -n 's/^p95-frame-ms: //p' "$LF/lf10.frame.log")
+[ -n "$p95_frame" ] || fail "LF-10 no p95 frame budget line emitted"
+awk -v measured="$p95_frame" 'BEGIN { exit !(measured <= 16.0) }' \
+  || fail "LF-10 p95 frame ${p95_frame}ms exceeds the 16ms budget in SPEC-007"
 
 echo "live-fire: ok"

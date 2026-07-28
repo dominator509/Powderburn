@@ -1,0 +1,26 @@
+# LF-05: a real Elk Creek victory with Whitehorse killed in combat.
+# This is a separate campaign from LF-01. The surviving company must carry
+# Whitehorse's permanent death into every later reachable node.
+
+# Round 1 - allied advance; enemies concentrate fire on Whitehorse.
+0 3037190930 Sprint x=7 y=6
+0 3769966676 SnapShot target=2676799163
+0 3769966676 Hold
+0 2180853174 Sprint x=7 y=5
+0 3916335308 SnapShot target=2676799163
+0 3916335308 Hold
+
+# Round 2 - allied advance; enemies finish the casualty if necessary.
+72 3037190930 Sprint x=9 y=6
+76 3769966676 SnapShot target=2676799163
+76 3769966676 Hold
+80 2180853174 Sprint x=9 y=5
+84 3916335308 SnapShot target=2676799163
+84 3916335308 Hold
+
+# Round 3 - the company completes the real mission objective.
+144 3037190930 SnapShot target=3769966676
+144 3037190930 Hold
+152 3769966676 Hold
+160 2180853174 SnapShot target=3916335308
+160 2180853174 Hold

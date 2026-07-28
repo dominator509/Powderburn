@@ -1,23 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub use pb_core::attributes::Attributes;
+
 /// An item stack in an actor's inventory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemStack {
     pub item_id: String,
     pub count: u32,
-}
-
-/// The seven core attributes (1-10 each).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Attributes {
-    pub grit: i32,
-    pub nerve: i32,
-    pub wind: i32,
-    pub hands: i32,
-    pub eyes: i32,
-    pub savvy: i32,
-    pub luck: i32,
 }
 
 /// A dice roll expression.
@@ -36,6 +26,15 @@ pub struct ActorData {
     pub faction_id: String,
     pub attributes: Attributes,
     pub level: u32,
+    /// Total objective experience carried between missions.
+    #[serde(default)]
+    pub xp: u64,
+    /// Unspent points earned on level-up.
+    #[serde(default)]
+    pub skill_points: u32,
+    /// Persistent skill levels keyed by the canonical `SkillLine` variant name.
+    #[serde(default)]
+    pub skill_levels: BTreeMap<String, u32>,
     pub hp: i32,
     pub hp_max: i32,
     pub sand: i32,
@@ -144,6 +143,8 @@ pub struct CampaignNodeData {
     pub historical_tag: Option<String>,
     pub citations: Vec<String>,
     pub companion_gates: Vec<String>,
+    #[serde(default)]
+    pub recruits: Vec<String>,
     pub scenario_id: Option<String>,
 }
 
@@ -178,9 +179,10 @@ pub struct LedgerEntryData {
 /// Simulation snapshot for mid-combat saves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimSnapshotData {
-    pub tick: u64,
-    pub actors: Vec<ActorData>,
-    pub smoke: BTreeMap<String, u32>,
+    /// Canonical RON serialization of `pb_sim::state::SimState`.
+    pub state_ron: String,
+    /// Hash of the deserialized state, checked before resume succeeds.
+    pub state_hash: String,
 }
 
 /// Save file format.
@@ -191,8 +193,15 @@ pub struct SaveFileData {
     pub content_hash: String,
     pub campaign_seed: u64,
     pub ledger_head_hash: String,
+    /// Narrative burden derived from Ledger entries.
+    #[serde(default)]
+    pub ledger_weight: u32,
     pub ledger_entries: Vec<LedgerEntryData>,
     pub campaign_flags: Vec<String>,
+    /// Campaign nodes already resolved. Additive and defaulted so format-v1
+    /// saves written before explicit traversal state remain readable.
+    #[serde(default)]
+    pub completed_nodes: Vec<String>,
     pub company: Vec<ActorData>,
     pub sim_snapshot: Option<SimSnapshotData>,
     pub written_at_tick: u64,
@@ -204,7 +213,7 @@ pub struct ItemData {
     pub id: String,
     pub display_name: String,
     pub item_type: String,
-    pub weight_lbs: f32,
+    pub weight_tenths_lb: u16,
     pub description: String,
     pub effects: Option<ItemEffects>,
     pub quest_id: Option<String>,
@@ -249,6 +258,33 @@ pub struct WayData {
     pub description: String,
     pub stat_mods: Attributes,
     pub starting_items: Vec<String>,
+    #[serde(default)]
+    pub effects: WayEffects,
+}
+
+/// Runtime tradeoffs that cannot be expressed as direct attribute modifiers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WayEffects {
+    #[serde(default)]
+    pub passives: Vec<String>,
+    #[serde(default)]
+    pub sequence_bonus: i32,
+    #[serde(default = "default_percent")]
+    pub sand_percent: u16,
+}
+
+fn default_percent() -> u16 {
+    100
+}
+
+impl Default for WayEffects {
+    fn default() -> Self {
+        Self {
+            passives: Vec::new(),
+            sequence_bonus: 0,
+            sand_percent: 100,
+        }
+    }
 }
 
 /// A faction record.
@@ -257,7 +293,7 @@ pub struct FactionData {
     pub id: String,
     pub display_name: String,
     pub interests: Vec<String>,
-    pub sand_multiplier: f32,
+    pub sand_multiplier_percent: u16,
     pub default_hostility: String,
     pub description: String,
 }
@@ -266,8 +302,8 @@ pub struct FactionData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HitLocationEntry {
     pub name: String,
-    pub weight_pct: f32,
-    pub damage_multiplier: f32,
+    pub weight_pct: u16,
+    pub damage_multiplier_tenths: u16,
     pub critical_threshold: i32,
 }
 
@@ -329,6 +365,43 @@ pub struct GameTables {
     pub wound_healing_times: Vec<WoundHealingTime>,
 }
 
+/// One spoken line in a camp or story scene.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DialogueLineData {
+    pub speaker_id: String,
+    /// BCP-47 language tag for the authored line (for example `en`, `es`, or `yuf`).
+    pub language: String,
+    pub original: String,
+    /// English translation, required whenever `language` is not `en`.
+    pub translation: Option<String>,
+    /// Accessibility subtitle. Never omitted, including for non-verbal cues.
+    pub subtitle: String,
+}
+
+/// A data-authored dialogue scene gated by campaign state and living participants.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DialogueSceneData {
+    pub id: String,
+    pub act: u8,
+    pub node_id: Option<String>,
+    pub requires_flags: Vec<String>,
+    pub requires_alive: Vec<String>,
+    #[serde(default)]
+    pub min_ledger_weight: Option<u32>,
+    pub max_ledger_weight: Option<u32>,
+    pub lines: Vec<DialogueLineData>,
+}
+
+/// Three authored memorial lines offered for a named death.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LedgerLineSetData {
+    pub id: String,
+    /// `companion` or `combatant`.
+    pub applies_to: String,
+    pub lines: [String; 3],
+    pub default_index: u8,
+}
+
 /// Loaded content container.
 #[derive(Debug, Clone, Default)]
 pub struct Content {
@@ -336,6 +409,8 @@ pub struct Content {
     pub weapons: BTreeMap<String, WeaponData>,
     pub companions: BTreeMap<String, CompanionData>,
     pub campaign_nodes: BTreeMap<String, CampaignNodeData>,
+    pub dialogue: BTreeMap<String, DialogueSceneData>,
+    pub ledger_line_sets: BTreeMap<String, LedgerLineSetData>,
     pub items: BTreeMap<String, ItemData>,
     pub marks: BTreeMap<String, MarkData>,
     pub ways: BTreeMap<String, WayData>,

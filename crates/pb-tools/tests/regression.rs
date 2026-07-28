@@ -16,6 +16,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Source-mutating gate proofs must not race each other under the test harness.
+static SOURCE_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,15 +98,17 @@ fn write_tmp_file(content: &str) -> PathBuf {
 /// We inject a float into a src file within a determinism-critical crate,
 /// run the lint, verify failure, then restore.
 #[test]
-#[ignore = "requires scripts/lint-determinism.sh from project root"]
 fn determinism_lint_fires_on_float_in_kernel() {
+    let _guard = SOURCE_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = project_root();
 
-    // Choose pb-core/src/fix32.rs — it's in a determinism-critical crate.
-    let target_file = root.join("crates/pb-core/src/fix32.rs");
+    // Choose a non-exempt source file in a determinism-critical crate.
+    let target_file = root.join("crates/pb-core/src/ids.rs");
     assert!(
         target_file.exists(),
-        "expected fix32.rs to exist at {:?}",
+        "expected ids.rs to exist at {:?}",
         target_file
     );
 
@@ -161,6 +167,9 @@ fn determinism_lint_fires_on_float_in_kernel() {
 /// The format-check gate must detect formatting violations.
 #[test]
 fn format_check_catches_formatting_violations() {
+    let _guard = SOURCE_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = project_root();
 
     let target_file = root.join("crates/pb-core/src/fix32.rs");
@@ -211,6 +220,9 @@ fn format_check_catches_formatting_violations() {
 /// The reality gate must catch TODO markers in source files.
 #[test]
 fn reality_gate_catches_todo_markers() {
+    let _guard = SOURCE_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = project_root();
 
     let target_file = root.join("crates/pb-core/src/fix32.rs");
@@ -248,6 +260,9 @@ fn reality_gate_catches_todo_markers() {
 /// The reality gate catches FIXME markers.
 #[test]
 fn reality_gate_catches_fixme_markers() {
+    let _guard = SOURCE_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let root = project_root();
 
     let target_file = root.join("crates/pb-core/src/fix32.rs");

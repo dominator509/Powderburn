@@ -1,6 +1,11 @@
 .env
+.serena/
+.tmp/
+crash/
+logs/*.log
+crates/pb-core/logs/*.log
 .pbcache/
-target/
+/target/
 *.rlib
 *.rmeta
 *.pdb

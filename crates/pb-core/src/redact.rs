@@ -3,9 +3,8 @@
 //! Redacts sensitive information from crash reports before they are logged
 //! or persisted. Specifically:
 //!
-//! - `redact_path` replaces the user's home directory with `<PB_HOME>` and any
-//!   absolute path outside the install root with `<PATH>`.
-//! - `redact_user` replaces the current system user name with `<USER>`.
+//! Callers supply the permitted root and user token so this kernel crate never
+//! reads process environment or filesystem state.
 //!
 //! See SECURITY.md section 8 for the full redaction policy.
 
@@ -17,26 +16,21 @@ use std::path::Path;
 /// with `<PB_HOME>`. If `path` is an absolute path that does not start with
 /// the home directory, the entire path is replaced with `<PATH>`.
 /// Relative paths and empty strings are returned unchanged.
-pub fn redact_path(path: &str) -> String {
+pub fn redact_path(path: &str, permitted_root: Option<&Path>) -> String {
     if path.is_empty() {
         return String::new();
     }
 
-    // Get the home directory from the HOME env var
-    let home = std::env::var("HOME").ok();
-
     let canonical = Path::new(path);
 
-    if let Some(ref home_dir) = home {
-        let home_path = Path::new(home_dir);
-        if canonical.starts_with(home_path) {
-            // Replace the home dir prefix with <PB_HOME>
-            if let Ok(relative) = canonical.strip_prefix(home_path) {
+    if let Some(root) = permitted_root {
+        if canonical.starts_with(root) {
+            if let Ok(relative) = canonical.strip_prefix(root) {
                 let relative_str = relative.to_string_lossy();
                 if relative_str.is_empty() {
-                    return "<PB_HOME>".to_string();
+                    return "<permitted>".to_string();
                 }
-                return format!("<PB_HOME>/{}", relative_str);
+                return format!("<permitted>/{}", relative_str);
             }
         }
     }
@@ -54,86 +48,72 @@ pub fn redact_path(path: &str) -> String {
 ///
 /// Replaces all occurrences of the current user's name (as reported by
 /// `std::env::var("USER")`) with `<USER>`.
-pub fn redact_user(text: &str) -> String {
-    let user = match std::env::var("USER").or_else(|_| std::env::var("USERNAME")) {
-        Ok(u) => u,
-        Err(_) => return text.to_string(),
-    };
-
-    if user.is_empty() {
+pub fn redact_user(text: &str, user: Option<&str>) -> String {
+    let Some(user) = user.filter(|user| !user.is_empty()) else {
         return text.to_string();
-    }
-
-    text.replace(&user, "<USER>")
+    };
+    text.replace(user, "<USER>")
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use std::env;
-
     #[test]
     fn test_redact_path_empty() {
-        assert_eq!(redact_path(""), "");
+        assert_eq!(redact_path("", None), "");
     }
 
     #[test]
     fn test_redact_path_relative() {
-        assert_eq!(redact_path("relative/path.ron"), "relative/path.ron");
-        assert_eq!(redact_path("foo/bar"), "foo/bar");
+        assert_eq!(redact_path("relative/path.ron", None), "relative/path.ron");
+        assert_eq!(redact_path("foo/bar", None), "foo/bar");
     }
 
     #[test]
     fn test_redact_path_home() {
-        let home = env::var("HOME").expect("HOME should be set in test");
-        let test_path = format!("{}/content/rules/weapons.ron", home);
-        let result = redact_path(&test_path);
-        assert_eq!(result, "<PB_HOME>/content/rules/weapons.ron");
+        let root = Path::new("/home/test");
+        let result = redact_path("/home/test/content/rules/weapons.ron", Some(root));
+        assert_eq!(result, "<permitted>/content/rules/weapons.ron");
     }
 
     #[test]
     fn test_redact_path_home_exact() {
-        let home = env::var("HOME").expect("HOME should be set in test");
-        let result = redact_path(&home);
-        assert_eq!(result, "<PB_HOME>");
+        let root = Path::new("/home/test");
+        let result = redact_path("/home/test", Some(root));
+        assert_eq!(result, "<permitted>");
     }
 
     #[test]
     fn test_redact_path_absolute_outside_home() {
-        let result = redact_path("/etc/powderburn/config.ron");
+        let result = redact_path("/etc/powderburn/config.ron", Some(Path::new("/game")));
         assert_eq!(result, "<PATH>");
     }
 
     #[test]
     fn test_redact_path_install_root() {
-        let home = env::var("HOME").expect("HOME should be set in test");
-        let install_path = format!("{}/powderburn/bin/powderburn", home);
-        let result = redact_path(&install_path);
-        assert_eq!(result, "<PB_HOME>/powderburn/bin/powderburn");
+        let result = redact_path("/game/bin/powderburn", Some(Path::new("/game")));
+        assert_eq!(result, "<permitted>/bin/powderburn");
     }
 
     #[test]
     fn test_redact_user_basic() {
-        env::set_var("USER", "testuser");
         let text = "Error: could not open config for user testuser";
-        let result = redact_user(text);
+        let result = redact_user(text, Some("testuser"));
         assert_eq!(result, "Error: could not open config for user <USER>");
     }
 
     #[test]
     fn test_redact_user_no_match() {
-        env::set_var("USER", "testuser");
         let text = "Error: something went wrong without a username";
-        let result = redact_user(text);
+        let result = redact_user(text, Some("testuser"));
         assert_eq!(result, "Error: something went wrong without a username");
     }
 
     #[test]
     fn test_redact_user_multiple_occurrences() {
-        env::set_var("USER", "alice");
         let text = "alice's home is /home/alice and alice's config is there";
-        let result = redact_user(text);
+        let result = redact_user(text, Some("alice"));
         assert_eq!(
             result,
             "<USER>'s home is /home/<USER> and <USER>'s config is there"
@@ -142,19 +122,8 @@ mod tests {
 
     #[test]
     fn test_redact_user_no_env() {
-        // Remove USER env to test fallback
-        let original_user = env::var("USER").ok();
-        env::remove_var("USER");
-        env::remove_var("USERNAME");
-
         let text = "some text with user bob";
-        let result = redact_user(text);
-        // Without an env var, the text should be unchanged
+        let result = redact_user(text, None);
         assert_eq!(result, "some text with user bob");
-
-        // Restore
-        if let Some(u) = original_user {
-            env::set_var("USER", u);
-        }
     }
 }

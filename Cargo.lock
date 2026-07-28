@@ -1316,7 +1316,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pb-ai"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
  "pb-rng",
@@ -1326,11 +1326,12 @@ dependencies = [
 
 [[package]]
 name = "pb-app"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytemuck",
  "pb-ai",
  "pb-audio",
+ "pb-cli",
  "pb-content",
  "pb-core",
  "pb-render",
@@ -1338,6 +1339,7 @@ dependencies = [
  "pb-rules",
  "pb-save",
  "pb-sim",
+ "ron",
  "serde",
  "tokio",
  "wgpu",
@@ -1346,14 +1348,14 @@ dependencies = [
 
 [[package]]
 name = "pb-audio"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
 ]
 
 [[package]]
 name = "pb-cli"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-ai",
  "pb-audio",
@@ -1372,7 +1374,7 @@ dependencies = [
 
 [[package]]
 name = "pb-content"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
  "pb-rules",
@@ -1382,7 +1384,7 @@ dependencies = [
 
 [[package]]
 name = "pb-core"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "sha2",
@@ -1399,7 +1401,7 @@ dependencies = [
 
 [[package]]
 name = "pb-render"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "bytemuck",
  "image",
@@ -1407,20 +1409,21 @@ dependencies = [
  "pb-core",
  "pb-sim",
  "sha2",
+ "tokio",
  "wgpu",
  "winit",
 ]
 
 [[package]]
 name = "pb-rng"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
 ]
 
 [[package]]
 name = "pb-rules"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
  "pb-rng",
@@ -1428,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "pb-save"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-content",
  "pb-core",
@@ -1439,20 +1442,22 @@ dependencies = [
 
 [[package]]
 name = "pb-sim"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-core",
  "pb-rng",
  "pb-rules",
+ "serde",
 ]
 
 [[package]]
 name = "pb-tools"
-version = "0.1.0"
+version = "1.0.1"
 dependencies = [
  "pb-content",
  "pb-core",
  "pb-rules",
+ "png",
  "ron",
 ]
 

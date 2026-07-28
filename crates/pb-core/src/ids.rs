@@ -4,7 +4,9 @@
 use core::fmt;
 
 /// An actor instance ID. Corresponds to `e_<archetype>_<nn>` in content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct ActorId(pub u32);
 
 impl fmt::Display for ActorId {
@@ -14,7 +16,9 @@ impl fmt::Display for ActorId {
 }
 
 /// A simulation tick, monotonically increasing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Tick(pub u64);
 
 impl fmt::Display for Tick {
@@ -24,7 +28,9 @@ impl fmt::Display for Tick {
 }
 
 /// Action points, tracked as signed for overflow safety in arithmetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Ap(pub i16);
 
 impl fmt::Display for Ap {

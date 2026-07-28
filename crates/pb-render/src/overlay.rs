@@ -11,11 +11,61 @@ use wgpu::util::DeviceExt;
 use crate::device::RenderDevice;
 
 /// A highlighted tile for the overlay (movement range, cover state, etc.).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayTileKind {
-    Movable { ap_cost: u8 },
-    Attackable { hit_chance: u8 },
-    Cover { hard: bool },
+    Movable {
+        ap_cost: u8,
+    },
+    Attackable {
+        hit_chance: u8,
+    },
+    Cover {
+        hard: bool,
+    },
+    /// Movement leaves the actor's current cover; rendered with crosshatch.
+    LeavesCover {
+        ap_cost: u8,
+    },
+    /// Movement enters at least one armed enemy facing cone; rendered hatched.
+    Overwatch {
+        ap_cost: u8,
+    },
+}
+
+impl OverlayTileKind {
+    /// One example of every semantically distinct shipped overlay.
+    pub const ACCESSIBILITY_SAMPLES: [Self; 6] = [
+        Self::Movable { ap_cost: 1 },
+        Self::Attackable { hit_chance: 50 },
+        Self::Cover { hard: false },
+        Self::Cover { hard: true },
+        Self::LeavesCover { ap_cost: 1 },
+        Self::Overwatch { ap_cost: 1 },
+    ];
+
+    /// Pattern identifier consumed by the production shader.
+    pub const fn pattern_id(self) -> u8 {
+        match self {
+            Self::LeavesCover { .. } => 1,
+            Self::Overwatch { .. } => 2,
+            Self::Movable { .. } => 3,
+            Self::Attackable { .. } => 4,
+            Self::Cover { hard: false } => 5,
+            Self::Cover { hard: true } => 6,
+        }
+    }
+
+    /// Human-readable non-color cue exposed in the HUD/help contract.
+    pub const fn non_color_cue(self) -> &'static str {
+        match self {
+            Self::Movable { .. } => "dotted movement tile plus AP text",
+            Self::Attackable { .. } => "diamond-ring target tile plus hit-chance text",
+            Self::Cover { hard: false } => "horizontal-stripe soft-cover tile",
+            Self::Cover { hard: true } => "checker hard-cover tile",
+            Self::LeavesCover { .. } => "crosshatched leaves-cover tile plus warning text",
+            Self::Overwatch { .. } => "diagonal-hatched overwatch tile plus warning text",
+        }
+    }
 }
 
 /// System for rendering overlay highlights on the battlefield.
@@ -46,6 +96,8 @@ impl OverlaySystem {
         struct OverlayVert {
             position: [f32; 3],
             color: [f32; 4],
+            local: [f32; 2],
+            pattern: f32,
         }
 
         let mut vertices = Vec::new();
@@ -59,31 +111,42 @@ impl OverlaySystem {
             let color = match kind {
                 OverlayTileKind::Movable { ap_cost } => {
                     let intensity = 1.0 - (ap_cost as f32) * 0.15;
-                    [0.2 * intensity, 0.8 * intensity, 0.2 * intensity, 0.3]
+                    [0.2 * intensity, 0.8 * intensity, 0.2 * intensity, 0.20]
                 }
                 OverlayTileKind::Attackable { hit_chance } => {
                     let intensity = hit_chance as f32 / 100.0;
-                    [0.8 * intensity, 0.2 * intensity, 0.2 * intensity, 0.3]
+                    [0.8 * intensity, 0.2 * intensity, 0.2 * intensity, 0.20]
                 }
                 OverlayTileKind::Cover { hard } => {
                     if hard {
-                        [0.6, 0.6, 0.2, 0.3]
+                        [0.6, 0.6, 0.2, 0.16]
                     } else {
-                        [0.2, 0.6, 0.6, 0.3]
+                        [0.2, 0.6, 0.6, 0.16]
                     }
+                }
+                OverlayTileKind::LeavesCover { ap_cost } => {
+                    let intensity = 1.0 - (ap_cost as f32) * 0.12;
+                    [0.95 * intensity, 0.67 * intensity, 0.16, 0.30]
+                }
+                OverlayTileKind::Overwatch { ap_cost } => {
+                    let intensity = 1.0 - (ap_cost as f32) * 0.10;
+                    [0.92 * intensity, 0.18, 0.16, 0.34]
                 }
             };
 
-            let vtx = |dx: f32, dy: f32| OverlayVert {
+            let pattern = f32::from(kind.pattern_id());
+            let vtx = |dx: f32, dy: f32, local: [f32; 2]| OverlayVert {
                 position: [iso_x + dx, iso_y + dy, z],
                 color,
+                local,
+                pattern,
             };
 
             let base = vertices.len() as u32;
-            vertices.push(vtx(-half_w, 0.0));
-            vertices.push(vtx(0.0, -half_h));
-            vertices.push(vtx(half_w, 0.0));
-            vertices.push(vtx(0.0, half_h));
+            vertices.push(vtx(-half_w, 0.0, [0.0, 0.5]));
+            vertices.push(vtx(0.0, -half_h, [0.5, 0.0]));
+            vertices.push(vtx(half_w, 0.0, [1.0, 0.5]));
+            vertices.push(vtx(0.0, half_h, [0.5, 1.0]));
             indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
         }
 
@@ -165,7 +228,7 @@ impl OverlaySystem {
                     entry_point: Some("vs_main"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 28,
+                        array_stride: 40,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
                             wgpu::VertexAttribute {
@@ -177,6 +240,16 @@ impl OverlaySystem {
                                 offset: 12,
                                 shader_location: 1,
                                 format: wgpu::VertexFormat::Float32x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 28,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Float32x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 36,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float32,
                             },
                         ],
                     }],
@@ -233,6 +306,9 @@ impl OverlaySystem {
 
     /// Draw all overlay tiles.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
+        if self.num_indices == 0 {
+            return;
+        }
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

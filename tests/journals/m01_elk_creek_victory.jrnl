@@ -7,35 +7,20 @@
 # Dead actors' Hold entries are auto-skipped by the sim engine.
 
 # Round 1 - Move east
-0 3037190930 move x=8 y=6
+0 3037190930 Sprint x=7 y=6
 0 3769966676 Hold
-0 2180853174 move x=8 y=5
+0 2180853174 Sprint x=7 y=5
 0 3916335308 Hold
-0 3811996071 Hold
 
 # Round 2 - Move further east
-1 3037190930 move x=12 y=6
-1 3769966676 Hold
-1 2180853174 move x=12 y=5
-1 3916335308 Hold
-1 3811996071 Hold
+72 3037190930 Sprint x=9 y=6
+76 3769966676 Hold
+80 2180853174 Sprint x=9 y=5
+84 3916335308 Hold
 
 # Round 3 - Kill e_enemy_02 and e_enemy_01
-2 3037190930 SnapShot target=3769966676
-2 3769966676 Hold
-2 2180853174 SnapShot target=3916335308
-2 3916335308 Hold
-2 3811996071 Hold
-
-# Round 4 - Kill e_extra_01. Keep firing at survivors
-3 3037190930 SnapShot target=3811996071
-3 2180853174 SnapShot target=3769966676
-3 3811996071 Hold
-
-# Round 5 - Cleanup
-4 3037190930 SnapShot target=3916335308
-4 2180853174 SnapShot target=3769966676
-
-# Round 6 - Extra cleanup
-5 3037190930 SnapShot target=3916335308
-5 2180853174 SnapShot target=3769966676
+144 3037190930 SnapShot target=3769966676
+144 3037190930 Hold
+152 3769966676 Hold
+160 2180853174 SnapShot target=3916335308
+160 2180853174 Hold

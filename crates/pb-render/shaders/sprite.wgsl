@@ -33,5 +33,20 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(texture, sampler_state, input.tex_coord);
-    return tex_color * input.color;
+    let highest = max(tex_color.r, max(tex_color.g, tex_color.b));
+    let lowest = min(tex_color.r, min(tex_color.g, tex_color.b));
+    let neutral = 1.0 - smoothstep(0.04, 0.13, highest - lowest);
+    let bright = smoothstep(0.72, 0.92, highest);
+    let white_key = neutral * bright;
+    let green_dominance = tex_color.g - max(tex_color.r, tex_color.b);
+    let chroma_key =
+        smoothstep(0.01, 0.08, green_dominance) * smoothstep(0.16, 0.45, tex_color.g);
+    let keyed_alpha = 1.0 - max(white_key, chroma_key);
+
+    if keyed_alpha < 0.04 {
+        discard;
+    }
+
+    let tint = mix(vec3<f32>(1.0), input.color.rgb, 0.28);
+    return vec4<f32>(tex_color.rgb * tint, tex_color.a * input.color.a * keyed_alpha);
 }

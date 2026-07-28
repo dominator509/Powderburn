@@ -1,0 +1,3 @@
+[
+  (id:"dlg_act4_weight_opens",act:4,node_id:Some("camp_12_last_account"),requires_flags:["a4_salt_war_sided_with_ruelas"],requires_alive:["c_elias"],min_ledger_weight:Some(20),max_ledger_weight:None,lines:[(speaker_id:"c_elias",language:"en",original:"The book is heavy enough that I no longer mistake carrying it for controlling it.",translation:None,subtitle:"Elias says the Ledger's weight has cured him of mistaking custody for control.")]),
+]

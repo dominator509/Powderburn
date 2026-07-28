@@ -14,12 +14,12 @@
 #![allow(dead_code)]
 
 use pb_core::progression::{
-    marks_earned_by_level, xp_for_level, SkillLine, BASE_SCENARIO_XP,
-    BONUS_OBJECTIVE_XP, HEADSHOT_BONUS_XP, MAX_CHARACTER_LEVEL, NO_CASUALTIES_BONUS_XP,
-    OBJECTIVE_BONUS_XP, SKILL_POINTS_PER_LEVEL,
+    marks_earned_by_level, xp_for_level, SkillLine, BASE_SCENARIO_XP, BONUS_OBJECTIVE_XP,
+    HEADSHOT_BONUS_XP, MAX_CHARACTER_LEVEL, NO_CASUALTIES_BONUS_XP, OBJECTIVE_BONUS_XP,
 };
 
-use pb_sim::progression::{ActorProgression, compute_skill_bonuses, SkillBonuses};
+use pb_content::schema::SaveFileData;
+use pb_sim::progression::{compute_skill_bonuses, ActorProgression, SkillBonuses};
 
 /// A label and value pair for display.
 #[derive(Debug, Clone)]
@@ -109,16 +109,10 @@ pub fn build_progression_view(name: &str, prog: &ActorProgression) -> Progressio
 }
 
 /// Spend a skill point and return the result as a display string.
-pub fn spend_skill_point(
-    prog: &mut ActorProgression,
-    skill: SkillLine,
-) -> Result<String, String> {
+pub fn spend_skill_point(prog: &mut ActorProgression, skill: SkillLine) -> Result<String, String> {
     let skill_name = skill.display_name();
     match prog.spend_skill_point(skill) {
-        Ok(new_level) => Ok(format!(
-            "{} increased to level {}!",
-            skill_name, new_level
-        )),
+        Ok(new_level) => Ok(format!("{} increased to level {}!", skill_name, new_level)),
         Err(msg) => Err(format!("Cannot upgrade {}: {}", skill_name, msg)),
     }
 }
@@ -128,11 +122,7 @@ pub fn spend_skill_point(
 pub fn pending_mark_choices(prog: &ActorProgression) -> u32 {
     let earned = marks_earned_by_level(prog.level);
     let owned = prog.marks.len() as u32;
-    if owned < earned {
-        earned - owned
-    } else {
-        0
-    }
+    earned.saturating_sub(owned)
 }
 
 /// The result of an after-action XP phase.
@@ -154,6 +144,80 @@ pub struct AfterActionXpSummary {
     pub members_needing_marks: Vec<String>,
 }
 
+/// Persistent changes made when the company reaches a camp interlude.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CampRecoverySummary {
+    pub actors_treated: u32,
+    pub hp_restored: u32,
+    pub sand_restored: u32,
+    pub wounds_healed: u32,
+}
+
+fn sand_recovery_amount(max_sand: i32, ledger_weight: u32) -> i32 {
+    if max_sand <= 0 {
+        return 0;
+    }
+    let weight_penalty = i32::try_from(ledger_weight / 2)
+        .unwrap_or(i32::MAX)
+        .min(max_sand.saturating_sub(1));
+    max_sand.saturating_sub(weight_penalty).max(1)
+}
+
+/// Heal the living company once after a resolved mission.
+///
+/// The best living SAVVY score determines ordinary treatment. Tomas provides
+/// one additional wound treatment and five additional HP while alive. Ledger
+/// Weight reduces Sand recovered, but can never reduce it below one point.
+pub fn recover_company(campaign: &mut SaveFileData) -> CampRecoverySummary {
+    let surgeon_savvy = campaign
+        .company
+        .iter()
+        .filter(|actor| !actor.is_dead)
+        .map(|actor| actor.attributes.savvy)
+        .max()
+        .unwrap_or(1)
+        .clamp(1, 10);
+    let tomas_available = campaign
+        .company
+        .iter()
+        .any(|actor| actor.id == "c_alcantara" && !actor.is_dead);
+    let wound_slots = 1usize
+        .saturating_add(usize::try_from(surgeon_savvy / 4).unwrap_or(0))
+        .saturating_add(usize::from(tomas_available));
+    let hp_recovery = 5i32
+        .saturating_add(surgeon_savvy)
+        .saturating_add(if tomas_available { 5 } else { 0 });
+    let mut summary = CampRecoverySummary::default();
+
+    for actor in campaign.company.iter_mut().filter(|actor| !actor.is_dead) {
+        summary.actors_treated = summary.actors_treated.saturating_add(1);
+
+        let old_hp = actor.hp;
+        actor.hp = actor.hp.saturating_add(hp_recovery).min(actor.hp_max);
+        summary.hp_restored = summary
+            .hp_restored
+            .saturating_add(u32::try_from(actor.hp.saturating_sub(old_hp)).unwrap_or(u32::MAX));
+
+        let old_sand = actor.sand;
+        actor.sand = actor
+            .sand
+            .saturating_add(sand_recovery_amount(actor.sand_max, campaign.ledger_weight))
+            .min(actor.sand_max);
+        summary.sand_restored = summary
+            .sand_restored
+            .saturating_add(u32::try_from(actor.sand.saturating_sub(old_sand)).unwrap_or(u32::MAX));
+
+        let healed = actor.wounds.len().min(wound_slots);
+        actor.wounds.drain(0..healed);
+        summary.wounds_healed = summary
+            .wounds_healed
+            .saturating_add(u32::try_from(healed).unwrap_or(u32::MAX));
+        actor.ap = actor.ap_max;
+    }
+
+    summary
+}
+
 /// Calculate the after-action XP summary for the squad.
 pub fn compute_after_action_xp(
     primary_objectives: u32,
@@ -171,11 +235,8 @@ pub fn compute_after_action_xp(
         0
     };
 
-    let total_xp = base_xp
-        + primary_objective_xp
-        + bonus_objective_xp
-        + headshot_xp
-        + no_casualties_xp;
+    let total_xp =
+        base_xp + primary_objective_xp + bonus_objective_xp + headshot_xp + no_casualties_xp;
 
     AfterActionXpSummary {
         total_xp,
@@ -217,11 +278,7 @@ pub fn render_progression_text(view: &ProgressionView) -> Vec<String> {
             skill.level,
             skill.max_level,
             skill.effect,
-            if skill.can_upgrade {
-                "[SPEND]"
-            } else {
-                ""
-            }
+            if skill.can_upgrade { "[SPEND]" } else { "" }
         ));
     }
 
@@ -252,10 +309,7 @@ pub fn render_progression_text(view: &ProgressionView) -> Vec<String> {
         lines.push(format!("  Blades accuracy: +{}", b.blades_accuracy));
     }
     if b.explosives_accuracy > 0 {
-        lines.push(format!(
-            "  Explosives accuracy: +{}",
-            b.explosives_accuracy
-        ));
+        lines.push(format!("  Explosives accuracy: +{}", b.explosives_accuracy));
     }
     if b.medicine_heal_bonus > 0 {
         lines.push(format!("  Heal bonus: +{} HP", b.medicine_heal_bonus));
@@ -297,20 +351,24 @@ mod tests {
 
     #[test]
     fn skill_display_can_upgrade_true() {
-        let mut prog = ActorProgression::at_level(5);
-        prog.skill_points = 1;
-        let view = build_progression_view("X", &prog);
-        let pistols = view.skills.iter().find(|s| s.name == "Pistols").unwrap();
-        assert!(pistols.can_upgrade);
+        let mut progression = ActorProgression::at_level(5);
+        progression.skill_points = 1;
+        let view = build_progression_view("X", &progression);
+        assert!(view
+            .skills
+            .iter()
+            .any(|skill| skill.name == "Pistols" && skill.can_upgrade));
     }
 
     #[test]
     fn skill_display_can_upgrade_false_no_points() {
-        let mut prog = ActorProgression::at_level(5);
-        prog.skill_points = 0;
-        let view = build_progression_view("X", &prog);
-        let pistols = view.skills.iter().find(|s| s.name == "Pistols").unwrap();
-        assert!(!pistols.can_upgrade);
+        let mut progression = ActorProgression::at_level(5);
+        progression.skill_points = 0;
+        let view = build_progression_view("X", &progression);
+        assert!(view
+            .skills
+            .iter()
+            .any(|skill| skill.name == "Pistols" && !skill.can_upgrade));
     }
 
     #[test]
@@ -389,5 +447,70 @@ mod tests {
         prog.xp = xp_for_level(MAX_CHARACTER_LEVEL);
         let view = build_progression_view("Max", &prog);
         assert!(view.xp_to_next.is_none());
+    }
+
+    #[test]
+    fn ledger_weight_slows_but_never_eliminates_sand_recovery() {
+        assert_eq!(sand_recovery_amount(20, 0), 20);
+        assert_eq!(sand_recovery_amount(20, 20), 10);
+        assert_eq!(sand_recovery_amount(20, u32::MAX), 1);
+    }
+
+    #[test]
+    fn living_tomas_treats_one_additional_wound() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let mut state = crate::state::GameState::new();
+        assert!(crate::campaign::start_new(&mut state, &root, 90210).is_ok());
+        let Some(mut with_tomas) = state.campaign else {
+            panic!("new campaign must exist");
+        };
+        let Some(elias) = with_tomas
+            .company
+            .iter_mut()
+            .find(|actor| actor.id == "c_elias")
+        else {
+            panic!("Elias must exist");
+        };
+        elias.wounds = vec![
+            "Bleeding".to_string(),
+            "Burned".to_string(),
+            "Concussed".to_string(),
+            "Winded".to_string(),
+            "Broken".to_string(),
+        ];
+        let mut tomas = with_tomas.company[0].clone();
+        tomas.id = "c_alcantara".to_string();
+        tomas.is_companion = true;
+        with_tomas.company.push(tomas);
+        let mut without_tomas = with_tomas.clone();
+        let Some(tomas) = without_tomas
+            .company
+            .iter_mut()
+            .find(|actor| actor.id == "c_alcantara")
+        else {
+            panic!("Tomas must exist");
+        };
+        tomas.is_dead = true;
+
+        let with_summary = recover_company(&mut with_tomas);
+        let without_summary = recover_company(&mut without_tomas);
+        assert!(with_summary.wounds_healed > without_summary.wounds_healed);
+        let Some(with_elias) = with_tomas
+            .company
+            .iter()
+            .find(|actor| actor.id == "c_elias")
+        else {
+            panic!("Elias must remain");
+        };
+        let with_remaining = with_elias.wounds.len();
+        let Some(without_elias) = without_tomas
+            .company
+            .iter()
+            .find(|actor| actor.id == "c_elias")
+        else {
+            panic!("Elias must remain");
+        };
+        let without_remaining = without_elias.wounds.len();
+        assert!(with_remaining < without_remaining);
     }
 }

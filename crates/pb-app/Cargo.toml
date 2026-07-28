@@ -18,7 +18,9 @@ workspace = true
     pb-save = { path = "../pb-save" }
     pb-render = { path = "../pb-render" }
     pb-audio = { path = "../pb-audio" }
+    pb-cli = { path = "../pb-cli" }
     serde.workspace = true
+    ron.workspace = true
     tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }
     wgpu.workspace = true
     winit.workspace = true

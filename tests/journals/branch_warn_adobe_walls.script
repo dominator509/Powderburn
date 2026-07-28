@@ -1,0 +1,16 @@
+# branch_warn_adobe_walls.script
+# Act II choice: warn the Adobe Walls settlement before the hide-trade crisis.
+# choice: warn_adobe_walls
+0 3037190930 Sprint x=7 y=6
+0 3769966676 Hold
+0 2180853174 Sprint x=7 y=5
+0 3916335308 Hold
+72 3037190930 Sprint x=9 y=6
+76 3769966676 Hold
+80 2180853174 Sprint x=9 y=5
+84 3916335308 Hold
+144 3037190930 SnapShot target=3769966676
+144 3037190930 Hold
+152 3769966676 Hold
+160 2180853174 SnapShot target=3916335308
+160 2180853174 Hold

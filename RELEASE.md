@@ -11,8 +11,10 @@
 ## Versioning
 
 Semantic versioning over the player-visible contract, which is: the rules, the content, and the save
-format. The single source of the version string is `crates/pb-app/Cargo.toml`. Every artifact name,
-the tag, and the release directory take that value.
+format. The single source of the production version string is the workspace package version in
+`Cargo.toml`, inherited by `crates/pb-app/Cargo.toml`. Release-candidate labels used only for the
+EP-009 rollback drill may override the artifact label with `PB_ARTIFACT_VERSION`; a production
+release may not. Every artifact name, tag, and release directory takes the production version.
 
 A version is never reused. A tag is never moved. A published artifact is never replaced in place.
 
@@ -43,8 +45,8 @@ exact commands.
 
 ## Smoke
 
-`sh scripts/smoke-test.sh --released` after publication. Verifies the signature first, then unpacks,
-then runs the binary and the selftest.
+`sh scripts/smoke-test.sh --released <artifact.tar.zst>` after publication. Verifies the signature
+first, then unpacks and exercises only the three released binaries.
 
 ## Approvals
 
@@ -58,8 +60,23 @@ ADR-0012.
 Written from the CHANGELOG, plus: the reference machine, the sha256 of each artifact, the public key
 fingerprint, and the save compatibility statement. Published as `$PB_RELEASE_DIR/<version>/NOTES.md`.
 
+## Supported release target
+
+Version 1 ships for `x86_64-unknown-linux-gnu` only, per ADR-0010 and SPEC-000. The three binaries
+inside that archive are `powderburn`, `pbcli`, and `pbtool`. Windows is deferred to v1.1 and macOS
+is explicitly outside v1 scope.
+
 ## Post-release monitoring
 
 There is no telemetry, so monitoring means: watch the inbox. A player report is triaged with the
 three files named in OBSERVABILITY.md production debugging. A determinism regression that reached
 players is treated as a rollback trigger, not a patch-later item.
+
+## MANUAL STEP: itch.io publication
+
+After the self-hosted artifact is verified, an authorized human operator may run:
+
+`butler push "$PB_RELEASE_DIR/<version>" <itch-user>/<itch-game>:linux --userversion "<version>"`
+
+No script in this repository runs that command, and no agent may run it. External publication is
+manual by ADR-0012.

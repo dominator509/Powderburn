@@ -7,22 +7,5 @@
 #   event: WoundApplied actor=e_bandit_02 wound=Broken
 #   event: WeaponDropped actor=e_bandit_02 item=colt_army_1860
 0 1679563958 CalledShot target=347187621 loc=GunArm
+0 1679563958 Hold
 0 347187621 Hold
-1 1679563958 CalledShot target=347187621 loc=GunArm
-1 347187621 Hold
-2 1679563958 CalledShot target=347187621 loc=GunArm
-2 347187621 Hold
-3 1679563958 CalledShot target=347187621 loc=GunArm
-3 347187621 Hold
-4 1679563958 CalledShot target=347187621 loc=GunArm
-4 347187621 Hold
-5 1679563958 CalledShot target=347187621 loc=GunArm
-5 347187621 Hold
-6 1679563958 CalledShot target=347187621 loc=GunArm
-6 347187621 Hold
-7 1679563958 CalledShot target=347187621 loc=GunArm
-7 347187621 Hold
-8 1679563958 CalledShot target=347187621 loc=GunArm
-8 347187621 Hold
-9 1679563958 CalledShot target=347187621 loc=GunArm
-9 347187621 Hold

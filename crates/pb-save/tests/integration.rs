@@ -22,8 +22,10 @@ fn make_test_save(ruleset_hash: &[u8; 32], content_hash: &[u8; 32]) -> SaveFileD
         content_hash: hex_encode(content_hash),
         campaign_seed: 42,
         ledger_head_hash: String::new(), // will be set after building chain
+        ledger_weight: 0,
         ledger_entries: Vec::new(),
         campaign_flags: vec!["test_flag".into()],
+        completed_nodes: vec!["test_node".into()],
         company: Vec::new(),
         sim_snapshot: None,
         written_at_tick: 100,

@@ -1,7 +1,6 @@
 //! Isometric tile rendering system.
 //!
-//! Renders the battlefield as a grid of isometric tiles using wgpu.
-//! Each tile is a flat-color quad (2 triangles) with z-sorting for depth.
+//! Renders the battlefield as a grid of textured isometric tiles using wgpu.
 
 use std::sync::Arc;
 
@@ -18,6 +17,8 @@ pub struct TileVertex {
     pub position: [f32; 3],
     /// Color (r, g, b, a)
     pub color: [f32; 4],
+    /// Texture coordinate into the 4x2 frontier terrain atlas.
+    pub tex_coord: [f32; 2],
 }
 
 impl TileVertex {
@@ -36,6 +37,11 @@ impl TileVertex {
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: 28,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
             ],
         }
     }
@@ -50,6 +56,7 @@ pub struct TileVisual {
     pub a: f32,
     pub visible: bool,
     pub elevation: i32,
+    pub material: u8,
 }
 
 impl TileVisual {
@@ -61,7 +68,27 @@ impl TileVisual {
             a: 1.0,
             visible: true,
             elevation,
+            material: 0,
         }
+    }
+
+    pub fn with_material(mut self, material: u8) -> Self {
+        self.material = material.min(7);
+        self
+    }
+}
+
+/// Map authored terrain vocabulary onto the eight atlas materials.
+pub fn material_for_terrain(terrain: &str) -> u8 {
+    match terrain.to_ascii_lowercase().as_str() {
+        "road" | "dirt" | "trail" => 1,
+        "creek" | "water" | "river" => 2,
+        "brush" | "scrub" | "sagebrush" => 3,
+        "timber" | "woods" | "woodland" | "forest" => 4,
+        "snow" | "winter" => 5,
+        "floor" | "adobe" | "courtyard" | "settlement" => 6,
+        "rail" | "railroad" | "ballast" | "rail_grade" => 7,
+        _ => 0,
     }
 }
 
@@ -86,6 +113,9 @@ pub struct TileSystem {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
+    _texture: wgpu::Texture,
+    _texture_view: wgpu::TextureView,
+    _sampler: wgpu::Sampler,
 }
 
 impl TileSystem {
@@ -122,16 +152,25 @@ impl TileSystem {
                 let iso_y = (x as f32 + y as f32) * half_h;
                 let z = tile.elevation as f32;
 
-                let vtx = |dx: f32, dy: f32| TileVertex {
+                let material = tile.material.min(7);
+                let column = f32::from(material % 4);
+                let row = f32::from(material / 4);
+                let inset = 0.001;
+                let u0 = column * 0.25 + inset;
+                let v0 = row * 0.5 + inset;
+                let u1 = (column + 1.0) * 0.25 - inset;
+                let v1 = (row + 1.0) * 0.5 - inset;
+                let vtx = |dx: f32, dy: f32, u: f32, v: f32| TileVertex {
                     position: [iso_x + dx, iso_y + dy, z],
                     color: [tile.r, tile.g, tile.b, tile.a],
+                    tex_coord: [u, v],
                 };
 
                 let base = vertices.len() as u32;
-                vertices.push(vtx(-half_w, 0.0));
-                vertices.push(vtx(0.0, -half_h));
-                vertices.push(vtx(half_w, 0.0));
-                vertices.push(vtx(0.0, half_h));
+                vertices.push(vtx(-half_w, 0.0, u0, v0));
+                vertices.push(vtx(0.0, -half_h, u1, v0));
+                vertices.push(vtx(half_w, 0.0, u1, v1));
+                vertices.push(vtx(0.0, half_h, u0, v1));
                 indices.extend_from_slice(&quad_indices(base));
             }
         }
@@ -165,31 +204,126 @@ impl TileSystem {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
+        let decoded_atlas = image::load_from_memory_with_format(
+            include_bytes!("../../../assets/art/frontier_terrain_atlas.png"),
+            image::ImageFormat::Png,
+        )
+        .map_or_else(
+            |_| image::RgbaImage::from_pixel(1, 1, image::Rgba([96, 112, 72, 255])),
+            |image| image.to_rgba8(),
+        );
+        // Authored source cells are far larger than their on-screen footprint.
+        // Uploading a 512x256 presentation copy retains at least 2x sampling
+        // headroom per tile and avoids cache-thrashing software adapters.
+        let atlas = if decoded_atlas.width() > 512 || decoded_atlas.height() > 256 {
+            image::imageops::resize(
+                &decoded_atlas,
+                512,
+                256,
+                image::imageops::FilterType::Triangle,
+            )
+        } else {
+            decoded_atlas
+        };
+        let (atlas_width, atlas_height) = atlas.dimensions();
+        let texture = device.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("frontier terrain atlas"),
+            size: wgpu::Extent3d {
+                width: atlas_width,
+                height: atlas_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("terrain sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        device.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            atlas.as_raw(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(atlas_width * 4),
+                rows_per_image: Some(atlas_height),
+            },
+            wgpu::Extent3d {
+                width: atlas_width,
+                height: atlas_height,
+                depth_or_array_layers: 1,
+            },
+        );
+
         // Create bind group
         let bind_group_layout =
             device
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("tile bind group layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    }],
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
                 });
 
         let bind_group = device.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("tile bind group"),
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
         });
 
         // Shaders
@@ -261,11 +395,17 @@ impl TileSystem {
             pipeline,
             bind_group,
             uniform_buffer,
+            _texture: texture,
+            _texture_view: texture_view,
+            _sampler: sampler,
         }
     }
 
     /// Draw all tiles. Must be called inside a render pass.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
+        if self.num_indices == 0 {
+            return;
+        }
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

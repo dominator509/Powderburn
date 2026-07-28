@@ -1,0 +1,3 @@
+[
+  (id:"dlg_act1_ledger_begins",act:1,node_id:Some("camp_01_ledger_fire"),requires_flags:["a1_treaty_witnessed"],requires_alive:["c_elias"],max_ledger_weight:Some(4),lines:[(speaker_id:"c_elias",language:"en",original:"Four names from Elk Creek. Leave room beneath them.",translation:None,subtitle:"Elias counts four names from Elk Creek and asks for room beneath them.")]),
+]

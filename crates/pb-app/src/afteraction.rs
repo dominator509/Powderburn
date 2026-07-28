@@ -8,10 +8,9 @@
 
 use std::sync::Arc;
 
+use pb_render::backdrop::BackdropSystem;
 use pb_render::device::RenderDevice;
-use pb_render::overlay::{OverlaySystem, OverlayTileKind};
 use pb_render::text::{BitmapFont, TextRenderer};
-use pb_render::tiles::{TileSystem, TileVisual};
 
 use crate::combat::{is_ally, is_enemy};
 use crate::state::GameState;
@@ -19,6 +18,7 @@ use crate::state::GameState;
 /// After-action report renderer, created once and reused each frame.
 #[allow(missing_debug_implementations)]
 pub struct AfterActionRenderer {
+    backdrop: BackdropSystem,
     text_renderer: TextRenderer,
 }
 
@@ -26,12 +26,20 @@ impl AfterActionRenderer {
     /// Create a new after-action renderer.
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         font: &BitmapFont,
         surface_format: wgpu::TextureFormat,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, String> {
+        let backdrop = BackdropSystem::from_png_bytes(
+            device,
+            queue,
+            surface_format,
+            include_bytes!("../../../assets/art/companion_portraits.png"),
+        )?;
+        Ok(Self {
+            backdrop,
             text_renderer: TextRenderer::new(device, font, surface_format),
-        }
+        })
     }
 
     /// Render one frame of the after-action report.
@@ -58,74 +66,47 @@ impl AfterActionRenderer {
                 == 0
         });
 
-        let (enemies_killed, allies_lost) = gs.sim.as_ref().map_or((0, 0), |sim| {
-            let ek = sim
-                .actors
-                .values()
-                .filter(|a| !a.alive && is_enemy(a))
-                .count();
-            let al = sim
-                .actors
-                .values()
-                .filter(|a| !a.alive && is_ally(a))
-                .count();
-            (ek, al)
-        });
-
-        // ── Build a simple decorative tile grid ───────────────────────────
-        let cols = 16u32;
-        let rows = 12u32;
-        let mut tiles = Vec::with_capacity((cols * rows) as usize);
-        for y in 0..rows {
-            for x in 0..cols {
-                let shade = 0.3 + ((x + y) % 3) as f32 * 0.1;
-                let (r, g, b) = if is_victory {
-                    (0.15, shade * 0.8, 0.12)
-                } else {
-                    (shade * 0.9, 0.10, 0.08)
-                };
-                tiles.push(TileVisual::new(r, g, b, 0));
-            }
-        }
-
-        let camera = pb_render::camera::IsoCamera::new(width, height);
-        let camera_bytes = camera.ortho_matrix_bytes();
-
-        let tile_system = TileSystem::new(render_device, cols, rows, &tiles, &camera_bytes);
-
-        // ── Overlay: highlight centre area ────────────────────────────────
-        let cx = cols / 2;
-        let cy = rows / 2;
-        let overlay_tiles: Vec<(u32, u32, OverlayTileKind)> = (0..4)
-            .flat_map(|i| {
-                let r = i;
-                vec![
-                    (
-                        cx as i32 + r,
-                        cy as i32,
-                        OverlayTileKind::Movable { ap_cost: 0 },
-                    ),
-                    (
-                        cx as i32 - r,
-                        cy as i32,
-                        OverlayTileKind::Movable { ap_cost: 0 },
-                    ),
-                    (
-                        cx as i32,
-                        cy as i32 + r,
-                        OverlayTileKind::Movable { ap_cost: 0 },
-                    ),
-                    (
-                        cx as i32,
-                        cy as i32 - r,
-                        OverlayTileKind::Movable { ap_cost: 0 },
-                    ),
-                ]
+        let (enemies_killed, allies_lost, fouling_total) =
+            gs.sim.as_ref().map_or((0, 0, 0), |sim| {
+                let ek = sim
+                    .actors
+                    .values()
+                    .filter(|a| !a.alive && is_enemy(a))
+                    .count();
+                let al = sim
+                    .actors
+                    .values()
+                    .filter(|a| !a.alive && is_ally(a))
+                    .count();
+                let fouling = sim.actors.values().map(|actor| actor.fouling).sum();
+                (ek, al, fouling)
+            });
+        let shots = gs
+            .battle_events
+            .iter()
+            .filter(|event| matches!(event, pb_core::event::Event::Fired { .. }))
+            .count();
+        let sand_spent: i32 = gs
+            .battle_events
+            .iter()
+            .filter_map(|event| match event {
+                pb_core::event::Event::SandLost { amount, .. } => Some(*amount),
+                _ => None,
             })
-            .filter(|(x, y, _)| *x >= 0 && *x < cols as i32 && *y >= 0 && *y < rows as i32)
-            .map(|(x, y, k)| (x as u32, y as u32, k))
-            .collect();
-        let overlay_system = OverlaySystem::new(render_device, &overlay_tiles, &camera_bytes);
+            .sum();
+        let sand_recovered: i32 = gs
+            .battle_events
+            .iter()
+            .filter_map(|event| match event {
+                pb_core::event::Event::SandGained { amount, .. } => Some(*amount),
+                _ => None,
+            })
+            .sum();
+        let wounds = gs
+            .battle_events
+            .iter()
+            .filter(|event| matches!(event, pb_core::event::Event::WoundApplied { .. }))
+            .count();
 
         // ── Build text meshes ────────────────────────────────────────────
         let outcome = if is_victory {
@@ -133,11 +114,37 @@ impl AfterActionRenderer {
         } else {
             "MISSION FAILED"
         };
-        let summary = format!(
-            "Enemies killed: {}    Allies lost: {}",
-            enemies_killed, allies_lost
-        );
-        let prompt = "Press ENTER to continue";
+        let mut report_lines = vec![
+            format!("Enemies killed: {enemies_killed}    Allies lost: {allies_lost}"),
+            format!("Ammunition expended: {shots}    Wounds: {wounds}    Fouling: {fouling_total}"),
+            format!("Sand spent: {sand_spent}    Sand recovered: {sand_recovered}"),
+        ];
+        for event in gs.battle_events.iter().rev().take(4).rev() {
+            report_lines.push(event_as_prose(event, gs));
+        }
+        if let Some(entry) = gs.pending_ledger_writes.get(gs.ledger_write_cursor) {
+            report_lines.push(format!(
+                "LEDGER {}/{} — {} at {}, {}",
+                gs.ledger_write_cursor + 1,
+                gs.pending_ledger_writes.len(),
+                entry.name,
+                entry.place,
+                entry.date
+            ));
+            for (index, line) in entry.lines.iter().enumerate() {
+                let selected = if index == usize::from(entry.selected_index) {
+                    ">"
+                } else {
+                    " "
+                };
+                report_lines.push(format!("{selected} {}. {line}", index + 1));
+            }
+            report_lines.push(
+                "Press 1-3 to choose; arrows review deaths; ENTER accepts defaults.".to_string(),
+            );
+        } else {
+            report_lines.push("No named death awaits the Ledger. Press ENTER.".to_string());
+        }
 
         let fg_color: [f32; 4] = if is_victory {
             [0.3, 0.9, 0.3, 1.0]
@@ -146,11 +153,25 @@ impl AfterActionRenderer {
         };
 
         let title_mesh = font.render_text(outcome, 60.0, 80.0, 4.0, fg_color, sw, sh);
-        let summary_mesh =
-            font.render_text(&summary, 60.0, 160.0, 2.5, [1.0, 1.0, 1.0, 1.0], sw, sh);
-        let prompt_mesh = font.render_text(prompt, 60.0, 220.0, 2.0, [0.7, 0.7, 0.7, 1.0], sw, sh);
+        let line_meshes = report_lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                font.render_text(
+                    line,
+                    60.0,
+                    155.0 + index as f32 * 32.0,
+                    2.0,
+                    [0.96, 0.91, 0.78, 1.0],
+                    sw,
+                    sh,
+                )
+            })
+            .collect::<Vec<_>>();
 
         // ── Render pass ──────────────────────────────────────────────────
+        self.backdrop
+            .render(&render_device.device, &render_device.queue, view);
         let mut encoder =
             render_device
                 .device
@@ -165,12 +186,7 @@ impl AfterActionRenderer {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: if is_victory { 0.08 } else { 0.18 },
-                            g: if is_victory { 0.18 } else { 0.05 },
-                            b: if is_victory { 0.06 } else { 0.04 },
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -179,20 +195,47 @@ impl AfterActionRenderer {
                 timestamp_writes: None,
             });
 
-            tile_system.render(&mut rpass);
-            overlay_system.render(&mut rpass);
-
             // Text overlay on top
             self.text_renderer
                 .render(&render_device.queue, &mut rpass, &title_mesh);
-            self.text_renderer
-                .render(&render_device.queue, &mut rpass, &summary_mesh);
-            self.text_renderer
-                .render(&render_device.queue, &mut rpass, &prompt_mesh);
+            for mesh in &line_meshes {
+                self.text_renderer
+                    .render(&render_device.queue, &mut rpass, mesh);
+            }
         }
 
         render_device
             .queue
             .submit(std::iter::once(encoder.finish()));
+    }
+}
+
+fn event_as_prose(event: &pb_core::event::Event, gs: &GameState) -> String {
+    let actor_name = |id: pb_core::ids::ActorId| {
+        gs.sim
+            .as_ref()
+            .and_then(|sim| sim.actors.get(&id))
+            .map_or_else(|| format!("Actor {}", id.0), |actor| actor.name.clone())
+    };
+    match event {
+        pb_core::event::Event::Fired { actor, target } => {
+            format!("{} fired on {}.", actor_name(*actor), actor_name(*target))
+        }
+        pb_core::event::Event::Missed { actor, target } => {
+            format!("{} missed {}.", actor_name(*actor), actor_name(*target))
+        }
+        pb_core::event::Event::DamageApplied { actor, damage } => {
+            format!("{} took {damage} damage.", actor_name(*actor))
+        }
+        pb_core::event::Event::WoundApplied { actor, wound } => {
+            format!("{} carried a {wound} wound.", actor_name(*actor))
+        }
+        pb_core::event::Event::ActorKilled { actor } => {
+            format!("{} died on the field.", actor_name(*actor))
+        }
+        pb_core::event::Event::SmokeDeposited { density, .. } => {
+            format!("Black-powder smoke thickened by {density}.")
+        }
+        _ => event.to_string().replacen("event: ", "", 1),
     }
 }

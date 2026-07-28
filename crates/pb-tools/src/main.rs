@@ -16,7 +16,7 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!("Usage: pbtool <subcommand> [options]");
-        eprintln!("Subcommands: validate, golden, image, atlas, fuzz");
+        eprintln!("Subcommands: validate, golden, image, atlas, fuzz, repro");
         std::process::exit(1);
     }
 
@@ -28,9 +28,15 @@ fn main() {
         "image" => run_image(&args[2..]),
         "atlas" => run_atlas(&args[2..]),
         "fuzz" => run_fuzz_command(&args[2..]),
+        "repro" => {
+            let directory = args
+                .get(2)
+                .ok_or_else(|| "repro requires a crash bundle directory".to_string());
+            directory.and_then(|directory| pb_tools::repro::run_repro(Path::new(&directory)))
+        }
         _ => {
             eprintln!("ERROR: unknown subcommand '{}'", subcommand);
-            eprintln!("Subcommands: validate, golden, image, atlas, fuzz");
+            eprintln!("Subcommands: validate, golden, image, atlas, fuzz, repro");
             std::process::exit(1);
         }
     };

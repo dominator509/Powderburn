@@ -13,8 +13,30 @@ pub fn validate_content(content_root: &Path) -> Result<(), String> {
     let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
 
     let diags = pb_content::validate::validate(&content);
+    let graph = pb_content::campaign::build_graph(&content);
+    let mut campaign_issues = pb_content::campaign::structural_issues(&graph, "m01_elk_creek");
+    let mission_count = graph
+        .nodes
+        .values()
+        .filter(|node| node.kind == "Mission")
+        .count();
+    if mission_count != 24 {
+        campaign_issues.push(format!(
+            "campaign must contain 24 missions, found {mission_count}"
+        ));
+    }
+    let camp_count = graph
+        .nodes
+        .values()
+        .filter(|node| node.kind == "Camp")
+        .count();
+    if camp_count != 12 {
+        campaign_issues.push(format!(
+            "campaign must contain 12 camp interludes, found {camp_count}"
+        ));
+    }
 
-    if diags.is_empty() {
+    if diags.is_empty() && campaign_issues.is_empty() {
         println!("{}", output::PBM_VALIDATE_OK);
     } else {
         for d in &diags {
@@ -23,7 +45,13 @@ pub fn validate_content(content_root: &Path) -> Result<(), String> {
                 d.code, d.message, d.file, d.line
             );
         }
-        return Err(format!("{} diagnostics found", diags.len()));
+        for issue in &campaign_issues {
+            eprintln!("E-CAMPAIGN-GRAPH: {issue}");
+        }
+        return Err(format!(
+            "{} diagnostics found",
+            diags.len() + campaign_issues.len()
+        ));
     }
 
     Ok(())
@@ -31,35 +59,8 @@ pub fn validate_content(content_root: &Path) -> Result<(), String> {
 
 /// Run `pbtool validate representation`: check nation/community fields.
 pub fn validate_representation(content_root: &Path) -> Result<(), String> {
-    let content = load_all(content_root).map_err(|e| format!("content load error: {}", e))?;
-
-    let mut issues: Vec<String> = Vec::new();
-
-    for (id, companion) in &content.companions {
-        // Check that nation or community is present
-        if companion.nation.is_none() && companion.community.is_none() {
-            issues.push(format!(
-                "companion '{}' has neither nation nor community",
-                id
-            ));
-        }
-        // Check that nation has a human-readable name (non-empty if Some)
-        if let Some(ref nation) = companion.nation {
-            if nation.trim().is_empty() {
-                issues.push(format!("companion '{}' has empty nation", id));
-            }
-        }
-        // Check that community has a human-readable name (non-empty if Some)
-        if let Some(ref community) = companion.community {
-            if community.trim().is_empty() {
-                issues.push(format!("companion '{}' has empty community", id));
-            }
-        }
-        // Check sources are not empty
-        if companion.sources.is_empty() {
-            issues.push(format!("companion '{}' has no sources", id));
-        }
-    }
+    let issues = pb_content::representation::validate_tree(content_root)
+        .map_err(|error| format!("content load error: {error}"))?;
 
     if issues.is_empty() {
         println!("{}", output::REPRESENTATION_OK);
@@ -108,57 +109,19 @@ pub fn validate_content_with_fixture(
     let fixture_actors: Vec<pb_content::schema::ActorData> = ron::from_str(&fixture_data)
         .map_err(|e| format!("cannot parse fixture '{}': {}", fixture_path.display(), e))?;
 
-    // Check E-HIST-001: fixture alters a HISTORICAL_FIXED scenario.
-    let fixed_scenarios: Vec<String> = content
-        .campaign_nodes
-        .values()
-        .filter(|n| {
-            n.historical_tag
-                .as_deref()
-                .is_some_and(|t| t == "HISTORICAL_FIXED")
-        })
-        .filter_map(|n| n.scenario_id.clone())
-        .collect();
-
-    let mut diagnostics = Vec::new();
-
-    for scenario_id in &fixed_scenarios {
-        if let Some(scenario) = content.scenarios.get(scenario_id.as_str()) {
-            for fixture_actor in &fixture_actors {
-                // Check if the fixture actor has the same ID as any actor in the scenario,
-                // or if it introduces a different outcome for the scenario.
-                if scenario.actors.iter().any(|a| a.id == fixture_actor.id) {
-                    diagnostics.push(format!(
-                        "E-HIST-001: fixture alters scenario '{}' which is marked HISTORICAL_FIXED via campaign node. Actor '{}' modified.",
-                        scenario_id, fixture_actor.id
-                    ));
-                }
-            }
-        }
+    let violations = pb_content::history::actor_override_violations(&content, &fixture_actors);
+    for (scenario_id, actor_id) in &violations {
+        eprintln!(
+            "E-HIST-001: fixture alters scenario '{scenario_id}' which is marked HISTORICAL_FIXED via campaign node; actor '{actor_id}' modified"
+        );
     }
 
-    if diagnostics.is_empty() {
-        // Fallback: if no direct match found, still emit E-HIST-001 since the fixture
-        // is designed to test historical violation detection.
-        // The fixture adds actors to prov_full_battle which is used by HISTORICAL_FIXED nodes.
-        for scenario_id in &fixed_scenarios {
-            diagnostics.push(format!(
-                "E-HIST-001: fixture alters scenario '{}' which is used by a HISTORICAL_FIXED campaign node.",
-                scenario_id
-            ));
-        }
-    }
-
-    for d in &diagnostics {
-        eprintln!("{}", d);
-    }
-
-    if diagnostics.is_empty() {
+    if violations.is_empty() {
         Ok(())
     } else {
         Err(format!(
             "{} historical violation(s) detected",
-            diagnostics.len()
+            violations.len()
         ))
     }
 }
@@ -168,4 +131,29 @@ pub(crate) mod output {
     pub const PBM_VALIDATE_OK: &str = "pbtool validate: ok";
     pub const REPRESENTATION_OK: &str = "representation: ok";
     pub const PROVENANCE_OK: &str = "provenance: ok";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repository_root() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn real_content_representation_provenance_and_history_contracts_execute() {
+        let root = repository_root();
+        assert!(validate_content(&root.join("content")).is_ok());
+        assert!(validate_representation(&root.join("content")).is_ok());
+        assert!(validate_provenance(&root.join("assets")).is_ok());
+        let historical = validate_content_with_fixture(
+            &root.join("content"),
+            &root.join("tests/fixtures/violation_alters_history.ron"),
+        );
+        assert!(historical.is_err());
+        assert!(historical
+            .err()
+            .is_some_and(|error| error.contains("historical violation")));
+    }
 }

@@ -26,14 +26,19 @@ as `metric: <name> <value>`. The set and budgets are in SPEC-007 section 3: `sim
 `save.write.ms` under 250, `save.size.bytes` under 8 MB, `smoke.volumes.live` under 4096, plus
 `sim.events.per_turn` and `rng.draws.per_turn`.
 
+Press F3 during Battle to show or hide the in-game panel. The self-test values come from real work:
+content parsing, scored utility-AI turns and simulation steps, an atomic save plus verified Ledger
+load, and a completed GPU frame. Screenshot readback and PNG encoding are excluded from frame time.
+
 `rng.draws.per_turn` is the canary. A change in draw count for a golden scenario means the shot
 pipeline changed shape even if the terminal hash happens to survive. Investigate before shipping.
 
 ## Traces
 
-`pbcli sim --trace-actor <id>` emits every AI candidate with its utility score, every modifier in the
-shot assembly with its signed value, and every RNG draw with its stream tag. This is the first tool
-to reach for at ladder rung 2 on any determinism or balance question.
+`pbcli sim --trace-actor <id>` emits every AI candidate with its utility score.
+`--trace-shot` emits all ten shot stages and the exact shared hit-chance assembly; `--trace-rng`
+emits every draw with its stream tag and addressed coordinates. These are the first tools to reach
+for at ladder rung 2 on any determinism or balance question.
 
 ## Health checks
 
@@ -46,7 +51,8 @@ event log as prose, and the metrics dump.
 
 ## Alerts
 
-Build time only. `scripts/verify.sh` fails on any budget regression. There is no runtime alerting
+Build time only. LF-10 within `scripts/verify.sh` fails on simulation, full utility-AI turn, or
+authored crowded-scene frame budget regression. There is no runtime alerting
 because there is no runtime service, and pretending otherwise would be theatre.
 
 ## Production debugging

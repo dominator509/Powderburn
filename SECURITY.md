@@ -16,7 +16,7 @@ parsing, the mod sandbox, and the integrity of the release supply chain.
 | Tampered release artifact | Man in the middle on download | Detached minisign signature, public key published separately, smoke verifies before unpack |
 | Credential leakage from the build host | `.env`, signing key | Never committed, never logged, key required to be outside the repository at mode 600 |
 | Supply chain injection via a dependency | Registry compromise | Everything vendored and committed; builds are offline; dependency count capped at 60; every crate license present |
-| Unexpected exfiltration | A dependency opening a socket | No network symbols in the release binary, asserted by `nm` in `scripts/security-check.sh` |
+| Unexpected exfiltration | A dependency opening a network connection | No network APIs, resolver, transport, server, or TLS symbols; Linux `socket`/`connect` are narrowly allowlisted for winit's local Wayland/X11 display IPC and all other checked symbols fail the `nm` gate |
 
 ## Authentication and authorization
 
@@ -76,7 +76,7 @@ which invalidates saves by design, and the UI states this before a mod is enable
 1. `.env` untracked.
 2. No private key material in tracked files.
 3. No credential-shaped literal in `crates`, `content`, or `scripts`.
-4. No network symbol in the release binary.
+4. No network API or transport symbol in the release binary; only the documented local-display `socket`/`connect` exceptions are allowed.
 5. No network API outside the feature-gated replay server.
 6. The replay-server feature unreachable from `pb-app`.
 7. Every untrusted parser has a `MAX_` limit constant.

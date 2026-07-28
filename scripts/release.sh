@@ -1,161 +1,149 @@
 #!/usr/bin/env sh
-#
-# release.sh — Build, sign, checksum, and publish a POWDERBURN release.
-#
-# Usage: scripts/release.sh --version <semver>
-#
-#   --version  Release version string (e.g. 0.3.0).
-#
-# Idempotent: refuses to overwrite an existing release directory.
-# Prerequisites: cargo, minisign, sha256sum.
-#
-# Environment:
-#   PB_RELEASE_DIR  Target directory for published releases.
-#                   Default: /var/www/powderburn/releases
-#   PB_SIGN_KEY     Minisign secret key path (required for signing).
-#                   Default: ~/.config/powderburn/release.key
-#   CARGO_NET_OFFLINE  Set to false to allow network fetches.
-
+# Build, checksum, sign, verify, and optionally publish one immutable release.
 set -eu
 
-# ---- Parse arguments ----------------------------------------------------------
+: "${PB_HOME:?PB_HOME must be set}"
+: "${PB_CACHE_DIR:?PB_CACHE_DIR must be set}"
+: "${PB_RELEASE_DIR:?PB_RELEASE_DIR must be set}"
+: "${PB_RELEASE_SIGNING_KEY:?PB_RELEASE_SIGNING_KEY must be set}"
 
 VERSION=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --version)
-            VERSION="${2:-}"
-            shift 2
-            ;;
-        *)
-            echo "error: unknown argument: $1" >&2
-            echo "usage: $0 --version <semver>" >&2
-            exit 1
-            ;;
-    esac
+MODE=""
+INJECT_FAILURE=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      [ "$#" -ge 2 ] || { echo "release: FAIL - --version requires a value" >&2; exit 1; }
+      VERSION=$2
+      shift 2
+      ;;
+    --dry-run)
+      MODE=dry-run
+      shift
+      ;;
+    --publish)
+      MODE=publish
+      shift
+      ;;
+    --inject-failure)
+      INJECT_FAILURE=1
+      shift
+      ;;
+    *)
+      echo "release: FAIL - unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
 done
 
-if [ -z "$VERSION" ]; then
-    echo "error: --version is required" >&2
-    echo "usage: $0 --version <semver>" >&2
+[ -n "$VERSION" ] || { echo "release: FAIL - --version is required" >&2; exit 1; }
+[ -n "$MODE" ] || { echo "release: FAIL - choose --dry-run or --publish" >&2; exit 1; }
+echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$' ||
+  { echo "release: FAIL - invalid semantic version: $VERSION" >&2; exit 1; }
+WORKSPACE_VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' "$PB_HOME/Cargo.toml")
+[ -n "$WORKSPACE_VERSION" ] ||
+  { echo "release: FAIL - workspace version is unreadable" >&2; exit 1; }
+case "$VERSION" in
+  *-*) ;;
+  "$WORKSPACE_VERSION") ;;
+  *)
+    echo "release: FAIL - production version $VERSION does not match workspace $WORKSPACE_VERSION" >&2
     exit 1
+    ;;
+esac
+[ -f "$PB_RELEASE_SIGNING_KEY" ] ||
+  { echo "release: FAIL - signing key not found: $PB_RELEASE_SIGNING_KEY" >&2; exit 1; }
+[ -f "$PB_RELEASE_SIGNING_KEY.pub" ] ||
+  { echo "release: FAIL - public key not found: $PB_RELEASE_SIGNING_KEY.pub" >&2; exit 1; }
+
+DEST="$PB_RELEASE_DIR/$VERSION"
+if [ "$MODE" = publish ] && [ -d "$DEST" ]; then
+  ARTIFACT=$(find "$DEST" -maxdepth 1 -type f -name '*.tar.zst' | head -n 1)
+  [ -n "$ARTIFACT" ] ||
+    { echo "release: FAIL - existing release has no archive: $DEST" >&2; exit 1; }
+  sh "$PB_HOME/scripts/smoke-test.sh" --released "$ARTIFACT" >/dev/null ||
+    { echo "release: FAIL - existing release failed verification: $DEST" >&2; exit 1; }
+  echo "publish: already present"
+  echo "MANUAL STEP: itch.io publication"
+  echo "butler push \"$DEST\" USER/GAME:linux --userversion \"$VERSION\""
+  exit 0
 fi
 
-# Validate semver (basic — X.Y.Z or X.Y.Z-prerelease)
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-    echo "error: version \"$VERSION\" does not look like a valid semver" >&2
-    exit 1
+mkdir -p "$PB_CACHE_DIR" "$PB_RELEASE_DIR"
+WORK=$(mktemp -d "$PB_CACHE_DIR/release-$VERSION.XXXXXX")
+cleanup() {
+  case "$WORK" in
+    "$PB_CACHE_DIR"/release-"$VERSION".*) rm -rf "$WORK" ;;
+    *) echo "release: unsafe work path: $WORK" >&2 ;;
+  esac
+}
+trap cleanup EXIT HUP INT TERM
+
+env PB_ARTIFACT_VERSION="$VERSION" sh "$PB_HOME/scripts/build.sh" \
+  --release --out "$WORK" >/dev/null
+ARTIFACT=$(find "$WORK" -maxdepth 1 -type f -name '*.tar.zst' | head -n 1)
+[ -n "$ARTIFACT" ] || { echo "release: FAIL - build produced no archive" >&2; exit 1; }
+
+if [ "$INJECT_FAILURE" -eq 1 ]; then
+  SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$PB_HOME" log -1 --pretty=%ct)}"
+  FAIL_ROOT=$(mktemp -d "$WORK/inject.XXXXXX")
+  tar --use-compress-program=unzstd -xf "$ARTIFACT" -C "$FAIL_ROOT"
+  PACKAGE_ROOT=$(find "$FAIL_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  [ -n "$PACKAGE_ROOT" ] || { echo "release: FAIL - cannot inject failure" >&2; exit 1; }
+  printf '#!/usr/bin/env sh\nexit 70\n' >"$PACKAGE_ROOT/bin/pbcli"
+  chmod +x "$PACKAGE_ROOT/bin/pbcli"
+  PACKAGE=$(basename "$PACKAGE_ROOT")
+  (
+    cd "$FAIL_ROOT"
+    tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
+      --format=gnu -cf - "$PACKAGE"
+  ) | zstd -19 --threads=1 --quiet -f -o "$ARTIFACT"
 fi
 
-# ---- Resolve paths ------------------------------------------------------------
+(cd "$WORK" && sha256sum "$(basename "$ARTIFACT")") >"$ARTIFACT.sha256"
+minisign -S -s "$PB_RELEASE_SIGNING_KEY" -m "$ARTIFACT" -x "$ARTIFACT.sig" \
+  -t "POWDERBURN $VERSION" >/dev/null
+minisign -V -q -p "$PB_RELEASE_SIGNING_KEY.pub" -m "$ARTIFACT" -x "$ARTIFACT.sig" ||
+  { echo "release: FAIL - signature self-verification failed" >&2; exit 1; }
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RELEASE_DIR="${PB_RELEASE_DIR:-/var/www/powderburn/releases}"
-TARGET_DIR="$ROOT_DIR/target/release"
-OUT_DIR="$RELEASE_DIR/v$VERSION"
-BINARY_NAME="powderburn"
-BINARY_PATH="$TARGET_DIR/$BINARY_NAME"
-SIGN_KEY="${PB_SIGN_KEY:-$HOME/.config/powderburn/release.key}"
-
-# ---- Idempotency check --------------------------------------------------------
-
-if [ -d "$OUT_DIR" ]; then
-    echo "error: release directory already exists: $OUT_DIR" >&2
-    echo "Refusing to overwrite an existing release." >&2
-    echo "Remove it manually if you intend to rebuild: rm -rf $OUT_DIR" >&2
-    exit 1
-fi
-
-# ---- Prerequisite check -------------------------------------------------------
-
-command -v cargo >/dev/null 2>&1 || { echo "error: cargo not found" >&2; exit 1; }
-command -v minisign >/dev/null 2>&1 || { echo "error: minisign not found" >&2; exit 1; }
-command -v sha256sum >/dev/null 2>&1 || { echo "error: sha256sum not found" >&2; exit 1; }
-
-if [ ! -f "$SIGN_KEY" ]; then
-    echo "error: signing key not found: $SIGN_KEY" >&2
-    echo "Generate one with: minisign -G -p $SIGN_KEY.pub -s $SIGN_KEY" >&2
-    exit 1
-fi
-
-# ---- Step 1: Build with --release ---------------------------------------------
-
-echo "=== Building $BINARY_NAME v$VERSION (release) ==="
-cd "$ROOT_DIR"
-
-CARGO_NET_OFFLINE="${CARGO_NET_OFFLINE:-true}" \
-    cargo build --release --package pb-core --package powderburn 2>&1
-
-if [ ! -f "$BINARY_PATH" ]; then
-    echo "error: build produced no binary at $BINARY_PATH" >&2
-    exit 1
-fi
-
-echo "Build complete: $BINARY_PATH"
-
-# ---- Step 2: Create output directory ------------------------------------------
-
-mkdir -p "$OUT_DIR"
-
-# ---- Step 3: Copy binary ------------------------------------------------------
-
-cp "$BINARY_PATH" "$OUT_DIR/$BINARY_NAME"
-echo "Copied binary to $OUT_DIR/$BINARY_NAME"
-
-# ---- Step 4: Create checksums -------------------------------------------------
-
-cd "$OUT_DIR"
-
-echo "=== Creating checksums ==="
-sha256sum "$BINARY_NAME" > "$BINARY_NAME.sha256"
-sha256sum --check "$BINARY_NAME.sha256"
-
-# Also create a combined checksums file with the version as context
-{
-    echo "# POWDERBURN v$VERSION checksums"
-    echo "# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    sha256sum "$BINARY_NAME"
-} > checksums.txt
-
-echo "Checksums created."
-
-# ---- Step 5: Sign with minisign -----------------------------------------------
-
-echo "=== Signing binary ==="
-minisign -Sm "$BINARY_NAME" -s "$SIGN_KEY" -t "POWDERBURN v$VERSION"
-
-if [ ! -f "$BINARY_NAME.minisig" ]; then
-    echo "error: minisign signature was not created" >&2
-    exit 1
-fi
-
-echo "Signature created: $BINARY_NAME.minisig"
-
-# Also sign the checksums file
-minisign -Sm checksums.txt -s "$SIGN_KEY" -t "POWDERBURN v$VERSION checksums"
-
-# ---- Step 6: Verify signature -------------------------------------------------
-
-echo "=== Verifying signature ==="
-PUB_KEY="${SIGN_KEY}.pub"
-if [ -f "$PUB_KEY" ]; then
-    minisign -Vm "$BINARY_NAME" -p "$PUB_KEY"
+if [ "$MODE" = dry-run ]; then
+  echo "release: dry-run ok"
 else
-    echo "warning: public key not found at $PUB_KEY — manual verification required" >&2
+  PUBLISH_TMP="$PB_RELEASE_DIR/.publishing-$VERSION-$$"
+  [ ! -e "$PUBLISH_TMP" ] ||
+    { echo "release: FAIL - temporary publish path exists: $PUBLISH_TMP" >&2; exit 1; }
+  mkdir "$PUBLISH_TMP"
+  cp "$ARTIFACT" "$ARTIFACT.sha256" "$ARTIFACT.sig" "$PUBLISH_TMP/"
+  cp "$PB_HOME/REFERENCE_MACHINE.txt" "$PUBLISH_TMP/"
+  cp "$PB_RELEASE_SIGNING_KEY.pub" "$PB_RELEASE_DIR/powderburn.pub"
+  HASH=$(sha256sum "$PUBLISH_TMP/$(basename "$ARTIFACT")" | awk '{print $1}')
+  BYTES=$(wc -c <"$PUBLISH_TMP/$(basename "$ARTIFACT")" | tr -d ' ')
+  TARGET=$(rustc -vV | sed -n 's/^host: //p')
+  TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  KEY_FINGERPRINT=$(sha256sum "$PB_RELEASE_SIGNING_KEY.pub" | awk '{print $1}')
+  awk -v version="$VERSION" '
+    $0 == "## [" version "]" { capture=1 }
+    capture && /^## \[/ && $0 != "## [" version "]" { exit }
+    capture { print }
+  ' "$PB_HOME/CHANGELOG.md" >"$PUBLISH_TMP/changelog-section.md"
+  [ -s "$PUBLISH_TMP/changelog-section.md" ] ||
+    { echo "release: FAIL - CHANGELOG has no section for $VERSION" >&2; exit 1; }
+  {
+    printf '# POWDERBURN %s\n\n' "$VERSION"
+    printf -- '- Target: `%s`\n' "$TARGET"
+    printf -- '- Artifact sha256: `%s`\n' "$HASH"
+    printf -- '- Minisign public-key sha256: `%s`\n' "$KEY_FINGERPRINT"
+    printf -- '- Save compatibility: compatible with saves whose format, ruleset, and content hashes match; otherwise loading is refused without migration.\n\n'
+    cat "$PUBLISH_TMP/changelog-section.md"
+  } >"$PUBLISH_TMP/NOTES.md"
+  rm "$PUBLISH_TMP/changelog-section.md"
+  mv "$PUBLISH_TMP" "$DEST"
+  printf '%s %s %s %s %s artifact=%s signature=%s\n' \
+    "$VERSION" "$TARGET" "$HASH" "$BYTES" "$TIMESTAMP" \
+    "$(basename "$ARTIFACT")" "$(basename "$ARTIFACT").sig" >>"$PB_RELEASE_DIR/index.txt"
+  ln -sfn "$VERSION" "$PB_RELEASE_DIR/current"
+  echo "publish: ok"
 fi
 
-# ---- Step 7: Update release index ---------------------------------------------
-
-echo "=== Updating release index ==="
-cd "$ROOT_DIR"
-scripts/make-release-index.sh "$RELEASE_DIR"
-
-echo ""
-echo "=== Release v$VERSION published successfully ==="
-echo "  Directory: $OUT_DIR"
-echo "  Binary:    $OUT_DIR/$BINARY_NAME"
-echo "  Checksum:  $OUT_DIR/$BINARY_NAME.sha256"
-echo "  Signature: $OUT_DIR/$BINARY_NAME.minisig"
-echo ""
-echo "To activate this release:"
-echo "  ln -sfn $OUT_DIR $RELEASE_DIR/current"
+echo "MANUAL STEP: itch.io publication"
+echo "butler push \"$DEST\" USER/GAME:linux --userversion \"$VERSION\""

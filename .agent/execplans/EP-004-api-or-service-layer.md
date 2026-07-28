@@ -190,15 +190,27 @@ COMMIT: git add -A && git commit -m "[EP-004][M6] feature-gated local replay ser
 `git reset --hard green/EP-003`. Delete `$PB_CACHE_DIR` freely; nothing there is authoritative.
 
 ## 11. Progress
-- [ ] M1 Argument parsing and the output module
-- [ ] M2 The journal, sim, and replay
-- [ ] M3 Campaign subcommands
-- [ ] M4 pbtool validate, golden, image, atlas
-- [ ] M5 The contract tests and bench and selftest
-- [ ] M6 The feature-gated replay server
+- [x] M1 Argument parsing and the output module
+- [x] M2 The journal, sim, and replay
+- [x] M3 Campaign subcommands
+- [x] M4 pbtool validate, golden, image, atlas
+- [x] M5 The contract tests and bench and selftest
+- [x] M6 The feature-gated replay server
 
 ## 12. Surprises and Discoveries
 
+- The inherited atlas command only counted inputs and image statistics counted encoded bytes.
+  Both were replaced with bounded PNG decoding and deterministic real RGBA atlas output.
+- `serve-replay` was absent. It is now an opt-in feature, loopback-only, bounded, and excluded from
+  the default release.
+
 ## 13. Decision Log
 
+- 2026-07-27: CLI output consumed by proofs is a stable contract. Development replay serving may
+  bind only `127.0.0.1` and may never be enabled in the shipped feature set.
+
 ## 14. Outcomes and Retrospective
+
+Completed. All pbcli and pbtool commands are functional, journal legality is enforced, authored
+campaign commands drive real state, atlas/image tools process actual pixels, and contract/error
+tests lock every proof-bearing output.

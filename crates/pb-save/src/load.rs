@@ -21,6 +21,28 @@ pub const MAX_SAVE_BYTES: u64 = 32 * 1024 * 1024;
 /// Maximum allowed number of ledger entries.
 pub const MAX_LEDGER_ENTRIES: usize = 4096;
 
+/// Whether a caller permits a structurally valid save with a broken Ledger
+/// chain to open in clearly labeled unverified mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerPolicy {
+    RequireVerified,
+    AllowUnverified,
+}
+
+/// Integrity state returned with every policy-aware load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerVerification {
+    Verified,
+    Unverified,
+}
+
+/// A decoded save and its explicit Ledger verification state.
+#[derive(Debug, Clone)]
+pub struct LoadedSave {
+    pub save: SaveFileData,
+    pub ledger_verification: LedgerVerification,
+}
+
 /// Read and verify a save file from disk.
 ///
 /// # Errors
@@ -40,6 +62,26 @@ pub fn read(
     ruleset_hash: &[u8; 32],
     content_hash: &[u8; 32],
 ) -> Result<SaveFileData, SaveError> {
+    read_with_policy(
+        path,
+        ruleset_hash,
+        content_hash,
+        LedgerPolicy::RequireVerified,
+    )
+    .map(|loaded| loaded.save)
+}
+
+/// Read a save under an explicit Ledger integrity policy.
+///
+/// Format, size, ruleset, and content mismatches are always refused. Only a
+/// validly decoded save whose Ledger hashes no longer chain may be returned as
+/// [`LedgerVerification::Unverified`].
+pub fn read_with_policy(
+    path: &Path,
+    ruleset_hash: &[u8; 32],
+    content_hash: &[u8; 32],
+    policy: LedgerPolicy,
+) -> Result<LoadedSave, SaveError> {
     let raw = std::fs::read(path)?;
 
     if raw.len() > MAX_SAVE_BYTES as usize {
@@ -47,6 +89,9 @@ pub fn read(
     }
 
     let save: SaveFileData = deserialize_save(&raw)?;
+    if save.format_version != 1 {
+        return Err(SaveError::Version);
+    }
 
     // Verify ruleset_hash
     let expected_ruleset = hex_to_bytes(&save.ruleset_hash)?;
@@ -62,18 +107,22 @@ pub fn read(
 
     // Rebuild the LedgerChain from stored entries and verify integrity.
     let chain = build_chain_from_data(&save.ledger_entries)?;
-    if !chain.verify_chain() {
-        return Err(SaveError::Tampered);
-    }
-
-    // Cross-check: the ledger_head_hash in the save must match the chain head.
+    // Cross-check both the links and the stored head. Invalid hash encoding
+    // remains a format refusal; only a well-formed mismatch can be unverified.
     let stored_head = hex_to_bytes(&save.ledger_head_hash)?;
     let computed_head = chain.head_hash();
-    if stored_head != computed_head {
+    let ledger_verification = if chain.verify_chain() && stored_head == computed_head {
+        LedgerVerification::Verified
+    } else if policy == LedgerPolicy::AllowUnverified {
+        LedgerVerification::Unverified
+    } else {
         return Err(SaveError::Tampered);
-    }
+    };
 
-    Ok(save)
+    Ok(LoadedSave {
+        save,
+        ledger_verification,
+    })
 }
 
 /// Build a [`LedgerChain`] from the serializable [`LedgerEntryData`] records

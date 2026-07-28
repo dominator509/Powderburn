@@ -70,6 +70,20 @@ pub struct Args {
     pub emit_metrics: bool,
     /// Whether capture should also run timing benchmark (--bench).
     pub capture_bench: bool,
+    /// Drive a campaign mission through the real kernel with deterministic
+    /// scripted tactics.
+    pub autoplay: bool,
+    /// Named recruited companion the hostile script must kill before the
+    /// company completes an autoplayed mission.
+    pub required_casualty: Option<String>,
+    /// Trace every AI candidate considered for this actor id or instance name.
+    pub trace_actor: Option<String>,
+    /// Trace all ten stages for shot commands.
+    pub trace_shot: bool,
+    /// Trace every counter-addressed RNG draw.
+    pub trace_rng: bool,
+    /// Loopback TCP port for the feature-gated replay server.
+    pub port: Option<u16>,
 }
 
 impl Args {
@@ -110,6 +124,12 @@ impl Args {
         let mut emit_metrics = false;
         let mut frames: Option<u64> = None;
         let mut capture_bench = false;
+        let mut autoplay = false;
+        let mut required_casualty: Option<String> = None;
+        let mut trace_actor: Option<String> = None;
+        let mut trace_shot = false;
+        let mut trace_rng = false;
+        let mut port: Option<u16> = None;
 
         let mut i = 1; // skip program name
         while i < raw.len() {
@@ -202,7 +222,7 @@ impl Args {
                     let val = raw.get(i).ok_or("--choice requires a value")?;
                     choice = Some(val.to_str().ok_or("--choice value not UTF-8")?.to_string());
                 }
-                "--suspend-at-tick" => {
+                "--suspend-at-tick" | "--tick" => {
                     i += 1;
                     let val = raw.get(i).ok_or("--suspend-at-tick requires a value")?;
                     let t: u64 = val
@@ -268,6 +288,43 @@ impl Args {
                 "--bench" => {
                     capture_bench = true;
                 }
+                "--autoplay" => {
+                    autoplay = true;
+                }
+                "--required-casualty" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--required-casualty requires a value")?;
+                    required_casualty = Some(
+                        val.to_str()
+                            .ok_or("--required-casualty value not UTF-8")?
+                            .to_string(),
+                    );
+                }
+                "--trace-actor" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--trace-actor requires a value")?;
+                    trace_actor = Some(
+                        val.to_str()
+                            .ok_or("--trace-actor value not UTF-8")?
+                            .to_string(),
+                    );
+                }
+                "--trace-shot" => {
+                    trace_shot = true;
+                }
+                "--trace-rng" => {
+                    trace_rng = true;
+                }
+                "--port" => {
+                    i += 1;
+                    let val = raw.get(i).ok_or("--port requires a value")?;
+                    port = Some(
+                        val.to_str()
+                            .ok_or("--port value not UTF-8")?
+                            .parse()
+                            .map_err(|e| format!("invalid port: {}", e))?,
+                    );
+                }
                 _ if arg.starts_with('-') => {
                     return Err(format!("unknown flag: {}", arg));
                 }
@@ -312,6 +369,107 @@ impl Args {
             choice,
             emit_metrics,
             capture_bench,
+            autoplay,
+            required_casualty,
+            trace_actor,
+            trace_shot,
+            trace_rng,
+            port,
         })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_complete_locked_flag_surface() {
+        let raw = [
+            "pbcli",
+            "sim",
+            "--content-root",
+            "content",
+            "--journal",
+            "turns.jrnl",
+            "--scenario",
+            "prov_full_battle",
+            "--out",
+            "frame.png",
+            "--resume",
+            "resume.pbsave",
+            "--save",
+            "campaign.pbsave",
+            "--seed",
+            "1867",
+            "--emit-hash",
+            "--emit-events",
+            "--emit-outcome",
+            "--emit-manifest",
+            "--emit-budget",
+            "--dangling-refs",
+            "--from-new",
+            "--script",
+            "branch.script",
+            "--adapter",
+            "gl",
+            "--choice",
+            "warn_adobe_walls",
+            "--suspend-at-tick",
+            "144",
+            "--expect",
+            "deadbeef",
+            "--iterations",
+            "20",
+            "--bench-scenario",
+            "prov_sixty_actors",
+            "--asset-root",
+            "assets",
+            "--golden",
+            "golden.hash",
+            "--image",
+            "capture.png",
+            "--atlas-output",
+            "atlas.png",
+            "--emit-metrics",
+            "--frames",
+            "60",
+            "--bench",
+            "--autoplay",
+            "--required-casualty",
+            "c_whitehorse",
+            "--trace-actor",
+            "e_shooter",
+            "--trace-shot",
+            "--trace-rng",
+            "--port",
+            "7878",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let args = Args::parse(raw).expect("complete flag surface");
+        assert_eq!(args.subcommand, "sim");
+        assert_eq!(args.seed, Some(1867));
+        assert_eq!(args.suspend_at_tick, Some(144));
+        assert_eq!(args.iterations, Some(20));
+        assert_eq!(args.frames, Some(60));
+        assert_eq!(args.port, Some(7878));
+        assert!(args.emit_hash && args.emit_events && args.emit_metrics);
+        assert!(args.autoplay && args.trace_shot && args.trace_rng);
+        assert_eq!(args.trace_actor.as_deref(), Some("e_shooter"));
+        assert_eq!(args.required_casualty.as_deref(), Some("c_whitehorse"));
+    }
+
+    #[test]
+    fn rejects_unknown_and_malformed_values() {
+        let unknown = vec![OsString::from("pbcli"), OsString::from("--unknown")];
+        assert!(Args::parse(unknown).is_err());
+        let malformed = ["pbcli", "sim", "--frames", "many"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        assert!(Args::parse(malformed).is_err());
     }
 }

@@ -1,58 +1,64 @@
-//! Image subcommand for pbtool.
-//! Reads PNG files and reports unique colors and dimensions.
+//! PNG image inspection for pbtool.
 
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 
-/// Run `pbtool image stats`.
+const MAX_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Decode a PNG and report its real dimensions and unique decoded colors.
 pub fn image_stats(image_path: &Path) -> Result<(), String> {
-    let data = fs::read(image_path).map_err(|e| format!("cannot read image file: {}", e))?;
-
-    // Parse PNG dimensions from header
-    // PNG format: 8-byte magic, then IHDR chunk (4-byte length, "IHDR", 4-byte width, 4-byte height)
-    if data.len() < 24 {
-        return Err("file too small to be a PNG".to_string());
+    let metadata = std::fs::metadata(image_path)
+        .map_err(|error| format!("cannot stat image file: {error}"))?;
+    if metadata.len() > MAX_IMAGE_BYTES {
+        return Err(format!("image exceeds {MAX_IMAGE_BYTES} byte limit"));
     }
-
-    if &data[..8] != b"\x89PNG\r\n\x1a\n" {
-        return Err("not a valid PNG file".to_string());
-    }
-
-    // IHDR chunk: starts at byte 16 (after magic + chunk length)
-    let width = u32::from_be_bytes([data[16], data[17], data[18], data[19]]);
-    let height = u32::from_be_bytes([data[20], data[21], data[22], data[23]]);
-
-    println!("{} {}x{}", output::DIMENSIONS, width, height);
-
-    // Count unique colors by scanning IDAT pixel data
-    // This is a simple heuristic: we scan for unique bytes as a proxy
-    let unique_colors = count_unique_colors(&data);
-
+    let file =
+        File::open(image_path).map_err(|error| format!("cannot read image file: {error}"))?;
+    let mut decoder = png::Decoder::new(BufReader::new(file));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| format!("not a valid PNG file: {error}"))?;
+    let mut data = vec![0_u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut data)
+        .map_err(|error| format!("cannot decode PNG pixels: {error}"))?;
+    let channels = match info.color_type {
+        png::ColorType::Grayscale => 1,
+        png::ColorType::GrayscaleAlpha => 2,
+        png::ColorType::Rgb => 3,
+        png::ColorType::Rgba => 4,
+        png::ColorType::Indexed => {
+            return Err("indexed PNG remained indexed after expansion".to_string());
+        }
+    };
+    let unique_colors = data[..info.buffer_size()]
+        .chunks_exact(channels)
+        .map(|pixel| pixel.to_vec())
+        .collect::<BTreeSet<_>>()
+        .len();
+    println!("{} {}x{}", output::DIMENSIONS, info.width, info.height);
     println!("{}{}", output::UNIQUE_COLORS, unique_colors);
-
     Ok(())
 }
 
-/// Count unique color values in PNG pixel data (simple heuristic).
-fn count_unique_colors(data: &[u8]) -> usize {
-    let mut colors = BTreeSet::new();
-
-    // Scan the raw byte data for unique 3-byte sequences (RGB)
-    // This is a simplified approach that looks at the raw file bytes
-    let mut i = 8; // skip PNG magic
-    while i + 3 <= data.len() {
-        // Collect 3-byte chunks as potential RGB values
-        let rgb = [data[i], data[i + 1], data[i + 2]];
-        colors.insert(rgb);
-        i += 3;
-    }
-
-    colors.len()
-}
-
-/// Sentinel output constants.
 mod output {
     pub const UNIQUE_COLORS: &str = "unique-colors: ";
-    pub const DIMENSIONS: &str = "dimensions: ";
+    pub const DIMENSIONS: &str = "dimensions:";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_png_input() {
+        let path = std::env::temp_dir().join(format!("powderburn-not-png-{}", std::process::id()));
+        assert!(std::fs::write(&path, b"not png").is_ok());
+        let error = image_stats(&path);
+        assert!(error.is_err());
+        let _ = std::fs::remove_file(path);
+    }
 }

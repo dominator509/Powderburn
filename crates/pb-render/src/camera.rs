@@ -47,16 +47,19 @@ impl IsoCamera {
 
     /// Get the orthographic projection matrix as 16 f32s (column-major).
     pub fn ortho_matrix(&self) -> [f32; 16] {
-        let left = -self.viewport_width * 0.5 / self.zoom;
-        let right = self.viewport_width * 0.5 / self.zoom;
-        let bottom = -self.viewport_height * 0.5 / self.zoom;
-        let top = self.viewport_height * 0.5 / self.zoom;
+        let half_width = self.viewport_width * 0.5 / self.zoom;
+        let half_height = self.viewport_height * 0.5 / self.zoom;
+        let left = self.center_x - half_width;
+        let right = self.center_x + half_width;
+        let bottom = self.center_y - half_height;
+        let top = self.center_y + half_height;
         let near = -1000.0;
         let far = 1000.0;
 
         let rcp_w = 1.0 / (right - left);
         let rcp_h = 1.0 / (top - bottom);
-        let rcp_d = 1.0 / (far - near);
+        // WebGPU's clip-space depth is 0..1, not OpenGL's -1..1.
+        let rcp_d = 1.0 / (near - far);
 
         [
             2.0 * rcp_w,
@@ -69,11 +72,11 @@ impl IsoCamera {
             0.0,
             0.0,
             0.0,
-            -2.0 * rcp_d,
+            rcp_d,
             0.0,
             -(right + left) * rcp_w,
             -(top + bottom) * rcp_h,
-            -(far + near) * rcp_d,
+            near * rcp_d,
             1.0,
         ]
     }
@@ -87,5 +90,31 @@ impl IsoCamera {
             bytes[i * 4..(i + 1) * 4].copy_from_slice(&f_bytes);
         }
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IsoCamera;
+
+    #[test]
+    fn ortho_depth_keeps_all_render_layers_in_webgpu_clip_range() {
+        let matrix = IsoCamera::new(1920, 1080).ortho_matrix();
+        for z in [0.0_f32, 5.0, 10.0, 120.0] {
+            let clip_z = matrix[10] * z + matrix[14];
+            assert!((0.0..=1.0).contains(&clip_z), "z={z} clipped at {clip_z}");
+        }
+    }
+
+    #[test]
+    fn ortho_matrix_applies_camera_center() {
+        let mut camera = IsoCamera::new(1920, 1080);
+        camera.center_x = 128.0;
+        camera.center_y = 240.0;
+        let matrix = camera.ortho_matrix();
+        let clip_x = matrix[0] * camera.center_x + matrix[12];
+        let clip_y = matrix[5] * camera.center_y + matrix[13];
+        assert!(clip_x.abs() < 0.0001);
+        assert!(clip_y.abs() < 0.0001);
     }
 }

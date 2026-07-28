@@ -49,7 +49,7 @@ impl SpriteVertex {
 }
 
 /// A sprite instance to render.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpriteInstance {
     pub x: f32,
     pub y: f32,
@@ -61,6 +61,10 @@ pub struct SpriteInstance {
     pub b: f32,
     pub a: f32,
     pub visible: bool,
+    pub u0: f32,
+    pub v0: f32,
+    pub u1: f32,
+    pub v1: f32,
 }
 
 impl SpriteInstance {
@@ -76,7 +80,27 @@ impl SpriteInstance {
             b: 1.0,
             a: 1.0,
             visible: true,
+            u0: 0.0,
+            v0: 0.0,
+            u1: 0.25,
+            v1: 0.5,
         }
+    }
+
+    /// Select one cell from the bundled 4x2 frontier company atlas.
+    pub fn set_atlas_cell(&mut self, column: u8, row: u8) {
+        let column = column.min(3) as f32;
+        let row = row.min(1) as f32;
+        self.u0 = column * 0.25;
+        self.v0 = row * 0.5;
+        self.u1 = self.u0 + 0.25;
+        self.v1 = self.v0 + 0.5;
+    }
+
+    /// Select one of the eight company identities by a stable zero-based index.
+    pub fn set_character(&mut self, index: u32) {
+        let index = index % 8;
+        self.set_atlas_cell((index % 4) as u8, (index / 4) as u8);
     }
 }
 
@@ -101,12 +125,53 @@ impl SpriteSystem {
         sprites: &[SpriteInstance],
         camera_matrix_bytes: &[u8; 64],
     ) -> Self {
-        // Build a 1x1 white placeholder texture for tinted flat-color sprites
+        Self::new_with_atlas(
+            device,
+            sprites,
+            camera_matrix_bytes,
+            include_bytes!("../../../assets/sprites/frontier_company_atlas_v2.png"),
+            "frontier company atlas",
+        )
+    }
+
+    /// Create a sprite system backed by a caller-selected PNG atlas.
+    ///
+    /// This keeps actor and environmental-prop rendering on one GPU path while
+    /// allowing each presentation layer to use its own atlas.
+    pub fn new_with_atlas(
+        device: &Arc<RenderDevice>,
+        sprites: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+        atlas_bytes: &[u8],
+        atlas_label: &str,
+    ) -> Self {
+        let decoded_atlas =
+            match image::load_from_memory_with_format(atlas_bytes, image::ImageFormat::Png) {
+                Ok(image) => image.to_rgba8(),
+                Err(_) => image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 255, 255])),
+            };
+        // Keep atlas cells at least twice their normal display size while
+        // bounding texture working sets for llvmpipe and low-memory GPUs.
+        let atlas = if decoded_atlas.width() > 768 || decoded_atlas.height() > 512 {
+            let scale =
+                (768.0 / decoded_atlas.width() as f32).min(512.0 / decoded_atlas.height() as f32);
+            let width = (decoded_atlas.width() as f32 * scale).round().max(1.0) as u32;
+            let height = (decoded_atlas.height() as f32 * scale).round().max(1.0) as u32;
+            image::imageops::resize(
+                &decoded_atlas,
+                width,
+                height,
+                image::imageops::FilterType::Triangle,
+            )
+        } else {
+            decoded_atlas
+        };
+        let (atlas_width, atlas_height) = atlas.dimensions();
         let texture = device.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("sprite placeholder texture"),
+            label: Some(atlas_label),
             size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
+                width: atlas_width,
+                height: atlas_height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -124,14 +189,12 @@ impl SpriteSystem {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
-        // Write white pixel to texture
-        let white_pixel: [u8; 4] = [255, 255, 255, 255];
         device.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -139,15 +202,15 @@ impl SpriteSystem {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &white_pixel,
+            atlas.as_raw(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4),
-                rows_per_image: Some(1),
+                bytes_per_row: Some(atlas_width * 4),
+                rows_per_image: Some(atlas_height),
             },
             wgpu::Extent3d {
-                width: 1,
-                height: 1,
+                width: atlas_width,
+                height: atlas_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -170,10 +233,11 @@ impl SpriteSystem {
             };
 
             let base = vertices.len() as u32;
-            vertices.push(vtx(-half_w, -half_h, 0.0, 0.0));
-            vertices.push(vtx(half_w, -half_h, 1.0, 0.0));
-            vertices.push(vtx(half_w, half_h, 1.0, 1.0));
-            vertices.push(vtx(-half_w, half_h, 0.0, 1.0));
+            // World-space +Y points up, while image V=0 is the atlas top.
+            vertices.push(vtx(-half_w, -half_h, sprite.u0, sprite.v1));
+            vertices.push(vtx(half_w, -half_h, sprite.u1, sprite.v1));
+            vertices.push(vtx(half_w, half_h, sprite.u1, sprite.v0));
+            vertices.push(vtx(-half_w, half_h, sprite.u0, sprite.v0));
             indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
         }
 
@@ -336,6 +400,9 @@ impl SpriteSystem {
 
     /// Draw all sprites. Must be called inside a render pass.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
+        if self.num_indices == 0 {
+            return;
+        }
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

@@ -1,23 +1,20 @@
-//! A signed 32-bit fixed-point number with 16 fractional bits (Q16.16).
+//! A signed 32-bit fixed-point number with 10 fractional bits.
 //!
-//! Provides deterministic arithmetic (no floating-point) for the simulation kernel.
+//! Provides deterministic, integer-only arithmetic for the simulation kernel.
 //! All operations are pure integer math, fully deterministic across runs.
 
 use std::ops;
 
-/// A 32-bit fixed-point number with 16 fractional bits (Q16.16).
+/// A 32-bit fixed-point number with 10 fractional bits.
 ///
-/// Range: approximately ±32767.99998
-/// Precision: 1/65536 ≈ 0.000015
+/// One unit is exactly 1/1024.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Fix32(i32);
 
 /// The number of fractional bits.
-pub const FRAC_BITS: i32 = 16;
-/// The multiplier to convert between Fix32 and integer (2^16).
-pub const SCALE: i32 = 65536;
-/// The scale as a floating-point value for display purposes.
-pub const SCALE_F64: f64 = 65536.0;
+pub const FRAC_BITS: i32 = 10;
+/// The multiplier to convert between Fix32 and integer (2^10).
+pub const SCALE: i32 = 1024;
 
 impl Fix32 {
     /// The zero value.
@@ -37,25 +34,17 @@ impl Fix32 {
         Fix32(val * SCALE)
     }
 
-    /// Create a Fix32 from a floating-point value (for testing/initialization only).
-    ///
-    /// # Panics
-    /// Panics if the value overflows i32 when scaled.
-    #[allow(clippy::float_arithmetic)]
-    pub fn from_f64(val: f64) -> Self {
-        let scaled = (val * SCALE_F64).round() as i64;
-        Fix32(scaled as i32)
+    /// Create a Fix32 from an integer ratio, truncating toward zero.
+    pub fn from_ratio(numerator: i32, denominator: i32) -> Self {
+        assert!(denominator != 0, "Fix32 ratio denominator is zero");
+        let scaled = i64::from(numerator) << FRAC_BITS;
+        let raw = scaled / i64::from(denominator);
+        Fix32(raw.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
     }
 
     /// Get the raw internal representation.
     pub const fn raw(self) -> i32 {
         self.0
-    }
-
-    /// Convert to a floating-point value (for display/reporting only, never in kernel logic).
-    #[allow(clippy::float_arithmetic)]
-    pub fn to_f64(self) -> f64 {
-        self.0 as f64 / SCALE_F64
     }
 
     /// Truncate to integer (toward zero).
@@ -103,7 +92,7 @@ impl Fix32 {
         let a = self.0 as i64;
         let b = rhs.0 as i64;
         let prod = a * b;
-        // Scale back down by shifting right 16 bits
+        // Arithmetic right shift rounds negative products toward negative infinity.
         let result = prod >> FRAC_BITS;
         // Check for overflow when converting back to i32
         if result > i32::MAX as i64 || result < i32::MIN as i64 {
@@ -120,7 +109,7 @@ impl Fix32 {
         }
         let a = self.0 as i64;
         let b = rhs.0 as i64;
-        // Shift numerator up by 16 bits for division
+        // Shift the numerator up by the fixed-point precision.
         let scaled = a << FRAC_BITS;
         let result = scaled / b;
         if result > i32::MAX as i64 || result < i32::MIN as i64 {
@@ -201,10 +190,21 @@ impl ops::Mul for Fix32 {
 impl ops::Div for Fix32 {
     type Output = Self;
     fn div(self, rhs: Self) -> Self {
+        if rhs.0 == 0 {
+            if cfg!(debug_assertions) {
+                panic!("Fix32 division by zero");
+            }
+            return if self.0 < 0 {
+                Fix32(i32::MIN)
+            } else {
+                Fix32(i32::MAX)
+            };
+        }
         let a = self.0 as i64;
         let b = rhs.0 as i64;
         let scaled = a << FRAC_BITS;
-        Fix32((scaled / b) as i32)
+        let quotient = scaled / b;
+        Fix32(quotient.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
     }
 }
 
@@ -241,7 +241,15 @@ impl ops::DivAssign for Fix32 {
 
 impl std::fmt::Display for Fix32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.4}", self.to_f64())
+        let raw = i64::from(self.0);
+        let magnitude = raw.abs();
+        let whole = magnitude / i64::from(SCALE);
+        let fraction = (magnitude % i64::from(SCALE)) * 10_000 / i64::from(SCALE);
+        if raw < 0 {
+            write!(f, "-{whole}.{fraction:04}")
+        } else {
+            write!(f, "{whole}.{fraction:04}")
+        }
     }
 }
 
@@ -271,62 +279,58 @@ mod tests {
 
     #[test]
     fn test_from_int() {
-        assert_eq!(Fix32::from_int(5).to_f64(), 5.0);
-        assert_eq!(Fix32::from_int(-3).to_f64(), -3.0);
+        assert_eq!(Fix32::from_int(5).raw(), 5 * SCALE);
+        assert_eq!(Fix32::from_int(-3).raw(), -3 * SCALE);
     }
 
     #[test]
-    fn test_from_f64() {
-        let a = Fix32::from_f64(1.5);
-        assert!((a.to_f64() - 1.5).abs() < 0.001);
+    fn test_from_ratio() {
+        assert_eq!(Fix32::from_ratio(3, 2).raw(), SCALE + SCALE / 2);
     }
 
     #[test]
     fn test_add() {
         let a = Fix32::from_int(3);
         let b = Fix32::from_int(4);
-        assert_eq!((a + b).to_f64(), 7.0);
+        assert_eq!(a + b, Fix32::from_int(7));
     }
 
     #[test]
     fn test_sub() {
         let a = Fix32::from_int(10);
         let b = Fix32::from_int(3);
-        assert_eq!((a - b).to_f64(), 7.0);
+        assert_eq!(a - b, Fix32::from_int(7));
     }
 
     #[test]
     fn test_mul() {
-        let a = Fix32::from_int(5);
-        let b = Fix32::from_int(3);
-        let c = a * b;
-        assert!((c.to_f64() - 15.0).abs() < 0.001);
+        assert_eq!(
+            Fix32::from_ratio(3, 2) * Fix32::from_int(2),
+            Fix32::from_int(3)
+        );
     }
 
     #[test]
     fn test_div() {
-        let a = Fix32::from_int(10);
-        let b = Fix32::from_int(3);
-        let c = a / b;
-        assert!((c.to_f64() - 3.3333).abs() < 0.001);
+        assert_eq!(
+            Fix32::from_int(3) / Fix32::from_int(2),
+            Fix32::from_ratio(3, 2)
+        );
     }
 
     #[test]
     fn test_trunc() {
-        let a = Fix32::from_f64(3.75);
+        let a = Fix32::from_ratio(15, 4);
         assert_eq!(a.trunc(), 3);
-        let b = Fix32::from_f64(-3.75);
+        let b = Fix32::from_ratio(-15, 4);
         assert_eq!(b.trunc(), -3);
     }
 
     #[test]
     fn test_round() {
-        let a = Fix32::from_f64(3.4);
-        assert_eq!(a.round(), 3);
-        let b = Fix32::from_f64(3.6);
-        assert_eq!(b.round(), 4);
-        let c = Fix32::from_f64(-3.4);
-        assert_eq!(c.round(), -3);
+        assert_eq!(Fix32::from_ratio(17, 5).round(), 3);
+        assert_eq!(Fix32::from_ratio(18, 5).round(), 4);
+        assert_eq!(Fix32::from_ratio(-17, 5).round(), -3);
     }
 
     #[test]
@@ -344,14 +348,10 @@ mod tests {
 
     #[test]
     fn test_determinism() {
-        // Fixed-point math must produce the same result every time
-        let a = Fix32::from_f64(1.5);
-        let b = Fix32::from_f64(2.25);
+        let a = Fix32::from_ratio(3, 2);
+        let b = Fix32::from_ratio(9, 4);
         let c = (a * b) / (a + b);
-        let _expected = Fix32::from_raw(229);
-        // Just verify it's deterministic - no floating-point involved
-        assert!(c.raw() != 0);
-        assert!((c.to_f64() - (1.5 * 2.25 / (1.5 + 2.25))).abs() < 0.01);
+        assert_eq!(c.raw(), 921);
     }
 
     #[test]
@@ -367,9 +367,9 @@ mod tests {
     fn test_lerp() {
         let start = Fix32::from_int(0);
         let end = Fix32::from_int(10);
-        let half = Fix32::from_f64(0.5);
+        let half = Fix32::from_ratio(1, 2);
         let mid = start.lerp(end, half);
-        assert!((mid.to_f64() - 5.0).abs() < 0.01);
+        assert_eq!(mid, Fix32::from_int(5));
     }
 
     #[test]
@@ -383,13 +383,20 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let v = Fix32::from_f64(std::f64::consts::PI);
+        let v = Fix32::from_ratio(22, 7);
         let raw = v.raw();
         let back = Fix32::from_raw(raw);
         assert_eq!(v, back);
     }
+
+    #[test]
+    fn multiplication_rounds_negative_infinity() {
+        let tiny_negative = Fix32::from_raw(-1);
+        assert_eq!((tiny_negative * Fix32::from_ratio(1, 2)).raw(), -1);
+    }
+
+    #[test]
+    fn display_uses_integer_formatting() {
+        assert_eq!(Fix32::from_ratio(-3, 2).to_string(), "-1.5000");
+    }
 }
-
-// TODO: this is a deliberate test marker for reality-gate
-
-// FIXME: deliberate test marker for reality-gate
