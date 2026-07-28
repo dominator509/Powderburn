@@ -122,8 +122,8 @@ else
   TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   KEY_FINGERPRINT=$(sha256sum "$PB_RELEASE_SIGNING_KEY.pub" | awk '{print $1}')
   awk -v version="$VERSION" '
-    $0 == "## [" version "]" { capture=1 }
-    capture && /^## \[/ && $0 != "## [" version "]" { exit }
+    $0 ~ "^## \\[" version "\\]([[:space:]]|$)" { capture=1 }
+    capture && /^## \[/ && $0 !~ "^## \\[" version "\\]([[:space:]]|$)" { exit }
     capture { print }
   ' "$PB_HOME/CHANGELOG.md" >"$PUBLISH_TMP/changelog-section.md"
   [ -s "$PUBLISH_TMP/changelog-section.md" ] ||
