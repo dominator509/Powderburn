@@ -1,6 +1,15 @@
 (
   id: "scn_m13_divide_crossing",
   display_name: "Divide Crossing",
+  briefing: [
+    "Ames's survey party found the Ring's planned corridor: seized homesteads joined into one private route across the Divide. Teague's gunmen trapped the party in the pass.",
+    "Open the crossing and bring the surveyors out. The map matters, but the people who drew it matter first.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Ames", text:"I drew clean lines for dirty men. These surveyors should not die correcting my work.", voice:Some("m13_01_ames.wav")),
+    (speaker:"Mercer", text:"Then quit confessing and cover the north wall. We bring them home.", voice:Some("m13_02_mercer.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1872-08-14",
   map: (
     width: 24,

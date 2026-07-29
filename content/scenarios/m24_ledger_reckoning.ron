@@ -1,6 +1,15 @@
 (
   id: "scn_m24_ledger_reckoning",
-  display_name: "The Ledger Reckoning",
+  display_name: "Teague's Counting Room",
+  briefing: [
+    "Eleven years after Elk Creek, Silas Teague has retreated to the counting room where the Ring priced land, labor, silence, and death. Federal warrants are finally possible—but only if Teague and his master records survive the night.",
+    "This is not a battle for Elias's book. It is the last chance for Naomi, Whitehorse, Wen, Ruelas, and every surviving witness to decide what justice can still mean.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Silas Teague", text:"Ward, you built a religion from a bookkeeping error. Come upstairs and learn what the country actually costs.", voice:Some("m24_01_teague.wav")),
+    (speaker:"Elias Ward", text:"No sermon. No absolution. We bring you out alive, and the people you priced speak for themselves.", voice:Some("m24_02_elias.wav")),
+  ],
+  score: Some("hard_road.wav"),
   date: "1878-11-11",
   map: (
     width: 24,

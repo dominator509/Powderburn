@@ -1,6 +1,16 @@
 (
   id: "scn_m06_smoky_hill_station",
   display_name: "Smoky Hill Station",
+  briefing: [
+    "The cipher points to a mail strongbox crossing Smoky Hill Station. Inside are Army procurement seals Teague used to turn stolen payroll into legal-looking land purchases.",
+    "Station keeper Miriam Cole hid the box when Ring riders arrived. Now she and the night crew are trapped in the yard.",
+    "Hold the station, get the workers out, and recover the seals. The proof matters because living people are waiting behind it.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Naomi Freed", text:"We save the station hands first. Paper does not bleed.", voice:Some("m06_01_naomi.wav")),
+    (speaker:"Elias Ward", text:"People first. Strongbox second. Teague's men last.", voice:Some("m06_02_elias.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1867-09-03",
   map: (
     width: 24,

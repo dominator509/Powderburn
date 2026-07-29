@@ -11,13 +11,16 @@ use std::sync::Arc;
 use pb_core::event::HitLocationType;
 use pb_core::metrics::MetricsRegistry;
 use pb_render::device::RenderDevice;
-use pb_render::text::{fit_text, layout_wrapped_text, BitmapFont, TextRenderer, GLYPH_H};
+use pb_render::text::{
+    fit_text, layout_wrapped_text, BitmapFont, TextLineLayout, TextRenderer, GLYPH_H,
+};
 use pb_render::ui_contract::{
     HUD_ACTION_SELECTED, HUD_ACTION_TARGETING, HUD_INSTRUCTION_IDLE, HUD_INSTRUCTION_SELECTED,
     HUD_INSTRUCTION_TARGETING,
 };
 
-use crate::combat::compute_hit_chance_for_hover;
+use crate::combat::{battle_action_layout, compute_hit_chance_for_hover, BattleHudAction};
+use crate::menu::{button_layout, MenuButton};
 use crate::state::{GameScreen, GameState, InteractionPhase};
 
 // ── Layout constants (all in pixel coords) ─────────────────────────────
@@ -38,6 +41,71 @@ const MARGIN: f32 = 12.0;
 const HP_BAR_W: f32 = 120.0;
 /// Height of the health bar.
 const HP_BAR_H: f32 = 10.0;
+const TITLE_MENU_LINES: &[&str] = &["THE ELK CREEK RECKONING"];
+
+#[derive(Debug)]
+struct OverlayLayout {
+    title_scale: f32,
+    body_scale: f32,
+    top: f32,
+    title_gap: f32,
+    line_height: f32,
+    lines: Vec<Option<TextLineLayout>>,
+}
+
+fn overlay_layout(
+    lines: &[&str],
+    requested_body_scale: f32,
+    screen_w: f32,
+    screen_h: f32,
+    horizontal_margin: f32,
+    vertical_margin: f32,
+) -> OverlayLayout {
+    let max_width = (screen_w - horizontal_margin * 2.0).max(1.0);
+    let mut body_scale = requested_body_scale.max(1.5);
+
+    let calculate = |scale: f32| {
+        let wrapped = lines
+            .iter()
+            .flat_map(|line| {
+                if line.is_empty() {
+                    vec![None]
+                } else {
+                    layout_wrapped_text(line, scale, max_width)
+                        .into_iter()
+                        .map(Some)
+                        .collect()
+                }
+            })
+            .collect::<Vec<_>>();
+        let title_scale = (scale * 1.75).min(requested_body_scale * 1.75);
+        let title_gap = (scale * 8.0).clamp(12.0, 28.0);
+        let line_height = GLYPH_H as f32 * scale + 8.0;
+        let content_height =
+            GLYPH_H as f32 * title_scale + title_gap + line_height * wrapped.len() as f32;
+        (wrapped, title_scale, title_gap, line_height, content_height)
+    };
+
+    let mut calculated = calculate(body_scale);
+    let available_height = (screen_h - vertical_margin * 2.0).max(1.0);
+    while calculated.4 > available_height && body_scale > 1.5 {
+        body_scale = (body_scale - 0.25).max(1.5);
+        calculated = calculate(body_scale);
+    }
+
+    let preferred_top = screen_h * 0.16;
+    let latest_top = (screen_h - vertical_margin - calculated.4).max(vertical_margin);
+    let top = preferred_top.min(latest_top).max(vertical_margin);
+
+    OverlayLayout {
+        title_scale: calculated.1,
+        body_scale,
+        top,
+        title_gap: calculated.2,
+        line_height: calculated.3,
+        lines: calculated.0,
+    }
+}
 
 // ═════════════════════════════════════════════════════════════════════════
 // Rectangle rendering (background bars, health bars)
@@ -274,7 +342,7 @@ impl HudRenderer {
         let turn_text = if has_sim {
             "YOUR TURN"
         } else {
-            "NO SIMULATION"
+            "BATTLE LOADING"
         };
 
         // ── Sequence strip (top of screen) ────────────────────────────
@@ -286,8 +354,8 @@ impl HudRenderer {
                 game_state.sim.as_ref().and_then(|sim| {
                     sim.actors.get(&id).map(|a| {
                         format!(
-                            "{}  HP: {}/{}  AP: {}/{}",
-                            a.name, a.hit_points, a.max_hp, a.ap.0, a.max_hp
+                            "{}  |  HEALTH {}/{}  |  ACTION POINTS {}",
+                            a.name, a.hit_points, a.max_hp, a.ap.0
                         )
                     })
                 })
@@ -347,14 +415,72 @@ impl HudRenderer {
             color: palette.background,
         });
 
-        // Top bar background (thin strip for turn indicator + selection).
+        // Two-row combat header. Keeping initiative and selected-unit details
+        // on separate rows prevents the debug-like pile-up the old 44 px strip
+        // caused at common window sizes.
         rects.push(HudRect {
             x: 0.0,
             y: 0.0,
             w: sw,
-            h: 44.0,
+            h: 68.0,
             color: palette.background,
         });
+
+        // Mouse-first tactical command bar.
+        let action_buttons = if matches!(
+            game_state.phase,
+            InteractionPhase::SelectedActor(_) | InteractionPhase::Targeting { .. }
+        ) {
+            battle_action_layout(screen_w, screen_h)
+        } else {
+            Vec::new()
+        };
+        for (action, _, [x, y, width, height]) in &action_buttons {
+            let hovered = game_state.mouse_x >= f64::from(*x)
+                && game_state.mouse_x <= f64::from(*x + *width)
+                && game_state.mouse_y >= f64::from(*y)
+                && game_state.mouse_y <= f64::from(*y + *height);
+            let selected = matches!(
+                (game_state.phase, action),
+                (
+                    InteractionPhase::Targeting {
+                        action: crate::state::PlayerAction::SnapShot,
+                        ..
+                    },
+                    BattleHudAction::Fire
+                ) | (
+                    InteractionPhase::Targeting {
+                        action: crate::state::PlayerAction::AimedShot,
+                        ..
+                    },
+                    BattleHudAction::Aim
+                )
+            );
+            let alpha = if selected {
+                0.92
+            } else if hovered {
+                0.68
+            } else {
+                0.88
+            };
+            let color = if selected || hovered {
+                [
+                    palette.accent[0],
+                    palette.accent[1],
+                    palette.accent[2],
+                    alpha,
+                ]
+            } else {
+                [0.055, 0.045, 0.035, alpha]
+            };
+            rects.push(HudRect {
+                x: *x,
+                y: *y,
+                w: *width,
+                h: *height,
+                color,
+            });
+        }
 
         // Health bar for selected actor (bottom-left of the HUD bar).
         if selected_info.is_some() {
@@ -449,6 +575,7 @@ impl HudRenderer {
             // 1. Background rectangles.
             self.rect_renderer
                 .render_rects(&render_device.queue, &mut rpass, &rects, sw, sh);
+            let mut text_meshes = Vec::new();
 
             // 2. Turn indicator (top-left, small).
             let turn_mesh = font.render_text(
@@ -460,50 +587,63 @@ impl HudRenderer {
                 sw,
                 sh,
             );
-            self.text_renderer
-                .render(&render_device.queue, &mut rpass, &turn_mesh);
+            text_meshes.push(turn_mesh);
 
-            // 3. Sequence strip (top, next to turn indicator)
+            // Mouse-first tactical command labels.
+            let action_scale = (1.35 * text_multiplier).clamp(1.05, 1.75);
+            for (_, label, [x, y, width, height]) in &action_buttons {
+                let label_x = x + (width - font.text_width(label, action_scale)) * 0.5;
+                let label_y = y + (height - GLYPH_H as f32 * action_scale) * 0.5;
+                text_meshes.push(font.render_text(
+                    label,
+                    label_x,
+                    label_y,
+                    action_scale,
+                    palette.text,
+                    sw,
+                    sh,
+                ));
+            }
+
+            // 3. Plain-language turn order (top row, after turn indicator).
             if !sequence_text.is_empty() {
                 let sequence_text =
-                    fit_text(&sequence_text, txt_scale_small, (sw - 420.0).max(120.0));
+                    fit_text(&sequence_text, txt_scale_small, (sw - 150.0).max(120.0));
                 let seq_mesh = font.render_text(
                     &sequence_text,
-                    MARGIN + 90.0,
+                    MARGIN + 112.0,
                     8.0,
                     txt_scale_small,
                     palette.ally,
                     sw,
                     sh,
                 );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &seq_mesh);
+                text_meshes.push(seq_mesh);
             }
 
-            // 4. Selection info (top area, right side).
+            // 4. Selected unit (second row, left).
             if let Some(ref info) = selected_info {
-                let info_x = MARGIN + HP_BAR_W + 30.0;
-                let info = fit_text(info, txt_scale, (sw - info_x - 320.0).max(120.0));
+                let info = fit_text(info, txt_scale_small, (sw * 0.55).max(120.0));
                 let info_mesh =
-                    font.render_text(&info, info_x, 8.0, txt_scale, palette.text, sw, sh);
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &info_mesh);
+                    font.render_text(&info, MARGIN, 36.0, txt_scale_small, palette.text, sw, sh);
+                text_meshes.push(info_mesh);
             }
 
-            // 5. Weapon status (top bar, right side)
+            // 5. Weapon status (second row, right), right-aligned.
             if !weapon_text.is_empty() {
-                let weapon_text = fit_text(&weapon_text, txt_scale_small, 288.0);
+                let weapon_text = fit_text(&weapon_text, txt_scale_small, (sw * 0.4).max(120.0));
+                let weapon_x =
+                    (sw - MARGIN - font.text_width(&weapon_text, txt_scale_small)).max(MARGIN);
                 let weapon_mesh = font.render_text(
                     &weapon_text,
-                    sw - 300.0,
-                    8.0,
+                    weapon_x,
+                    36.0,
                     txt_scale_small,
                     palette.warning,
                     sw,
                     sh,
                 );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &weapon_mesh);
+                text_meshes.push(weapon_mesh);
             }
 
             // 6-8. Wrapped action, instruction, and message copy.
@@ -516,8 +656,7 @@ impl HudRenderer {
                 for line in lines {
                     let mesh =
                         font.render_text(&line.text, MARGIN, text_y, txt_scale, color, sw, sh);
-                    self.text_renderer
-                        .render(&render_device.queue, &mut rpass, &mesh);
+                    text_meshes.push(mesh);
                     text_y += line_height;
                 }
             }
@@ -539,8 +678,7 @@ impl HudRenderer {
                         sw,
                         sh,
                     );
-                    self.text_renderer
-                        .render(&render_device.queue, &mut rpass, &subtitle_mesh);
+                    text_meshes.push(subtitle_mesh);
                 }
             }
 
@@ -555,8 +693,7 @@ impl HudRenderer {
                     sw,
                     sh,
                 );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &mod_mesh);
+                text_meshes.push(mod_mesh);
             }
 
             // 10. Wound doll (bottom bar, right side)
@@ -570,28 +707,28 @@ impl HudRenderer {
                     sw,
                     sh,
                 );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &wound_mesh);
+                text_meshes.push(wound_mesh);
             }
 
             // 11. Called shot wheel text overlay
             if game_state.called_shot_active {
                 let wheel_text = build_called_shot_wheel_text(game_state);
-                let wmesh = font.render_text(
-                    &wheel_text,
-                    sw * 0.1,
-                    sh * 0.25,
-                    2.5 * text_multiplier,
-                    palette.text,
-                    sw,
-                    sh,
-                );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &wmesh);
+                let wheel_scale = 2.5 * text_multiplier;
+                for (index, line) in wheel_text.lines().enumerate() {
+                    text_meshes.push(font.render_text(
+                        line,
+                        sw * 0.1,
+                        sh * 0.25 + index as f32 * (GLYPH_H as f32 * wheel_scale + 8.0),
+                        wheel_scale,
+                        palette.text,
+                        sw,
+                        sh,
+                    ));
+                }
 
                 // Hint text at bottom
                 let hint = font.render_text(
-                    "Press G to confirm | TAB to cycle | ESC to cancel",
+                    "ENTER confirm | TAB cycle | 1-7 jump | ESC cancel",
                     sw * 0.1,
                     sh * 0.25 + 260.0,
                     txt_scale,
@@ -599,24 +736,25 @@ impl HudRenderer {
                     sw,
                     sh,
                 );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &hint);
+                text_meshes.push(hint);
             }
 
             if game_state.debug_metrics_visible {
                 let metrics = build_metrics_overlay_text();
-                let metrics_mesh = font.render_text(
-                    &metrics,
-                    sw - 300.0,
-                    62.0,
-                    txt_scale_small,
-                    palette.ally,
-                    sw,
-                    sh,
-                );
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, &metrics_mesh);
+                for (index, line) in metrics.lines().enumerate() {
+                    text_meshes.push(font.render_text(
+                        line,
+                        sw - 300.0,
+                        62.0 + index as f32 * 20.0,
+                        txt_scale_small,
+                        palette.ally,
+                        sw,
+                        sh,
+                    ));
+                }
             }
+            self.text_renderer
+                .render_many(&render_device.queue, &mut rpass, &text_meshes);
         }
 
         render_device
@@ -636,16 +774,26 @@ impl HudRenderer {
         title_line: &str,
         lines: &[&str],
         settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
     ) {
         let sw = screen_w as f32;
         let sh = screen_h as f32;
         let multiplier = settings.text_scale as f32 / 100.0;
-        let title_scale = 3.5 * multiplier;
-        let body_scale = 2.0 * multiplier;
         let palette = settings.palette();
+        let horizontal_margin = (sw * 0.05).clamp(24.0, 60.0);
+        let vertical_margin = (sh * 0.06).clamp(24.0, 64.0);
+        let layout = overlay_layout(
+            lines,
+            2.0 * multiplier,
+            sw,
+            sh,
+            horizontal_margin,
+            vertical_margin,
+        );
 
         // ── Dim overlay rect (full-screen semi-transparent black) ─────
-        let rects = vec![HudRect {
+        let mut rects = vec![HudRect {
             x: 0.0,
             y: 0.0,
             w: sw,
@@ -654,36 +802,94 @@ impl HudRenderer {
         }];
 
         // ── Build text meshes ─────────────────────────────────────────
-        let title_line = fit_text(title_line, title_scale, (sw - 120.0).max(1.0));
+        let max_width = (sw - horizontal_margin * 2.0).max(1.0);
+        let title_line = fit_text(title_line, layout.title_scale, max_width);
+        let title_x = ((sw - font.text_width(&title_line, layout.title_scale)) * 0.5).max(8.0);
         let title_mesh = font.render_text(
             &title_line,
-            60.0,
-            sh * 0.3,
-            title_scale,
+            title_x,
+            layout.top,
+            layout.title_scale,
             palette.accent,
             sw,
             sh,
         );
         let mut text_meshes = Vec::new();
-        let mut y = sh * 0.3 + 50.0 * multiplier;
-        let line_height = GLYPH_H as f32 * body_scale + 10.0;
-        for line in lines {
-            if line.is_empty() {
-                y += line_height;
-                continue;
-            }
-            for wrapped in layout_wrapped_text(line, body_scale, (sw - 120.0).max(1.0)) {
+        let mut y = layout.top + GLYPH_H as f32 * layout.title_scale + layout.title_gap;
+        for wrapped in &layout.lines {
+            if let Some(wrapped) = wrapped {
+                let line_x =
+                    ((sw - font.text_width(&wrapped.text, layout.body_scale)) * 0.5).max(8.0);
                 text_meshes.push(font.render_text(
                     &wrapped.text,
-                    60.0,
+                    line_x,
                     y,
-                    body_scale,
+                    layout.body_scale,
                     palette.text,
                     sw,
                     sh,
                 ));
-                y += line_height;
             }
+            y += layout.line_height;
+        }
+
+        let button_text_scale = (1.65 * multiplier).clamp(1.35, 2.4);
+        for (index, bounds) in
+            button_layout(buttons.len(), (screen_w, screen_h), settings.text_scale)
+                .into_iter()
+                .enumerate()
+        {
+            let button = &buttons[index];
+            let hovered = button.enabled && bounds.contains(pointer.0, pointer.1);
+            let color = if !button.enabled {
+                [0.08, 0.08, 0.08, 0.72]
+            } else if button.selected {
+                [
+                    palette.accent[0],
+                    palette.accent[1],
+                    palette.accent[2],
+                    0.82,
+                ]
+            } else if hovered {
+                [
+                    palette.accent[0],
+                    palette.accent[1],
+                    palette.accent[2],
+                    0.52,
+                ]
+            } else {
+                [0.06, 0.05, 0.04, 0.86]
+            };
+            rects.push(HudRect {
+                x: bounds.x,
+                y: bounds.y,
+                w: bounds.width,
+                h: bounds.height,
+                color,
+            });
+
+            let label = fit_text(
+                &button.label,
+                button_text_scale,
+                (bounds.width - 24.0).max(1.0),
+            );
+            let label_x =
+                bounds.x + ((bounds.width - font.text_width(&label, button_text_scale)) * 0.5);
+            let label_y = bounds.y + (bounds.height - GLYPH_H as f32 * button_text_scale) * 0.5;
+            let label_color = if button.enabled {
+                palette.text
+            } else {
+                [0.48, 0.48, 0.48, 1.0]
+            };
+            text_meshes.push(font.render_text(
+                &label,
+                label_x,
+                label_y,
+                button_text_scale,
+                label_color,
+                sw,
+                sh,
+            ));
         }
 
         let mut encoder =
@@ -711,12 +917,11 @@ impl HudRenderer {
 
             self.rect_renderer
                 .render_rects(&render_device.queue, &mut rpass, &rects, sw, sh);
-            self.text_renderer
-                .render(&render_device.queue, &mut rpass, &title_mesh);
-            for mesh in &text_meshes {
-                self.text_renderer
-                    .render(&render_device.queue, &mut rpass, mesh);
-            }
+            self.text_renderer.render_many(
+                &render_device.queue,
+                &mut rpass,
+                std::iter::once(&title_mesh).chain(text_meshes.iter()),
+            );
         }
 
         render_device
@@ -725,6 +930,7 @@ impl HudRenderer {
     }
 
     /// Render the title treatment over the cinematic backdrop.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_title_overlay(
         &self,
         font: &BitmapFont,
@@ -733,6 +939,8 @@ impl HudRenderer {
         screen_w: u32,
         screen_h: u32,
         settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
     ) {
         self.render_dim_overlay(
             font,
@@ -741,17 +949,15 @@ impl HudRenderer {
             screen_w,
             screen_h,
             "POWDERBURN",
-            &[
-                "THE LEDGER OF ELK CREEK",
-                "",
-                "ENTER  BEGIN THE CAMPAIGN",
-                "ESC    QUIT",
-            ],
+            TITLE_MENU_LINES,
             settings,
+            buttons,
+            pointer,
         );
     }
 
     /// Render the pause menu overlay (dimmed combat + pause text).
+    #[allow(clippy::too_many_arguments)]
     pub fn render_pause_overlay(
         &self,
         font: &BitmapFont,
@@ -760,6 +966,8 @@ impl HudRenderer {
         screen_w: u32,
         screen_h: u32,
         settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
     ) {
         self.render_dim_overlay(
             font,
@@ -768,13 +976,10 @@ impl HudRenderer {
             screen_w,
             screen_h,
             "PAUSED",
-            &[
-                "Press ESC to resume",
-                "Press S to save",
-                "Press L to load",
-                "Press Q to quit",
-            ],
+            &["Choose an option or press ESC to resume."],
             settings,
+            buttons,
+            pointer,
         );
     }
 
@@ -789,6 +994,8 @@ impl HudRenderer {
         title: &str,
         lines: &[&str],
         settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
     ) {
         self.render_dim_overlay(
             font,
@@ -799,7 +1006,110 @@ impl HudRenderer {
             title,
             lines,
             settings,
+            buttons,
+            pointer,
         );
+    }
+
+    /// Render only the centered interactive button layer over an existing screen.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_buttons_only(
+        &self,
+        font: &BitmapFont,
+        render_device: &Arc<RenderDevice>,
+        view: &wgpu::TextureView,
+        screen_size: (u32, u32),
+        settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
+    ) {
+        let sw = screen_size.0 as f32;
+        let sh = screen_size.1 as f32;
+        let multiplier = settings.text_scale as f32 / 100.0;
+        let palette = settings.palette();
+        let text_scale = (1.65 * multiplier).clamp(1.35, 2.4);
+        let mut rects = Vec::new();
+        let mut text_meshes = Vec::new();
+
+        for (index, bounds) in button_layout(buttons.len(), screen_size, settings.text_scale)
+            .into_iter()
+            .enumerate()
+        {
+            let button = &buttons[index];
+            let hovered = button.enabled && bounds.contains(pointer.0, pointer.1);
+            let color = if !button.enabled {
+                [0.08, 0.08, 0.08, 0.72]
+            } else if button.selected {
+                [
+                    palette.accent[0],
+                    palette.accent[1],
+                    palette.accent[2],
+                    0.88,
+                ]
+            } else if hovered {
+                [
+                    palette.accent[0],
+                    palette.accent[1],
+                    palette.accent[2],
+                    0.58,
+                ]
+            } else {
+                [0.06, 0.05, 0.04, 0.90]
+            };
+            rects.push(HudRect {
+                x: bounds.x,
+                y: bounds.y,
+                w: bounds.width,
+                h: bounds.height,
+                color,
+            });
+            let label = fit_text(&button.label, text_scale, (bounds.width - 24.0).max(1.0));
+            let label_x = bounds.x + (bounds.width - font.text_width(&label, text_scale)) * 0.5;
+            let label_y = bounds.y + (bounds.height - GLYPH_H as f32 * text_scale) * 0.5;
+            text_meshes.push(font.render_text(
+                &label,
+                label_x,
+                label_y,
+                text_scale,
+                if button.enabled {
+                    palette.text
+                } else {
+                    [0.48, 0.48, 0.48, 1.0]
+                },
+                sw,
+                sh,
+            ));
+        }
+
+        let mut encoder =
+            render_device
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("menu button encoder"),
+                });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("menu button render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            self.rect_renderer
+                .render_rects(&render_device.queue, &mut render_pass, &rects, sw, sh);
+            self.text_renderer
+                .render_many(&render_device.queue, &mut render_pass, &text_meshes);
+        }
+        render_device
+            .queue
+            .submit(std::iter::once(encoder.finish()));
     }
 
     /// Render the slot-selection overlay (dimmed combat + slot instructions).
@@ -813,6 +1123,8 @@ impl HudRenderer {
         screen_h: u32,
         title: &str,
         settings: &crate::settings::Settings,
+        buttons: &[MenuButton],
+        pointer: (f64, f64),
     ) {
         self.render_dim_overlay(
             font,
@@ -821,8 +1133,10 @@ impl HudRenderer {
             screen_w,
             screen_h,
             title,
-            &["Press 1-5 to select a slot", "Press ESC to cancel"],
+            &["Choose a slot."],
             settings,
+            buttons,
+            pointer,
         );
     }
 }
@@ -907,23 +1221,36 @@ fn build_sequence_strip(game_state: &GameState) -> String {
             .then_with(|| ida.cmp(idb))
     });
 
-    let count = actors.len().min(8);
+    let count = actors.len().min(5);
     let mut parts = Vec::with_capacity(count);
-    for (tick, actor, _id) in actors.iter().take(count) {
+    for (_tick, actor, _id) in actors.iter().take(count) {
         let name = if actor.name.len() > 12 {
             &actor.name[..12]
         } else {
             &actor.name
         };
-        parts.push(format!("{}@{}", name, tick));
+        parts.push(name.to_string());
     }
     if parts.is_empty() {
         String::new()
     } else {
-        format!("Seq: {}", parts.join(" │ "))
+        format_turn_order(&parts)
     }
 }
 use pb_core::ids::ActorId;
+
+fn format_turn_order(names: &[String]) -> String {
+    format!("UP NEXT: {}", names.join("  >  "))
+}
+
+fn weapon_condition_label(fouling: i32) -> &'static str {
+    match fouling {
+        0..=2 => "CLEAN",
+        3..=5 => "USED",
+        6..=8 => "DIRTY",
+        _ => "BADLY FOULED",
+    }
+}
 
 /// Build weapon status text for the selected actor.
 fn build_weapon_status_text(game_state: &GameState) -> String {
@@ -937,11 +1264,59 @@ fn build_weapon_status_text(game_state: &GameState) -> String {
     let Some(actor) = sim.actors.get(&actor_id) else {
         return String::new();
     };
-    let jam_str = if actor.jammed { " JAMMED!" } else { "" };
-    format!(
-        "{} {}/{} f{}{}",
-        actor.weapon, actor.loaded_rounds, actor.weapon_capacity, actor.fouling, jam_str
+    let condition = if actor.jammed {
+        "JAMMED"
+    } else {
+        weapon_condition_label(actor.fouling)
+    };
+    format_weapon_status(
+        &actor.weapon,
+        actor.loaded_rounds,
+        actor.weapon_capacity,
+        condition,
     )
+}
+
+fn format_weapon_status(
+    weapon: &str,
+    loaded_rounds: i32,
+    capacity: i32,
+    condition: &str,
+) -> String {
+    format!(
+        "{}  |  AMMO {}/{}  |  {}",
+        weapon, loaded_rounds, capacity, condition
+    )
+}
+
+#[cfg(test)]
+mod player_header_tests {
+    use super::{format_turn_order, format_weapon_status, weapon_condition_label};
+
+    #[test]
+    fn weapon_condition_uses_player_facing_words() {
+        assert_eq!(weapon_condition_label(0), "CLEAN");
+        assert_eq!(weapon_condition_label(4), "USED");
+        assert_eq!(weapon_condition_label(7), "DIRTY");
+        assert_eq!(weapon_condition_label(10), "BADLY FOULED");
+    }
+
+    #[test]
+    fn turn_order_contains_names_not_scheduler_code() {
+        let text = format_turn_order(&["Elias".to_string(), "Naomi".to_string()]);
+
+        assert_eq!(text, "UP NEXT: Elias  >  Naomi");
+        assert!(!text.contains("Seq:"));
+        assert!(!text.contains('@'));
+    }
+
+    #[test]
+    fn weapon_status_explains_every_value() {
+        let text = format_weapon_status("Colt Army", 5, 6, "CLEAN");
+
+        assert_eq!(text, "Colt Army  |  AMMO 5/6  |  CLEAN");
+        assert!(!text.contains(" f"));
+    }
 }
 
 /// Build wound doll text for the selected actor.
@@ -1090,7 +1465,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
 #[cfg(test)]
 mod metric_overlay_tests {
-    use super::build_metrics_overlay_text;
+    use super::{build_metrics_overlay_text, overlay_layout, TITLE_MENU_LINES};
 
     #[test]
     fn overlay_renders_the_exact_locked_metric_set_once() {
@@ -1117,5 +1492,29 @@ mod metric_overlay_tests {
                 "{name} missing or duplicated"
             );
         }
+    }
+
+    #[test]
+    fn title_treatment_keeps_the_authored_subtitle() {
+        assert_eq!(TITLE_MENU_LINES, ["THE ELK CREEK RECKONING"]);
+    }
+
+    #[test]
+    fn dense_overlay_moves_up_and_scales_to_stay_inside_small_window() {
+        let lines = [
+            "A deliberately long first settings row that must wrap.",
+            "A deliberately long second settings row that must wrap.",
+            "A deliberately long third settings row that must wrap.",
+            "A deliberately long fourth settings row that must wrap.",
+            "A deliberately long fifth settings row that must wrap.",
+            "ESC  Return",
+        ];
+        let layout = overlay_layout(&lines, 4.0, 800.0, 600.0, 40.0, 36.0);
+        let bottom = layout.top
+            + 8.0 * layout.title_scale
+            + layout.title_gap
+            + layout.line_height * layout.lines.len() as f32;
+        assert!(bottom <= 600.0 - 36.0 + f32::EPSILON);
+        assert!(layout.body_scale >= 1.5);
     }
 }

@@ -1,6 +1,16 @@
 (
   id: "scn_m08_washita_aftermath",
   display_name: "Washita Aftermath",
+  briefing: [
+    "Five days later, survivors carry a winter count naming the missing, the dead, and the children taken away. Teague wants it destroyed because two Ring scouts appear among the paid auxiliaries.",
+    "The witnesses are moving east through deep snow. Doyle has found a route, but riders are closing both ends of the draw.",
+    "Escort the witnesses out. The winter count is not evidence until its keepers survive to speak.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Doyle", text:"The east draw is ugly, narrow, and still our best chance.", voice:Some("m08_01_doyle.wav")),
+    (speaker:"Naomi Freed", text:"Ugly is a road. Dead is an ending. Take the draw.", voice:Some("m08_02_naomi.wav")),
+  ],
+  score: Some("winter_count.wav"),
   date: "1868-12-01",
   map: (
     width: 24,

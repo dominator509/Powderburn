@@ -16,6 +16,11 @@ frontier_terrain_atlas = { path = "art/frontier_terrain_atlas.png", source = "Op
 frontier_scout_atlas = { path = "sprites/frontier_scout_atlas.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-two frontier scout pose atlas for isometric tactical combat" }
 frontier_company_atlas_v2 = { path = "sprites/frontier_company_atlas_v2.png", source = "OpenAI ImageGen plus project chroma-key post-processing", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-two atlas of eight distinct, period-grounded company identities on a flat chroma-green field" }
 frontier_prop_atlas = { path = "props/frontier_prop_atlas.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-27", prompt_summary = "four-by-four atlas of period-grounded frontier battlefield props on a flat chroma-green field" }
+prologue_elk_creek = { path = "art/prologue_elk_creek.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-28", prompt_summary = "cinematic 1867 Elk Creek aftermath with burned freight wagon, approaching company, survivor, and ledger foreground" }
+campaign_travel_map = { path = "art/campaign_travel_map.png", source = "OpenAI ImageGen", license = "GPL-3.0-only", attribution = "POWDERBURN Project", generated = "2026-07-28", prompt_summary = "wide hand-illustrated 1867-1878 frontier survey map with rivers, rail grade, forts, wagon roads, and mission route" }
+
+[external_music]
+frontier_theme = { path = "audio/frontier_theme.wav", title = "Desert Theme", creator = "Umplix", source = "https://opengameart.org/content/wild-west-music", license = "CC0-1.0", attribution = "Umplix (credit optional under CC0)", retrieved = "2026-07-28", processing = "normalized to canonical stereo PCM16 WAV with SoX 14.4.2 for runtime mixer compatibility" }
 
 [procedural_audio]
 generator = "scripts/gensfx.py"
@@ -34,5 +39,4 @@ files = [
   "audio/death.wav",
   "audio/move.wav",
   "audio/reload.wav",
-  "audio/frontier_theme.wav",
 ]

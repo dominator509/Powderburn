@@ -1,6 +1,16 @@
 (
   id: "scn_m04_medicine_lodge",
   display_name: "Medicine Lodge: Broken Ink",
+  briefing: [
+    "At Medicine Lodge, nations negotiate beneath promises the United States will not keep. Teague has sent provocateurs to attack the treaty road and blame the violence on Kiowa riders.",
+    "The Ring wants panic, military contracts, and abandoned land. Whitehorse wants families clear of the road before hired guns manufacture an excuse for bloodshed.",
+    "Drive off Teague's men without rewriting the fixed treaty gathering. Protect the travelers they intend to use as evidence for a lie.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"Your paper can name the men who profit. My people still pay the price.", voice:Some("m04_01_whitehorse.wav")),
+    (speaker:"Elias Ward", text:"Then today the people leave alive, and the profiteers lose their lie.", voice:Some("m04_02_elias.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1867-10-21",
   map: (
     width: 24,

@@ -9,6 +9,9 @@ use wgpu::util::DeviceExt;
 
 use crate::device::RenderDevice;
 
+/// Vertical screen-space relief represented by one authored elevation level.
+pub const ELEVATION_SCREEN_STEP: f32 = 12.0;
+
 /// A single vertex for the tile mesh.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -81,12 +84,12 @@ impl TileVisual {
 /// Map authored terrain vocabulary onto the eight atlas materials.
 pub fn material_for_terrain(terrain: &str) -> u8 {
     match terrain.to_ascii_lowercase().as_str() {
-        "road" | "dirt" | "trail" => 1,
-        "creek" | "water" | "river" => 2,
-        "brush" | "scrub" | "sagebrush" => 3,
-        "timber" | "woods" | "woodland" | "forest" => 4,
-        "snow" | "winter" => 5,
-        "floor" | "adobe" | "courtyard" | "settlement" => 6,
+        "road" | "dirt" | "trail" | "mud" | "scree" | "rubble" | "sandstone" => 1,
+        "creek" | "stream" | "water" | "river" | "ford" => 2,
+        "brush" | "scrub" | "sagebrush" | "sage" => 3,
+        "timber" | "cottonwood" | "woods" | "woodland" | "forest" => 4,
+        "snow" | "deepsnow" | "winter" | "ice" => 5,
+        "floor" | "adobe" | "courtyard" | "settlement" | "station" | "depot" => 6,
         "rail" | "railroad" | "ballast" | "rail_grade" => 7,
         _ => 0,
     }
@@ -127,6 +130,25 @@ impl TileSystem {
         tiles: &[TileVisual],
         camera_matrix_bytes: &[u8; 64],
     ) -> Self {
+        Self::new_with_format(
+            device,
+            cols,
+            rows,
+            tiles,
+            camera_matrix_bytes,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )
+    }
+
+    /// Create a tile system whose pipeline matches the destination target.
+    pub fn new_with_format(
+        device: &Arc<RenderDevice>,
+        cols: u32,
+        rows: u32,
+        tiles: &[TileVisual],
+        camera_matrix_bytes: &[u8; 64],
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
         // Build vertices for each visible tile
         let tile_w = 64.0;
         let tile_h = 32.0;
@@ -149,7 +171,8 @@ impl TileSystem {
 
                 // Isometric tile positions
                 let iso_x = (x as f32 - y as f32) * half_w;
-                let iso_y = (x as f32 + y as f32) * half_h;
+                let iso_y =
+                    (x as f32 + y as f32) * half_h + tile.elevation as f32 * ELEVATION_SCREEN_STEP;
                 let z = tile.elevation as f32;
 
                 let material = tile.material.min(7);
@@ -172,6 +195,77 @@ impl TileSystem {
                 vertices.push(vtx(half_w, 0.0, u1, v1));
                 vertices.push(vtx(0.0, half_h, u0, v1));
                 indices.extend_from_slice(&quad_indices(base));
+
+                // Raised terrain needs visible banks; otherwise elevation only
+                // changes depth ordering and the battlefield still reads flat.
+                // The two downward-facing isometric edges are the visible
+                // cliff faces from the production camera.
+                let neighbor_elevation = |nx: u32, ny: u32| {
+                    tiles
+                        .get((ny * cols + nx) as usize)
+                        .map_or(0, |neighbor| neighbor.elevation)
+                };
+                let side_color = [tile.r * 0.50, tile.g * 0.44, tile.b * 0.36, tile.a];
+                if x + 1 < cols {
+                    let lower = neighbor_elevation(x + 1, y);
+                    if tile.elevation > lower {
+                        let drop = (tile.elevation - lower) as f32 * ELEVATION_SCREEN_STEP;
+                        let face_base = vertices.len() as u32;
+                        vertices.extend_from_slice(&[
+                            TileVertex {
+                                position: [iso_x + half_w, iso_y, z],
+                                color: side_color,
+                                tex_coord: [u1, v0],
+                            },
+                            TileVertex {
+                                position: [iso_x, iso_y + half_h, z],
+                                color: side_color,
+                                tex_coord: [u0, v1],
+                            },
+                            TileVertex {
+                                position: [iso_x, iso_y + half_h - drop, lower as f32],
+                                color: side_color,
+                                tex_coord: [u0, v1],
+                            },
+                            TileVertex {
+                                position: [iso_x + half_w, iso_y - drop, lower as f32],
+                                color: side_color,
+                                tex_coord: [u1, v0],
+                            },
+                        ]);
+                        indices.extend_from_slice(&quad_indices(face_base));
+                    }
+                }
+                if y + 1 < rows {
+                    let lower = neighbor_elevation(x, y + 1);
+                    if tile.elevation > lower {
+                        let drop = (tile.elevation - lower) as f32 * ELEVATION_SCREEN_STEP;
+                        let face_base = vertices.len() as u32;
+                        vertices.extend_from_slice(&[
+                            TileVertex {
+                                position: [iso_x, iso_y + half_h, z],
+                                color: side_color,
+                                tex_coord: [u1, v1],
+                            },
+                            TileVertex {
+                                position: [iso_x - half_w, iso_y, z],
+                                color: side_color,
+                                tex_coord: [u0, v0],
+                            },
+                            TileVertex {
+                                position: [iso_x - half_w, iso_y - drop, lower as f32],
+                                color: side_color,
+                                tex_coord: [u0, v0],
+                            },
+                            TileVertex {
+                                position: [iso_x, iso_y + half_h - drop, lower as f32],
+                                color: side_color,
+                                tex_coord: [u1, v1],
+                            },
+                        ]);
+                        indices.extend_from_slice(&quad_indices(face_base));
+                    }
+                }
             }
         }
 
@@ -361,7 +455,7 @@ impl TileSystem {
                     entry_point: Some("fs_main"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: target_format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::OVER,
                             alpha: wgpu::BlendComponent::OVER,
@@ -401,6 +495,13 @@ impl TileSystem {
         }
     }
 
+    /// Update the tactical camera without rebuilding terrain GPU resources.
+    pub fn update_camera(&self, device: &Arc<RenderDevice>, camera_matrix_bytes: &[u8; 64]) {
+        device
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, camera_matrix_bytes);
+    }
+
     /// Draw all tiles. Must be called inside a render pass.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
         if self.num_indices == 0 {
@@ -411,5 +512,21 @@ impl TileSystem {
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         rpass.draw_indexed(0..self.num_indices, 0, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authored_frontier_vocabulary_reaches_distinct_atlas_materials() {
+        assert_eq!(material_for_terrain("Mud"), 1);
+        assert_eq!(material_for_terrain("Creek"), 2);
+        assert_eq!(material_for_terrain("Sagebrush"), 3);
+        assert_eq!(material_for_terrain("Cottonwood"), 4);
+        assert_eq!(material_for_terrain("DeepSnow"), 5);
+        assert_eq!(material_for_terrain("Adobe"), 6);
+        assert_eq!(material_for_terrain("Ballast"), 7);
     }
 }

@@ -1,6 +1,15 @@
 (
   id: "scn_m20_salt_war",
   display_name: "San Elizario Salt War",
+  briefing: [
+    "At San Elizario, community salt rights have become a battlefield between local families and men claiming private ownership. The fixed violence has already begun.",
+    "Ruelas holds records proving Teague financed forged titles on the salt lakes. Protect the community archive after the historical clash.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Ruelas", text:"My family gathered salt before their courthouse had a roof. Teague calls memory trespass.", voice:Some("m20_01_ruelas.wav")),
+    (speaker:"Naomi Freed", text:"Then we defend the people who remember, not just the paper that agrees.", voice:Some("m20_02_naomi.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1877-12-17",
   map: (
     width: 24,

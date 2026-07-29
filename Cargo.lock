@@ -1403,6 +1403,7 @@ dependencies = [
 name = "pb-render"
 version = "1.0.1"
 dependencies = [
+ "ab_glyph",
  "bytemuck",
  "image",
  "pb-content",

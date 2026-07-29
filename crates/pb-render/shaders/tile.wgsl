@@ -19,6 +19,7 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
     @location(1) world_position: vec2<f32>,
     @location(2) tex_coord: vec2<f32>,
+    @location(3) elevation: f32,
 }
 
 @vertex
@@ -28,6 +29,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.color = input.color;
     output.world_position = input.position.xy;
     output.tex_coord = input.tex_coord;
+    output.elevation = input.position.z;
     return output;
 }
 
@@ -35,12 +37,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let grit_seed =
         fract(input.world_position.x * 0.1031 + input.world_position.y * 0.11369);
-    let grit = (grit_seed - 0.5) * 0.052;
+    let grit = (grit_seed - 0.5) * 0.034;
 
     let diagonal_a = abs(fract((input.world_position.x + input.world_position.y * 2.0) / 64.0) - 0.5);
     let diagonal_b = abs(fract((input.world_position.x - input.world_position.y * 2.0) / 64.0) - 0.5);
     let seam = 1.0 - smoothstep(0.455, 0.5, max(diagonal_a, diagonal_b));
-    let bevel = mix(0.82, 1.04, seam);
+    let bevel = mix(0.93, 1.02, seam);
 
     // The CPU uploads a triangle-filtered presentation atlas, so one sample
     // retains the authored texture without a nine-tap blur in every fragment.
@@ -60,6 +62,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         case 7u: { base = vec3<f32>(0.37, 0.37, 0.34); }
         default: {}
     }
-    let graded = mix(base, material.rgb, 0.30);
-    return vec4<f32>(graded * input.color.rgb * (bevel + grit), material.a * input.color.a);
+    // The authored atlas is the battlefield's primary surface, not a faint
+    // tint beneath a flat procedural color.
+    let graded = mix(base, material.rgb, 0.74);
+    let relief_light = clamp(1.0 + input.elevation * 0.035, 0.84, 1.14);
+    return vec4<f32>(
+        graded * input.color.rgb * (bevel + grit) * relief_light,
+        material.a * input.color.a
+    );
 }

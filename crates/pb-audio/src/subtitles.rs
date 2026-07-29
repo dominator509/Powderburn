@@ -2,10 +2,10 @@
 
 use std::time::Instant;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subtitle {
-    pub speaker: &'static str,
-    pub text: &'static str,
+    pub speaker: String,
+    pub text: String,
 }
 
 #[derive(Debug)]

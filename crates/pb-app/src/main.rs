@@ -1,4 +1,4 @@
-//! POWDERBURN: The Ledger of Elk Creek — Game Entry Point
+//! POWDERBURN: The Elk Creek Reckoning — Game Entry Point
 //!
 //! Builds a winit window with a wgpu rendering surface and runs the
 //! main event loop. This is the interactive game binary.
@@ -12,6 +12,7 @@
 #![allow(clippy::float_arithmetic)]
 
 mod afteraction;
+mod bibliography;
 mod camp;
 mod campaign;
 mod combat;
@@ -24,7 +25,7 @@ mod settings;
 mod state;
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -38,6 +39,757 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 
 const ZERO_LEDGER_HEAD: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+fn has_runtime_data(root: &Path) -> bool {
+    root.join("assets").is_dir() && root.join("content").is_dir()
+}
+
+fn find_runtime_data_root() -> Result<PathBuf, String> {
+    let mut starts = Vec::new();
+    if let Some(home) = std::env::var_os("PB_HOME") {
+        starts.push(PathBuf::from(home));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(parent) = executable.parent() {
+            starts.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        starts.push(current_dir);
+    }
+
+    for start in starts {
+        for candidate in start.ancestors() {
+            if has_runtime_data(candidate) {
+                return Ok(candidate.to_path_buf());
+            }
+        }
+    }
+    Err(
+        "E-INSTALL-DATA: could not locate the packaged assets/ and content/ directories"
+            .to_string(),
+    )
+}
+
+fn display_toggle(enabled: bool) -> &'static str {
+    if enabled {
+        "On"
+    } else {
+        "Off"
+    }
+}
+
+fn handle_battle_escape(game_state: &mut GameState) {
+    if game_state.called_shot_active {
+        game_state.called_shot_active = false;
+        game_state.message = "Called shot cancelled".to_string();
+        return;
+    }
+    game_state.paused = !game_state.paused;
+    game_state.message = if game_state.paused {
+        "Game paused - press ESC to resume, S to save, L to load, Q to quit".to_string()
+    } else {
+        "Resumed".to_string()
+    };
+}
+
+fn settings_screen_lines(game_state: &GameState) -> Vec<String> {
+    if let Some(action) = game_state.remap_pending.as_ref() {
+        return vec![
+            format!("Press a new supported key for {action:?}."),
+            "ESC  Cancel and return to the title".to_string(),
+        ];
+    }
+
+    vec![
+        "Click an option to change it.".to_string(),
+        "Keyboard shortcuts remain available.".to_string(),
+    ]
+}
+
+fn new_company_screen_lines(
+    content: &pb_content::schema::Content,
+    selected_way: Option<&str>,
+) -> Vec<String> {
+    let mut lines = vec!["Choose the history that shaped your leader.".to_string()];
+    if let Some(way) = selected_way.and_then(|id| content.ways.get(id)) {
+        lines.push(format!("Selected: {}", way.display_name));
+        lines.push(way.description.clone());
+    } else {
+        lines.push("Select a Way to inspect its history and starting advantages.".to_string());
+    }
+    lines
+}
+
+fn travel_choice_label(content: &pb_content::schema::Content, node_id: &str) -> String {
+    let Some(node) = content.campaign_nodes.get(node_id) else {
+        return node_id.to_string();
+    };
+    let destination = node
+        .scenario_id
+        .as_ref()
+        .and_then(|scenario_id| content.scenarios.get(scenario_id))
+        .map_or(node_id, |scenario| scenario.display_name.as_str());
+    format!("{destination} — {}", node.date)
+}
+
+fn briefing_is_available(game_state: &GameState, content_root: &std::path::Path) -> bool {
+    let Some(mission_id) = game_state.current_mission.as_deref() else {
+        return false;
+    };
+    pb_content::load::load_all(content_root)
+        .is_ok_and(|content| campaign::scenario_for_mission(&content, mission_id).is_ok())
+}
+
+fn briefing_scenario(
+    game_state: &GameState,
+    content_root: &std::path::Path,
+) -> Result<pb_content::schema::ScenarioData, String> {
+    let mission = game_state
+        .current_mission
+        .as_deref()
+        .ok_or_else(|| "E-CAMPAIGN-STATE: no mission selected".to_string())?;
+    let content = pb_content::load::load_all(content_root)
+        .map_err(|error| format!("E-CAMPAIGN-CONTENT: {error}"))?;
+    campaign::scenario_for_mission(&content, mission).cloned()
+}
+
+fn play_current_story_voice(game_state: &GameState, scenario: &pb_content::schema::ScenarioData) {
+    if game_state.briefing_page != 1 {
+        return;
+    }
+    let Some(line) = scenario.prebattle_dialogue.get(game_state.briefing_line) else {
+        return;
+    };
+    let (Some(audio), Some(filename)) = (&game_state.audio, line.voice.as_deref()) else {
+        return;
+    };
+    let _ = audio.play_dialogue(filename, &line.speaker, &line.text);
+}
+
+fn begin_briefing_scene(game_state: &mut GameState, content_root: &std::path::Path) {
+    game_state.briefing_page = 0;
+    game_state.briefing_line = 0;
+    if let Ok(scenario) = briefing_scenario(game_state, content_root) {
+        if let (Some(audio), Some(score)) = (&game_state.audio, scenario.score.as_deref()) {
+            let _ = audio.set_score(score);
+        }
+    }
+}
+
+/// Advance one title card or spoken line. Returns true when deployment is next.
+fn advance_briefing_scene(
+    game_state: &mut GameState,
+    content_root: &std::path::Path,
+) -> Result<bool, String> {
+    let scenario = briefing_scenario(game_state, content_root)?;
+    if game_state.briefing_page == 0 {
+        if game_state.briefing_line + 1 < scenario.briefing.len() {
+            game_state.briefing_line += 1;
+        } else {
+            game_state.briefing_page = 1;
+            game_state.briefing_line = 0;
+            play_current_story_voice(game_state, &scenario);
+        }
+        return Ok(false);
+    }
+    if game_state.briefing_line + 1 < scenario.prebattle_dialogue.len() {
+        game_state.briefing_line += 1;
+        play_current_story_voice(game_state, &scenario);
+        Ok(false)
+    } else {
+        Ok(true)
+    }
+}
+
+fn briefing_can_deploy(game_state: &GameState, content_root: &std::path::Path) -> bool {
+    game_state.briefing_page == 1
+        && briefing_scenario(game_state, content_root).is_ok_and(|scenario| {
+            scenario.prebattle_dialogue.is_empty()
+                || game_state.briefing_line + 1 >= scenario.prebattle_dialogue.len()
+        })
+}
+
+fn menu_buttons_for_screen(
+    game_state: &GameState,
+    content_root: &std::path::Path,
+) -> Vec<menu::MenuButton> {
+    fn button(label: impl Into<String>) -> menu::MenuButton {
+        menu::MenuButton::new(label)
+    }
+    match game_state.screen {
+        GameScreen::Title => vec![
+            button("New Campaign"),
+            button("Settings"),
+            button("The Ledger"),
+            button("Bibliography"),
+            button("Quit"),
+        ],
+        GameScreen::NewCompany => {
+            let mut buttons = pb_content::load::load_all(content_root).map_or_else(
+                |_| Vec::new(),
+                |content| {
+                    content
+                        .ways
+                        .values()
+                        .map(|way| {
+                            if game_state.new_company_way.as_deref() == Some(way.id.as_str()) {
+                                menu::MenuButton::selected(way.display_name.clone())
+                            } else {
+                                button(way.display_name.clone())
+                            }
+                        })
+                        .collect()
+                },
+            );
+            if game_state.new_company_way.is_some() {
+                buttons.push(button("Form Company"));
+            } else {
+                buttons.push(menu::MenuButton::disabled("Select a Way First"));
+            }
+            buttons.push(button("Back"));
+            buttons
+        }
+        GameScreen::Camp => vec![
+            button("Travel Map"),
+            button("The Ledger"),
+            button("Settings"),
+            button("Main Menu"),
+        ],
+        GameScreen::MapTravel => {
+            let content = pb_content::load::load_all(content_root).ok();
+            let mut buttons = game_state
+                .map_choices
+                .iter()
+                .map(|choice| {
+                    button(content.as_ref().map_or_else(
+                        || choice.clone(),
+                        |content| travel_choice_label(content, choice),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            buttons.push(button(if game_state.map_choices.is_empty() {
+                "Ride to Next Mission"
+            } else {
+                "Confirm Route"
+            }));
+            buttons.push(button("Back to Camp"));
+            buttons
+        }
+        GameScreen::Briefing if !briefing_is_available(game_state, content_root) => vec![
+            menu::MenuButton::disabled("Mission Unavailable"),
+            button("Back to Map"),
+        ],
+        GameScreen::Briefing if game_state.briefing_page == 0 => {
+            vec![button("Continue"), button("Back to Map")]
+        }
+        GameScreen::Briefing => vec![
+            button(if briefing_can_deploy(game_state, content_root) {
+                "Deploy Squad"
+            } else {
+                "Continue Dialogue"
+            }),
+            button("Back to Map"),
+        ],
+        GameScreen::Battle if game_state.paused => vec![
+            button("Resume"),
+            button("Save Game"),
+            button("Load Game"),
+            button("Quit Game"),
+        ],
+        GameScreen::SaveSlot => {
+            let mut buttons = (1..=5)
+                .map(|slot| button(format!("Save Slot {slot}")))
+                .collect::<Vec<_>>();
+            buttons.push(button("Cancel"));
+            buttons
+        }
+        GameScreen::LoadSlot => {
+            let mut buttons = (1..=5)
+                .map(|slot| button(format!("Load Slot {slot}")))
+                .collect::<Vec<_>>();
+            if game_state.pending_unverified_slot.is_some() {
+                buttons.push(button("Load Unverified"));
+            }
+            buttons.push(button("Cancel"));
+            buttons
+        }
+        GameScreen::AfterAction => {
+            if let Some(entry) = game_state
+                .pending_ledger_writes
+                .get(game_state.ledger_write_cursor)
+            {
+                let mut buttons = entry
+                    .lines
+                    .iter()
+                    .enumerate()
+                    .map(|(index, line)| {
+                        let label = format!("{}. {line}", index + 1);
+                        if index == usize::from(entry.selected_index) {
+                            menu::MenuButton::selected(label)
+                        } else {
+                            button(label)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                buttons.extend([
+                    button("Previous Death"),
+                    button("Next Death"),
+                    button("Accept and Return to Camp"),
+                ]);
+                buttons
+            } else {
+                vec![button("Return to Camp")]
+            }
+        }
+        GameScreen::LedgerView => {
+            let mut buttons = vec![if game_state.ledger_filter_act.is_none() {
+                menu::MenuButton::selected("All Acts")
+            } else {
+                button("All Acts")
+            }];
+            for act in 1..=4 {
+                if game_state.ledger_filter_act == Some(act) {
+                    buttons.push(menu::MenuButton::selected(format!("Act {act}")));
+                } else {
+                    buttons.push(button(format!("Act {act}")));
+                }
+            }
+            buttons.extend([
+                if game_state.ledger_allies_only {
+                    menu::MenuButton::selected("Companions Only")
+                } else {
+                    button("Companions Only")
+                },
+                button("Scroll Up"),
+                button("Scroll Down"),
+                button("Back"),
+            ]);
+            buttons
+        }
+        GameScreen::Settings => {
+            if game_state.remap_pending.is_some() {
+                return vec![button("Cancel Rebinding")];
+            }
+            let palette = match game_state.settings.color_palette.as_str() {
+                "deuteranopia" => "Deuteranopia",
+                "tritanopia" => "Tritanopia",
+                _ => "Default",
+            };
+            vec![
+                button("Rebind Fire"),
+                button("Rebind Called Shot"),
+                button("Rebind Reload"),
+                button("Rebind End Turn"),
+                button(format!("Text Size: {}%", game_state.settings.text_scale)),
+                button(format!("Palette: {palette}")),
+                button(format!(
+                    "Camera Shake: {}",
+                    display_toggle(game_state.settings.camera_shake)
+                )),
+                button(format!(
+                    "Flashing Effects: {}",
+                    display_toggle(game_state.settings.flashing_effects)
+                )),
+                button(format!(
+                    "Screen Effects: {}",
+                    display_toggle(game_state.settings.screen_fill_effects)
+                )),
+                button(format!(
+                    "Slower Presentation: {}",
+                    display_toggle(game_state.settings.slow_clock)
+                )),
+                button(format!(
+                    "Subtitles: {}",
+                    display_toggle(game_state.settings.subtitles)
+                )),
+                button("Save and Back"),
+            ]
+        }
+        GameScreen::Bibliography => {
+            let mut buttons = (0..bibliography::SECTION_COUNT)
+                .map(|section| {
+                    let label = bibliography::section_label(section);
+                    if game_state.bibliography_section == section {
+                        menu::MenuButton::selected(label)
+                    } else {
+                        button(label)
+                    }
+                })
+                .collect::<Vec<_>>();
+            buttons.push(button("Back"));
+            buttons
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn save_menu_settings(game_state: &mut GameState) {
+    match settings::save(&game_state.settings) {
+        Ok(()) => {
+            if let Some(audio) = &game_state.audio {
+                audio.set_volumes(
+                    game_state.settings.music_volume,
+                    game_state.settings.sfx_volume,
+                );
+            }
+            game_state.message = "Settings saved".to_string();
+        }
+        Err(error) => game_state.message = error,
+    }
+}
+
+fn open_travel_map(game_state: &mut GameState, content_root: &std::path::Path) {
+    match campaign::current_choices(game_state, content_root) {
+        Ok(choices) => {
+            game_state.map_choices = choices;
+            if let Err(error) = game_state.go_to(GameScreen::MapTravel) {
+                game_state.message = error;
+            } else if game_state.map_choices.is_empty() {
+                game_state.message =
+                    "The road ahead is fixed by the Ledger. Review the route and ride on."
+                        .to_string();
+            } else {
+                game_state.message = "Choose the company's next route.".to_string();
+            }
+        }
+        Err(error) => game_state.message = error,
+    }
+}
+
+fn form_new_company(game_state: &mut GameState, content_root: &std::path::Path, way_id: &str) {
+    if let Err(error) = campaign::start_new_with_way(game_state, content_root, 90210, way_id) {
+        game_state.message = error;
+        return;
+    }
+    match campaign::select_next(game_state, content_root) {
+        Ok(_) => {
+            begin_briefing_scene(game_state, content_root);
+            if let Err(error) = game_state.go_to(GameScreen::Briefing) {
+                game_state.message = error;
+            }
+        }
+        Err(error) => game_state.message = error,
+    }
+}
+
+fn finish_after_action(game_state: &mut GameState, content_root: &std::path::Path) {
+    if let Err(error) = campaign::finish_battle(game_state, content_root) {
+        game_state.message = error;
+        return;
+    }
+    if let Err(error) = game_state.go_to(GameScreen::Camp) {
+        game_state.message = error;
+    } else {
+        game_state.sim = None;
+        game_state.message = "Returned to camp".to_string();
+        game_state.paused = false;
+    }
+}
+
+/// Activate one pointer menu command. Returns true when the app should exit.
+fn activate_menu_button(
+    game_state: &mut GameState,
+    content_root: &std::path::Path,
+    index: usize,
+) -> bool {
+    match game_state.screen {
+        GameScreen::Title => {
+            let target = match index {
+                0 => Some(GameScreen::NewCompany),
+                1 => Some(GameScreen::Settings),
+                2 => Some(GameScreen::LedgerView),
+                3 => Some(GameScreen::Bibliography),
+                4 => return true,
+                _ => None,
+            };
+            if let Some(target) = target {
+                if let Err(error) = game_state.go_to(target) {
+                    game_state.message = error;
+                }
+            }
+        }
+        GameScreen::NewCompany => {
+            let Ok(content) = pb_content::load::load_all(content_root) else {
+                game_state.message = "Campaign data could not be loaded".to_string();
+                return false;
+            };
+            let ways = content.ways.values().collect::<Vec<_>>();
+            if let Some(way) = ways.get(index) {
+                game_state.new_company_way = Some(way.id.clone());
+                game_state.message = format!("Way selected: {}", way.display_name);
+            } else if index == ways.len() {
+                let Some(way_id) = game_state.new_company_way.clone() else {
+                    return false;
+                };
+                form_new_company(game_state, content_root, &way_id);
+            } else if index == ways.len() + 1 {
+                game_state.screen = GameScreen::Title;
+            }
+        }
+        GameScreen::Camp => {
+            if index == 0 {
+                open_travel_map(game_state, content_root);
+                return false;
+            }
+            let target = match index {
+                1 => Some(GameScreen::LedgerView),
+                2 => Some(GameScreen::Settings),
+                3 => Some(GameScreen::Title),
+                _ => None,
+            };
+            if let Some(target) = target {
+                if let Err(error) = game_state.go_to(target) {
+                    game_state.message = error;
+                }
+            }
+        }
+        GameScreen::MapTravel => {
+            let choice_count = game_state.map_choices.len();
+            if index < choice_count {
+                match campaign::choose_branch(game_state, content_root, index) {
+                    Ok(choice) => {
+                        game_state.message = format!("Choice recorded: {choice}");
+                        match campaign::current_choices(game_state, content_root) {
+                            Ok(choices) => game_state.map_choices = choices,
+                            Err(error) => game_state.message = error,
+                        }
+                    }
+                    Err(error) => game_state.message = error,
+                }
+            } else if index == choice_count {
+                match campaign::select_next(game_state, content_root) {
+                    Ok(_) => {
+                        begin_briefing_scene(game_state, content_root);
+                        if let Err(error) = game_state.go_to(GameScreen::Briefing) {
+                            game_state.message = error;
+                        }
+                    }
+                    Err(error) => game_state.message = error,
+                }
+            } else if index == choice_count + 1 {
+                if let Err(error) = game_state.go_to(GameScreen::Camp) {
+                    game_state.message = error;
+                }
+            }
+        }
+        GameScreen::Briefing if !briefing_is_available(game_state, content_root) => {
+            if index == 1 {
+                if let Err(error) = game_state.go_to(GameScreen::MapTravel) {
+                    game_state.message = error;
+                }
+            }
+        }
+        GameScreen::Briefing if game_state.briefing_page == 0 => match index {
+            0 => {
+                if let Err(error) = advance_briefing_scene(game_state, content_root) {
+                    game_state.message = error;
+                }
+            }
+            1 => {
+                if let Err(error) = game_state.go_to(GameScreen::MapTravel) {
+                    game_state.message = error;
+                }
+            }
+            _ => {}
+        },
+        GameScreen::Briefing => match index {
+            0 => match advance_briefing_scene(game_state, content_root) {
+                Ok(false) => {}
+                Ok(true) => match combat::init_combat(game_state, content_root) {
+                    Ok(()) => {
+                        if let Err(error) = game_state.go_to(GameScreen::Battle) {
+                            game_state.message = error;
+                        } else {
+                            if let Some(audio) = &game_state.audio {
+                                let _ = audio.set_score("hard_road.wav");
+                            }
+                            game_state.message =
+                                "Battle started - click an ally to select them".to_string();
+                        }
+                    }
+                    Err(error) => game_state.message = format!("Combat init failed: {error}"),
+                },
+                Err(error) => game_state.message = error,
+            },
+            1 => {
+                if let Err(error) = game_state.go_to(GameScreen::MapTravel) {
+                    game_state.message = error;
+                }
+            }
+            _ => {}
+        },
+        GameScreen::Battle if game_state.paused => match index {
+            0 => {
+                game_state.paused = false;
+                game_state.message = "Resumed".to_string();
+            }
+            1 => {
+                game_state.screen = GameScreen::SaveSlot;
+                game_state.message = "Choose a save slot".to_string();
+            }
+            2 => {
+                game_state.screen = GameScreen::LoadSlot;
+                game_state.message = "Choose a load slot".to_string();
+            }
+            3 => return true,
+            _ => {}
+        },
+        GameScreen::SaveSlot => match index.cmp(&5) {
+            std::cmp::Ordering::Less => {
+                let slot = format!("save_{:02}", index + 1);
+                match saveload::save_game(game_state, &slot) {
+                    Ok(()) => {
+                        game_state.message = format!("Game saved to slot '{}'", index + 1);
+                        game_state.screen = GameScreen::Battle;
+                        game_state.paused = false;
+                    }
+                    Err(error) => game_state.message = format!("Save failed: {error}"),
+                }
+            }
+            std::cmp::Ordering::Equal => {
+                game_state.screen = GameScreen::Battle;
+                game_state.paused = true;
+            }
+            std::cmp::Ordering::Greater => {}
+        },
+        GameScreen::LoadSlot => {
+            if index < 5 {
+                let slot = format!("save_{:02}", index + 1);
+                match saveload::load_game(game_state, &slot) {
+                    Ok(()) => {
+                        game_state.screen = GameScreen::Battle;
+                        game_state.paused = false;
+                        game_state.phase = InteractionPhase::Idle;
+                    }
+                    Err(error) => {
+                        if error.contains("E-SAVE-TAMPERED") {
+                            game_state.pending_unverified_slot = Some(slot);
+                            game_state.message =
+                                "Ledger verification failed. Choose Load Unverified to continue without the Ledger ending."
+                                    .to_string();
+                        } else {
+                            game_state.pending_unverified_slot = None;
+                            game_state.message = format!("Load failed: {error}");
+                        }
+                    }
+                }
+            } else if game_state.pending_unverified_slot.is_some() && index == 5 {
+                let slot = game_state
+                    .pending_unverified_slot
+                    .clone()
+                    .unwrap_or_default();
+                match saveload::load_game_unverified(game_state, &slot) {
+                    Ok(()) => {
+                        game_state.screen = GameScreen::Battle;
+                        game_state.paused = false;
+                        game_state.phase = InteractionPhase::Idle;
+                    }
+                    Err(error) => {
+                        game_state.message = format!("Unverified load refused: {error}");
+                    }
+                }
+            } else {
+                game_state.screen = GameScreen::Battle;
+                game_state.paused = true;
+            }
+        }
+        GameScreen::AfterAction => {
+            if game_state.pending_ledger_writes.is_empty() {
+                if index == 0 {
+                    finish_after_action(game_state, content_root);
+                }
+                return false;
+            }
+            match index {
+                0..=2 => {
+                    if let Err(error) = campaign::choose_ledger_line(game_state, index as u8) {
+                        game_state.message = error;
+                    }
+                }
+                3 => {
+                    game_state.ledger_write_cursor =
+                        game_state.ledger_write_cursor.saturating_sub(1);
+                }
+                4 => {
+                    if game_state.ledger_write_cursor + 1 < game_state.pending_ledger_writes.len() {
+                        game_state.ledger_write_cursor += 1;
+                    }
+                }
+                5 => finish_after_action(game_state, content_root),
+                _ => {}
+            }
+        }
+        GameScreen::LedgerView => match index {
+            0 => game_state.ledger_filter_act = None,
+            1..=4 => game_state.ledger_filter_act = Some(index as u8),
+            5 => game_state.ledger_allies_only = !game_state.ledger_allies_only,
+            6 => game_state.ledger_scroll = game_state.ledger_scroll.saturating_sub(1),
+            7 => game_state.ledger_scroll = game_state.ledger_scroll.saturating_add(1),
+            8 => {
+                game_state.screen = GameScreen::Title;
+            }
+            _ => {}
+        },
+        GameScreen::Settings => {
+            if game_state.remap_pending.is_some() {
+                game_state.remap_pending = None;
+                return false;
+            }
+            match index {
+                0 => game_state.remap_pending = Some(input::Action::Fire),
+                1 => game_state.remap_pending = Some(input::Action::CalledShot),
+                2 => game_state.remap_pending = Some(input::Action::Reload),
+                3 => game_state.remap_pending = Some(input::Action::EndTurn),
+                4 => {
+                    game_state.settings.text_scale = match game_state.settings.text_scale {
+                        100 => 125,
+                        125 => 150,
+                        150 => 175,
+                        175 => 200,
+                        _ => 100,
+                    }
+                }
+                5 => {
+                    game_state.settings.color_palette =
+                        match game_state.settings.color_palette.as_str() {
+                            "default" => "deuteranopia",
+                            "deuteranopia" => "tritanopia",
+                            _ => "default",
+                        }
+                        .to_string()
+                }
+                6 => game_state.settings.camera_shake = !game_state.settings.camera_shake,
+                7 => game_state.settings.flashing_effects = !game_state.settings.flashing_effects,
+                8 => {
+                    game_state.settings.screen_fill_effects =
+                        !game_state.settings.screen_fill_effects
+                }
+                9 => game_state.settings.slow_clock = !game_state.settings.slow_clock,
+                10 => game_state.settings.subtitles = !game_state.settings.subtitles,
+                11 => {
+                    save_menu_settings(game_state);
+                    if let Err(error) = game_state.go_to(GameScreen::Title) {
+                        game_state.message = error;
+                    }
+                    return false;
+                }
+                _ => return false,
+            }
+            save_menu_settings(game_state);
+        }
+        GameScreen::Bibliography => match index.cmp(&bibliography::SECTION_COUNT) {
+            std::cmp::Ordering::Less => {
+                game_state.bibliography_section = index;
+                game_state.message = format!("Showing {}", bibliography::section_label(index));
+            }
+            std::cmp::Ordering::Equal => game_state.screen = GameScreen::Title,
+            std::cmp::Ordering::Greater => {}
+        },
+        _ => {}
+    }
+    false
+}
 
 #[cfg(test)]
 mod presentation_clock_tests {
@@ -53,6 +805,190 @@ mod presentation_clock_tests {
             presentation_frame_interval(true),
             std::time::Duration::from_millis(32)
         );
+    }
+
+    #[test]
+    fn player_settings_menu_exposes_every_supported_command() {
+        let mut state = GameState::new();
+        state.screen = GameScreen::Settings;
+        let labels = menu_buttons_for_screen(&state, std::path::Path::new("content"))
+            .into_iter()
+            .map(|button| button.label)
+            .collect::<Vec<_>>()
+            .join("\n");
+        for command in [
+            "Rebind Fire",
+            "Rebind Called Shot",
+            "Rebind Reload",
+            "Rebind End Turn",
+            "Text Size",
+            "Palette",
+            "Camera Shake",
+            "Flashing Effects",
+            "Screen Effects",
+            "Slower Presentation",
+            "Subtitles",
+            "Save and Back",
+        ] {
+            assert!(
+                labels.contains(command),
+                "missing settings command {command}"
+            );
+        }
+        assert!(!labels.contains("PB_CONFIG_DIR"));
+    }
+
+    #[test]
+    fn title_pointer_commands_follow_the_same_screen_transitions() {
+        let mut state = GameState::new();
+        assert!(!activate_menu_button(
+            &mut state,
+            std::path::Path::new("content"),
+            1
+        ));
+        assert_eq!(state.screen, GameScreen::Settings);
+    }
+
+    #[test]
+    fn bibliography_categories_are_mouse_navigable_and_return_to_title() {
+        let mut state = GameState::new();
+        state.screen = GameScreen::Bibliography;
+
+        assert!(!activate_menu_button(
+            &mut state,
+            std::path::Path::new("content"),
+            1
+        ));
+        assert_eq!(state.bibliography_section, 1);
+        assert_eq!(state.message, "Showing Books & Scholarship");
+
+        assert!(!activate_menu_button(
+            &mut state,
+            std::path::Path::new("content"),
+            bibliography::SECTION_COUNT
+        ));
+        assert_eq!(state.screen, GameScreen::Title);
+    }
+
+    #[test]
+    fn forming_company_selects_opening_before_entering_briefing() {
+        let content_root =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let Ok(content) = pb_content::load::load_all(&content_root) else {
+            panic!("campaign content did not load");
+        };
+        let Some(way) = content.ways.values().next() else {
+            panic!("campaign has no authored Way");
+        };
+        let way_id = way.id.clone();
+        let mut state = GameState::new();
+        state.screen = GameScreen::NewCompany;
+
+        form_new_company(&mut state, &content_root, &way_id);
+
+        assert_eq!(state.screen, GameScreen::Briefing);
+        assert_eq!(state.current_mission.as_deref(), Some("m01_elk_creek"));
+        assert!(briefing_is_available(&state, &content_root));
+    }
+
+    #[test]
+    fn briefing_without_selected_mission_disables_deployment() {
+        let content_root =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let mut state = GameState::new();
+        state.screen = GameScreen::Briefing;
+        state.briefing_page = 1;
+
+        let buttons = menu_buttons_for_screen(&state, &content_root);
+
+        assert_eq!(buttons[0].label, "Mission Unavailable");
+        assert!(!buttons[0].enabled);
+        assert_eq!(buttons[1].label, "Back to Map");
+        assert!(buttons[1].enabled);
+    }
+
+    #[test]
+    fn every_campaign_battle_has_story_score_and_voiced_dialogue() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let content_root = root.join("content");
+        let audio_root = root.join("assets/audio");
+        let Ok(content) = pb_content::load::load_all(&content_root) else {
+            panic!("campaign content did not load");
+        };
+        let mut mission_count = 0;
+
+        for node in content
+            .campaign_nodes
+            .values()
+            .filter(|node| node.kind == "Mission")
+        {
+            mission_count += 1;
+            let Some(scenario_id) = node.scenario_id.as_deref() else {
+                panic!("{} has no scenario id", node.id);
+            };
+            let Some(scenario) = content.scenarios.get(scenario_id) else {
+                panic!("{} references missing scenario {scenario_id}", node.id);
+            };
+            assert!(
+                !scenario.briefing.is_empty(),
+                "{} has no story cards",
+                scenario.id
+            );
+            assert!(
+                !scenario.prebattle_dialogue.is_empty(),
+                "{} has no character scene",
+                scenario.id
+            );
+            let Some(score) = scenario.score.as_deref() else {
+                panic!("{} has no mission score", scenario.id);
+            };
+            assert!(
+                audio_root.join(score).is_file(),
+                "{} references missing score {score}",
+                scenario.id
+            );
+            for line in &scenario.prebattle_dialogue {
+                let Some(voice) = line.voice.as_deref() else {
+                    panic!("{} has an unvoiced spoken line", scenario.id);
+                };
+                assert!(
+                    audio_root.join("dialogue").join(voice).is_file(),
+                    "{} references missing voice {voice}",
+                    scenario.id
+                );
+            }
+        }
+
+        assert_eq!(mission_count, 24);
+    }
+
+    #[test]
+    fn runtime_root_requires_both_packaged_data_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "powderburn-runtime-root-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(std::fs::create_dir_all(root.join("assets")).is_ok());
+        assert!(!has_runtime_data(&root));
+        assert!(std::fs::create_dir_all(root.join("content")).is_ok());
+        assert!(has_runtime_data(&root));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn escape_cancels_called_shot_before_toggling_pause() {
+        let mut state = GameState::new();
+        state.called_shot_active = true;
+        handle_battle_escape(&mut state);
+        assert!(!state.called_shot_active);
+        assert!(!state.paused);
+        assert_eq!(state.message, "Called shot cancelled");
+
+        handle_battle_escape(&mut state);
+        assert!(state.paused);
+        handle_battle_escape(&mut state);
+        assert!(!state.paused);
     }
 }
 
@@ -276,7 +1212,7 @@ fn handle_process_info_arg() -> bool {
             true
         }
         Some(arg) if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
-            println!("POWDERBURN: The Ledger of Elk Creek\n\nUsage: powderburn [--help|--version]");
+            println!("POWDERBURN: The Elk Creek Reckoning\n\nUsage: powderburn [--help|--version]");
             true
         }
         _ => false,
@@ -329,7 +1265,7 @@ fn main() -> Result<(), String> {
         event_loop
             .create_window(
                 Window::default_attributes()
-                    .with_title("POWDERBURN: The Ledger of Elk Creek")
+                    .with_title("POWDERBURN: The Elk Creek Reckoning")
                     .with_inner_size(winit::dpi::LogicalSize::new(
                         f64::from(loaded_settings.resolution_width),
                         f64::from(loaded_settings.resolution_height),
@@ -414,22 +1350,33 @@ fn main() -> Result<(), String> {
         headless: false,
     });
 
-    // ── Load bitmap font ──────────────────────────────────────────────
-    let font_png_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/font.png");
-    let font_png_bytes =
-        std::fs::read(&font_png_path).map_err(|e| format!("failed to read font.png: {e}"))?;
-    let font = BitmapFont::from_png_bytes(&device, &queue, &font_png_bytes)?;
-    println!(
-        "font: loaded {} glyphs from {}",
-        96,
-        font_png_path.display()
-    );
+    let data_root = find_runtime_data_root()?;
+    let content_root = data_root.join("content");
+
+    // ── Load the embedded proportional UI font ────────────────────────
+    // Rasterized once at startup; no system font installation is required.
+    let font_bytes = include_bytes!("../../../assets/fonts/DejaVuSerif.ttf");
+    let font = BitmapFont::from_ttf_bytes(&device, &queue, font_bytes)?;
+    println!("font: loaded embedded DejaVu Serif UI face");
 
     // ── Title artwork renderer ────────────────────────────────────────
     let title_renderer = menu::TitleRenderer::new(&device, &queue, surface_format)?;
+    let prologue_renderer = menu::TitleRenderer::new_with_png(
+        &device,
+        &queue,
+        surface_format,
+        include_bytes!("../../../assets/art/prologue_elk_creek_v2.png"),
+    )?;
+    let map_renderer = menu::TitleRenderer::new_with_png(
+        &device,
+        &queue,
+        surface_format,
+        include_bytes!("../../../assets/art/campaign_travel_map.png"),
+    )?;
 
     // ── HUD renderer ──────────────────────────────────────────────────
     let hud_renderer = hud::HudRenderer::new(&device, &font, surface_format);
+    let mut combat_renderer: Option<combat::CombatRenderer> = None;
 
     // ── After-action report renderer ──────────────────────────────────
     let after_action_renderer =
@@ -439,21 +1386,19 @@ fn main() -> Result<(), String> {
     let mut game_state = GameState::new();
     game_state.settings = loaded_settings;
     game_state.input_bindings = loaded_bindings;
-    println!("POWDERBURN — Press ENTER to begin");
+    println!("POWDERBURN - Press ENTER to begin");
 
     // Initialize audio system
-    let asset_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let asset_root = std::env::var_os("PB_ASSET_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_root.join("assets"));
     let audio = pb_audio::AudioSystem::new(&asset_root);
     audio.set_volumes(
         game_state.settings.music_volume,
         game_state.settings.sfx_volume,
     );
-    audio.play(pb_audio::Sfx::FrontierTheme);
     game_state.audio = Some(audio);
     println!("audio: initialized with assets/audio/");
-
-    // Content root (resolved at compile time via env! macro)
-    let content_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
 
     // Cache viewport dimensions for tile coordinate conversion
     let mut viewport_width: f32 = 1280.0;
@@ -490,13 +1435,7 @@ fn main() -> Result<(), String> {
                 // ── Escape follows declared back transitions; Battle owns pause. ──
                 if matches!(kevent.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
                     if game_state.screen == GameScreen::Battle {
-                        game_state.paused = !game_state.paused;
-                        game_state.message = if game_state.paused {
-                            "Game paused — press ESC to resume, S to save, L to load, Q to quit"
-                                .to_string()
-                        } else {
-                            "Resumed".to_string()
-                        };
+                        handle_battle_escape(&mut game_state);
                         return;
                     }
                     if game_state.screen == GameScreen::Title {
@@ -569,7 +1508,7 @@ fn main() -> Result<(), String> {
                                 if let Some(way) = content.ways.values().nth(index) {
                                     game_state.new_company_way = Some(way.id.clone());
                                     game_state.message = format!(
-                                        "Way selected: {} — {}",
+                                        "Way selected: {} - {}",
                                         way.display_name, way.description
                                     );
                                 }
@@ -587,20 +1526,7 @@ fn main() -> Result<(), String> {
                                 "Choose a Way with keys 1-8 before forming the company".to_string();
                             return;
                         };
-                        if let Err(error) = campaign::start_new_with_way(
-                            &mut game_state,
-                            &content_root,
-                            90210,
-                            &way_id,
-                        ) {
-                            eprintln!("{error}");
-                            game_state.message = error;
-                            return;
-                        }
-                        if let Err(error) = game_state.go_to(GameScreen::Camp) {
-                            eprintln!("{error}");
-                            game_state.message = error;
-                        }
+                        form_new_company(&mut game_state, &content_root, &way_id);
                     }
                     return;
                 }
@@ -689,7 +1615,7 @@ fn main() -> Result<(), String> {
                                 );
                             }
                             game_state.message = format!(
-                                "Settings saved — text {}%, palette {}, shake {}, flash {}, fill {}, slow {}, subtitles {}",
+                                "Settings saved - text {}%, palette {}, shake {}, flash {}, fill {}, slow {}, subtitles {}",
                                 game_state.settings.text_scale,
                                 game_state.settings.color_palette,
                                 game_state.settings.camera_shake,
@@ -742,8 +1668,11 @@ fn main() -> Result<(), String> {
                 }
 
                 if game_state.screen == GameScreen::Camp {
+                    if kevent.physical_key == PhysicalKey::Code(KeyCode::Enter) {
+                        open_travel_map(&mut game_state, &content_root);
+                        return;
+                    }
                     let target_screen = match kevent.physical_key {
-                        PhysicalKey::Code(KeyCode::Enter) => Some(GameScreen::MapTravel),
                         PhysicalKey::Code(KeyCode::KeyL) => Some(GameScreen::LedgerView),
                         PhysicalKey::Code(KeyCode::KeyS) => Some(GameScreen::Settings),
                         _ => None,
@@ -803,6 +1732,7 @@ fn main() -> Result<(), String> {
                                 game_state.message = error;
                                 return;
                             }
+                            begin_briefing_scene(&mut game_state, &content_root);
                             if let Err(error) = game_state.go_to(GameScreen::Briefing) {
                                 eprintln!("{error}");
                                 game_state.message = error;
@@ -815,23 +1745,32 @@ fn main() -> Result<(), String> {
 
                 if game_state.screen == GameScreen::Briefing {
                     if matches!(kevent.physical_key, PhysicalKey::Code(KeyCode::Enter)) {
-                        game_state.message = "Initializing combat...".to_string();
-                        println!("{}", game_state.message);
-                        match combat::init_combat(&mut game_state, &content_root) {
-                            Ok(()) => {
-                                if let Err(error) = game_state.go_to(GameScreen::Battle) {
-                                    eprintln!("{error}");
-                                    game_state.message = error;
-                                } else {
-                                    game_state.message =
-                                        "Battle started — click an ally to select them".to_string();
-                                    println!("{}", game_state.message);
+                        match advance_briefing_scene(&mut game_state, &content_root) {
+                            Ok(false) => {}
+                            Ok(true) => {
+                                match combat::init_combat(&mut game_state, &content_root) {
+                                    Ok(()) => {
+                                        if let Err(error) = game_state.go_to(GameScreen::Battle) {
+                                            eprintln!("{error}");
+                                            game_state.message = error;
+                                        } else {
+                                            if let Some(audio) = &game_state.audio {
+                                                let _ = audio.set_score("hard_road.wav");
+                                            }
+                                            game_state.message =
+                                                "Battle started - click an ally to select them"
+                                                    .to_string();
+                                            println!("{}", game_state.message);
+                                        }
+                                    }
+                                    Err(error) => {
+                                        game_state.message =
+                                            format!("Combat init failed: {error}");
+                                        eprintln!("{}", game_state.message);
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                game_state.message = format!("Combat init failed: {e}");
-                                eprintln!("{}", game_state.message);
-                            }
+                            Err(error) => game_state.message = error,
                         }
                     }
                     return;
@@ -1193,6 +2132,12 @@ fn main() -> Result<(), String> {
 
                     // These keys only work when an actor is selected
                     if let InteractionPhase::SelectedActor(_) = game_state.phase {
+                        // Tactical actions are edge-triggered. OS key-repeat
+                        // must never submit a second paid command while a key
+                        // is held down.
+                        if kevent.repeat {
+                            return;
+                        }
                         let mapped = key_token(kevent.physical_key)
                             .and_then(|token| game_state.input_bindings.action_for(&token));
                         if let Some(action) = mapped {
@@ -1417,19 +2362,27 @@ fn main() -> Result<(), String> {
                     } else if position.y >= f64::from(viewport_height) - EDGE_SCROLL_ZONE {
                         game_state.camera_y += EDGE_SCROLL_STEP;
                     }
-                    let tile = combat::screen_to_tile(
+                    let tile = combat::screen_to_tile_in_state(
+                        &game_state,
                         position.x,
                         position.y,
-                        game_state.camera_x,
-                        game_state.camera_y,
-                        game_state.camera_zoom,
                         viewport_width,
                         viewport_height,
                     );
                     game_state.hovered_tile_x = tile.x;
                     game_state.hovered_tile_y = tile.y;
                     if let Some(preview) = combat::movement_preview(&game_state) {
-                        let mut consequences = vec![format!("Move: {} AP", preview.ap_cost)];
+                        let movement = if preview.ends_turn { "SPRINT" } else { "MOVE" };
+                        let tile_word = if preview.distance == 1 { "tile" } else { "tiles" };
+                        let current_ap =
+                            u16::from(preview.remaining_ap) + u16::from(preview.ap_cost);
+                        let mut consequences = vec![format!(
+                            "{movement}: {} {tile_word} | AP {current_ap} - {} = {}",
+                            preview.distance, preview.ap_cost, preview.remaining_ap
+                        )];
+                        if preview.ends_turn {
+                            consequences.push("SPRINT ENDS TURN".to_string());
+                        }
                         if preview.leaves_cover {
                             consequences.push("LEAVES COVER [crosshatch]".to_string());
                         }
@@ -1457,17 +2410,65 @@ fn main() -> Result<(), String> {
                 event:
                     WindowEvent::MouseInput {
                         state: ElementState::Released,
-                        button: MouseButton::Left,
+                        button,
                         ..
                     },
                 ..
             } => {
-                game_state.mouse_down = false;
+                if button == MouseButton::Left {
+                    game_state.mouse_down = false;
+                }
+
+                if game_state.screen != GameScreen::Battle || game_state.paused {
+                    if button != MouseButton::Left {
+                        return;
+                    }
+                    let buttons = menu_buttons_for_screen(&game_state, &content_root);
+                    let size = window.inner_size();
+                    if let Some(index) = menu::button_at(
+                        &buttons,
+                        (size.width.max(1), size.height.max(1)),
+                        game_state.settings.text_scale,
+                        (game_state.mouse_x, game_state.mouse_y),
+                    ) {
+                        if activate_menu_button(&mut game_state, &content_root, index) {
+                            target.exit();
+                        }
+                    }
+                    return;
+                }
 
                 // Battle click handler
                 if game_state.screen == GameScreen::Battle {
-                    if let Err(e) = combat::handle_combat_click(&mut game_state) {
-                        eprintln!("combat click error: {e}");
+                    let size = window.inner_size();
+                    if button == MouseButton::Left {
+                        if let Some(action) = combat::battle_action_at(
+                            &game_state,
+                            size.width.max(1),
+                            size.height.max(1),
+                        ) {
+                            if let Err(error) =
+                                combat::activate_battle_action(&mut game_state, action)
+                            {
+                                game_state.message = format!("Action failed: {error}");
+                            }
+                            return;
+                        }
+                    }
+                    let pointer_button = match button {
+                        MouseButton::Left => Some(combat::CombatPointerButton::Left),
+                        MouseButton::Right => Some(combat::CombatPointerButton::Right),
+                        _ => None,
+                    };
+                    if let Some(pointer_button) = pointer_button {
+                        if let Err(e) = combat::handle_combat_click(
+                            &mut game_state,
+                            pointer_button,
+                            size.width.max(1),
+                            size.height.max(1),
+                        ) {
+                            eprintln!("combat click error: {e}");
+                        }
                     }
                     if game_state.screen == GameScreen::AfterAction {
                         if let Err(error) =
@@ -1507,6 +2508,10 @@ fn main() -> Result<(), String> {
                 event: WindowEvent::RedrawRequested,
                 ..
             } => {
+                if game_state.screen == GameScreen::Battle && !game_state.paused {
+                    game_state.presentation_frame =
+                        game_state.presentation_frame.wrapping_add(1);
+                }
                 let frame = match surface.get_current_texture() {
                     Ok(f) => f,
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -1548,6 +2553,8 @@ fn main() -> Result<(), String> {
                 // Render the appropriate screen
                 let sw = size.width.max(1);
                 let sh = size.height.max(1);
+                let screen_buttons = menu_buttons_for_screen(&game_state, &content_root);
+                let pointer = (game_state.mouse_x, game_state.mouse_y);
                 match game_state.screen {
                     GameScreen::Title => {
                         title_renderer.render(&render_device, &view);
@@ -1558,6 +2565,8 @@ fn main() -> Result<(), String> {
                             sw,
                             sh,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::Camp => {
@@ -1578,12 +2587,25 @@ fn main() -> Result<(), String> {
                                 Ok(content) => {
                                     let dialogue =
                                         campaign::available_camp_dialogue(&content, campaign_state);
-                                    for scene in dialogue.iter().take(4) {
-                                        for line in scene.lines.iter().take(1) {
+                                    let mut shown = 0_usize;
+                                    for scene in &dialogue {
+                                        for line in &scene.lines {
+                                            if shown >= 8 {
+                                                break;
+                                            }
+                                            let speaker = content
+                                                .companions
+                                                .get(&line.speaker_id)
+                                                .map_or(line.speaker_id.as_str(), |companion| {
+                                                    companion.display_name.as_str()
+                                                });
+                                            let words =
+                                                line.translation.as_deref().unwrap_or(&line.original);
                                             lines.push(format!(
                                                 "{}: {}",
-                                                line.speaker_id, line.subtitle
+                                                speaker, words
                                             ));
+                                            shown += 1;
                                         }
                                     }
                                     if dialogue.is_empty() {
@@ -1602,9 +2624,6 @@ fn main() -> Result<(), String> {
                                 "E-CAMPAIGN-STATE: No company is encamped here.".to_string(),
                             );
                         }
-                        lines.push(
-                            "ENTER: map  L: Ledger  S: settings  ESC: title".to_string(),
-                        );
                         let line_refs: Vec<&str> = lines.iter().map(String::as_str).collect();
                         hud_renderer.render_screen_overlay(
                             &font,
@@ -1614,6 +2633,8 @@ fn main() -> Result<(), String> {
                             "CAMP",
                             &line_refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::LedgerView => {
@@ -1666,10 +2687,6 @@ fn main() -> Result<(), String> {
                             );
                             lines.push(format!("Chain head: {ZERO_LEDGER_HEAD}"));
                         }
-                        lines.push(
-                            "0: all acts  1-4: act  A: allies  arrows: scroll  ESC: return"
-                                .to_string(),
-                        );
                         let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
                         hud_renderer.render_screen_overlay(
                             &font,
@@ -1679,45 +2696,23 @@ fn main() -> Result<(), String> {
                             "THE LEDGER",
                             &refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::NewCompany => {
                         title_renderer.render(&render_device, &view);
-                        let mut lines = vec![
-                            "Elias Ward opens the Ledger at Elk Creek.".to_string(),
-                            "Choose one lasting Way; every choice carries a trade.".to_string(),
-                        ];
-                        match pb_content::load::load_all(&content_root) {
-                            Ok(content) => {
-                                for (index, way) in content.ways.values().enumerate() {
-                                    let marker = if game_state.new_company_way.as_deref()
-                                        == Some(way.id.as_str())
-                                    {
-                                        ">"
-                                    } else {
-                                        " "
-                                    };
-                                    lines.push(format!(
-                                        "{marker} {}. {} | G{:+} N{:+} W{:+} H{:+} E{:+} S{:+} L{:+} | Seq{:+} Sand{}%",
-                                        index + 1,
-                                        way.display_name,
-                                        way.stat_mods.grit,
-                                        way.stat_mods.nerve,
-                                        way.stat_mods.wind,
-                                        way.stat_mods.hands,
-                                        way.stat_mods.eyes,
-                                        way.stat_mods.savvy,
-                                        way.stat_mods.luck,
-                                        way.effects.sequence_bonus,
-                                        way.effects.sand_percent,
-                                    ));
-                                }
-                            }
-                            Err(error) => {
-                                lines.push(format!("E-CAMPAIGN-CONTENT: {error}"));
-                            }
-                        }
-                        lines.push("1-8: choose Way  ENTER: form company  ESC: return".to_string());
+                        let lines = match pb_content::load::load_all(&content_root) {
+                            Ok(content) => new_company_screen_lines(
+                                &content,
+                                game_state.new_company_way.as_deref(),
+                            ),
+                            Err(error) => vec![
+                                "Campaign data could not be loaded.".to_string(),
+                                format!("Details: {error}"),
+                                "ESC  Return to the title".to_string(),
+                            ],
+                        };
                         let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
                         hud_renderer.render_screen_overlay(
                             &font,
@@ -1727,31 +2722,32 @@ fn main() -> Result<(), String> {
                             "NEW COMPANY",
                             &refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::MapTravel => {
-                        title_renderer.render(&render_device, &view);
+                        map_renderer.render(&render_device, &view);
                         let mut lines = Vec::new();
                         if game_state.map_choices.is_empty() {
+                            lines.push("CURRENT ROUTE — The Ledger fixes the next destination.".to_string());
                             lines.push(
-                                "The next reachable mission is marked from the campaign Ledger."
+                                "Linear historical passages advance in date order; major forks are yours to choose."
                                     .to_string(),
                             );
-                            lines.push("ENTER: prepare its briefing  ESC: return to camp".to_string());
                         } else {
-                            lines.push("The road divides. Choose one authored course:".to_string());
+                            lines.push("ROUTE DECISION — Choose the company's next destination:".to_string());
                             if let Ok(content) = pb_content::load::load_all(&content_root) {
                                 for (index, choice_id) in
                                     game_state.map_choices.iter().enumerate()
                                 {
-                                    let date = content
-                                        .campaign_nodes
-                                        .get(choice_id)
-                                        .map_or("date unknown", |node| node.date.as_str());
-                                    lines.push(format!("{}. {} — {date}", index + 1, choice_id));
+                                    lines.push(format!(
+                                        "{}. {}",
+                                        index + 1,
+                                        travel_choice_label(&content, choice_id)
+                                    ));
                                 }
                             }
-                            lines.push("1-2: record choice  ENTER: continue when resolved".to_string());
                         }
                         let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
                         hud_renderer.render_screen_overlay(
@@ -1762,11 +2758,13 @@ fn main() -> Result<(), String> {
                             "MAP & TRAVEL",
                             &refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::Briefing => {
-                        title_renderer.render(&render_device, &view);
                         let mut lines = Vec::new();
+                        let mut use_prologue_art = false;
                         match game_state
                             .current_mission
                             .as_deref()
@@ -1775,18 +2773,12 @@ fn main() -> Result<(), String> {
                                 pb_content::load::load_all(&content_root)
                                     .map_err(|error| format!("E-CAMPAIGN-CONTENT: {error}"))
                                     .and_then(|content| {
-                                        content
-                                            .scenarios
-                                            .get(mission)
+                                        campaign::scenario_for_mission(&content, mission)
                                             .cloned()
-                                            .ok_or_else(|| {
-                                                format!(
-                                                    "E-CAMPAIGN-CONTENT: missing scenario {mission}"
-                                                )
-                                            })
                                     })
                             }) {
                             Ok(scenario) => {
+                                use_prologue_art = scenario.id == "scn_m01_elk_creek";
                                 lines.push(format!(
                                     "{} — {} | {} | {}",
                                     scenario.display_name,
@@ -1794,15 +2786,54 @@ fn main() -> Result<(), String> {
                                     scenario.weather,
                                     scenario.light
                                 ));
-                                for objective in &scenario.objectives {
+                                if game_state.briefing_page == 0 {
+                                    let count = scenario.briefing.len().max(1);
                                     lines.push(format!(
-                                        "[{}] {}",
-                                        objective.kind, objective.description
+                                        "STORY {}/{}",
+                                        game_state.briefing_line.saturating_add(1).min(count),
+                                        count
                                     ));
+                                    if let Some(line) =
+                                        scenario.briefing.get(game_state.briefing_line)
+                                    {
+                                        lines.push(line.clone());
+                                    } else {
+                                        lines.push(
+                                            "No authored situation was provided for this mission."
+                                                .to_string(),
+                                        );
+                                    }
+                                } else {
+                                    let count = scenario.prebattle_dialogue.len().max(1);
+                                    lines.push(format!(
+                                        "SCENE {}/{}",
+                                        game_state.briefing_line.saturating_add(1).min(count),
+                                        count
+                                    ));
+                                    if let Some(line) =
+                                        scenario.prebattle_dialogue.get(game_state.briefing_line)
+                                    {
+                                        lines.push(format!("{}: {}", line.speaker, line.text));
+                                    }
+                                    if briefing_can_deploy(&game_state, &content_root) {
+                                        for objective in &scenario.objectives {
+                                            lines.push(format!(
+                                                "OBJECTIVE — {}",
+                                                objective.description
+                                            ));
+                                        }
+                                    }
                                 }
-                                lines.push("ENTER: deploy  ESC: return to map".to_string());
                             }
-                            Err(error) => lines.push(error),
+                            Err(error) => {
+                                lines.push("This mission briefing could not be opened.".to_string());
+                                lines.push(format!("Details: {error}"));
+                            }
+                        }
+                        if use_prologue_art {
+                            prologue_renderer.render(&render_device, &view);
+                        } else {
+                            title_renderer.render(&render_device, &view);
                         }
                         let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
                         hud_renderer.render_screen_overlay(
@@ -1810,46 +2841,55 @@ fn main() -> Result<(), String> {
                             &render_device,
                             &view,
                             (sw, sh),
-                            "MISSION BRIEFING",
+                            if use_prologue_art && game_state.briefing_page == 0 {
+                                "ELK CREEK — THE DEBT"
+                            } else if use_prologue_art {
+                                "ELK CREEK — NO MORE RUNNING"
+                            } else {
+                                "ON THE HARD ROAD"
+                            },
                             &refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
-                    screen @ (GameScreen::Settings | GameScreen::Bibliography) => {
+                    GameScreen::Settings => {
                         title_renderer.render(&render_device, &view);
-                        let (title, lines): (&str, &[&str]) = match screen {
-                            GameScreen::Settings => (
-                                "SETTINGS",
-                                &[
-                                    "Keyboard control, subtitles, palettes, and text scale.",
-                                    "Settings persistence is under PB_CONFIG_DIR. ESC: return",
-                                ],
-                            ),
-                            GameScreen::Bibliography => (
-                                "BIBLIOGRAPHY",
-                                &[
-                                    "Historical sources are listed in content/BIBLIOGRAPHY.md.",
-                                    "Press ESC to return to the title.",
-                                ],
-                            ),
-                            _ => (
-                                "SCREEN ERROR",
-                                &["E-SCREEN-TRANSITION: invalid presentation state."],
-                            ),
-                        };
+                        let lines = settings_screen_lines(&game_state);
+                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
                         hud_renderer.render_screen_overlay(
                             &font,
                             &render_device,
                             &view,
                             (sw, sh),
-                            title,
-                            lines,
+                            "SETTINGS",
+                            &refs,
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
+                        );
+                    }
+                    GameScreen::Bibliography => {
+                        title_renderer.render(&render_device, &view);
+                        let bibliography_lines =
+                            bibliography::section_lines(game_state.bibliography_section);
+                        hud_renderer.render_screen_overlay(
+                            &font,
+                            &render_device,
+                            &view,
+                            (sw, sh),
+                            "BIBLIOGRAPHY",
+                            bibliography_lines,
+                            &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::Battle => {
                         // Always render the combat frame
                         combat::render_combat_frame(
+                            &mut combat_renderer,
                             &game_state,
                             &render_device,
                             &view,
@@ -1872,6 +2912,8 @@ fn main() -> Result<(), String> {
                                 sw,
                                 sh,
                                 &game_state.settings,
+                                &screen_buttons,
+                                pointer,
                             );
                         }
                     }
@@ -1885,9 +2927,19 @@ fn main() -> Result<(), String> {
                             sw,
                             sh,
                         );
+                        hud_renderer.render_buttons_only(
+                            &font,
+                            &render_device,
+                            &view,
+                            (sw, sh),
+                            &game_state.settings,
+                            &screen_buttons,
+                            pointer,
+                        );
                     }
                     GameScreen::SaveSlot => {
                         combat::render_combat_frame(
+                            &mut combat_renderer,
                             &game_state,
                             &render_device,
                             &view,
@@ -1904,10 +2956,13 @@ fn main() -> Result<(), String> {
                             sh,
                             "SAVE SLOT",
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                     GameScreen::LoadSlot => {
                         combat::render_combat_frame(
+                            &mut combat_renderer,
                             &game_state,
                             &render_device,
                             &view,
@@ -1923,6 +2978,8 @@ fn main() -> Result<(), String> {
                             sh,
                             "LOAD SLOT",
                             &game_state.settings,
+                            &screen_buttons,
+                            pointer,
                         );
                     }
                 }

@@ -32,6 +32,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    if input.tex_coord.x < 0.0 {
+        return input.color;
+    }
     let tex_color = textureSample(texture, sampler_state, input.tex_coord);
     let highest = max(tex_color.r, max(tex_color.g, tex_color.b));
     let lowest = min(tex_color.r, min(tex_color.g, tex_color.b));

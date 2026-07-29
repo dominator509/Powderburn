@@ -46,7 +46,7 @@ impl GameScreen {
             (
                 Self::Title,
                 Self::NewCompany | Self::Settings | Self::LedgerView | Self::Bibliography
-            ) | (Self::NewCompany, Self::Camp | Self::Title)
+            ) | (Self::NewCompany, Self::Briefing | Self::Camp | Self::Title)
                 | (
                     Self::Camp,
                     Self::MapTravel | Self::LedgerView | Self::Settings | Self::Title
@@ -182,7 +182,8 @@ pub struct FlashingEffect {
 /// No shipped effect flashes. Future effects fail the gate above 3 Hz.
 pub const SHIPPED_FLASHING_EFFECTS: &[FlashingEffect] = &[];
 
-pub const HUD_ACTION_SELECTED: &str = "Actions: [F]ire  [A]imed  [G]Called  [H]old  [R]eload";
+pub const HUD_ACTION_SELECTED: &str =
+    "Movement: BLUE = move | RED HATCH = sprint (ends turn) | Hover shows AP before - cost = after";
 pub const HUD_ACTION_TARGETING: &str = "Click an enemy to target | Right-click to cancel";
 pub const HUD_INSTRUCTION_IDLE: &str = "Click an ally to select | Press key for action";
 pub const HUD_INSTRUCTION_SELECTED: &str =

@@ -11,7 +11,7 @@ use wgpu::util::DeviceExt;
 use crate::device::RenderDevice;
 
 /// A single smoke density tile.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SmokeTile {
     pub density: u8, // 0-6, where 0 = no smoke, 6 = maximum
 }
@@ -43,6 +43,25 @@ impl SmokeSystem {
         rows: u32,
         smoke_grid: &[SmokeTile],
         camera_matrix_bytes: &[u8; 64],
+    ) -> Self {
+        Self::new_with_format(
+            device,
+            cols,
+            rows,
+            smoke_grid,
+            camera_matrix_bytes,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )
+    }
+
+    /// Create a smoke system whose pipeline matches the destination target.
+    pub fn new_with_format(
+        device: &Arc<RenderDevice>,
+        cols: u32,
+        rows: u32,
+        smoke_grid: &[SmokeTile],
+        camera_matrix_bytes: &[u8; 64],
+        target_format: wgpu::TextureFormat,
     ) -> Self {
         let tile_w = 64.0;
         let tile_h = 32.0;
@@ -189,7 +208,7 @@ impl SmokeSystem {
                     entry_point: Some("fs_main"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: target_format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -232,6 +251,77 @@ impl SmokeSystem {
             bind_group,
             uniform_buffer,
         }
+    }
+
+    /// Refresh dynamic smoke geometry while retaining the shader pipeline.
+    pub fn update(
+        &mut self,
+        device: &Arc<RenderDevice>,
+        cols: u32,
+        rows: u32,
+        smoke_grid: &[SmokeTile],
+        camera_matrix_bytes: &[u8; 64],
+    ) {
+        #[repr(C)]
+        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+        struct SmokeVert {
+            position: [f32; 3],
+            color: [f32; 4],
+        }
+
+        let half_w = 32.0;
+        let half_h = 16.0;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for y in 0..rows {
+            for x in 0..cols {
+                let idx = (y * cols + x) as usize;
+                let tile = smoke_grid.get(idx).copied().unwrap_or(SmokeTile::new(0));
+                if tile.density == 0 {
+                    continue;
+                }
+                let iso_x = (x as f32 - y as f32) * half_w;
+                let iso_y = (x as f32 + y as f32) * half_h;
+                let normalized = f32::from(tile.density) / 6.0;
+                let alpha = 0.12 + normalized * 0.58;
+                let gray = 0.78 + normalized * 0.16;
+                let vtx = |dx: f32, dy: f32| SmokeVert {
+                    position: [iso_x + dx, iso_y + dy, 10.0],
+                    color: [gray, gray, gray, alpha],
+                };
+                let base = vertices.len() as u32;
+                vertices.push(vtx(-half_w, 0.0));
+                vertices.push(vtx(0.0, -half_h));
+                vertices.push(vtx(half_w, 0.0));
+                vertices.push(vtx(0.0, half_h));
+                indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+            }
+        }
+        self.num_indices = indices.len() as u32;
+        self.vertex_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("smoke vertex buffer dynamic"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        self.index_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("smoke index buffer dynamic"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        device
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, camera_matrix_bytes);
+    }
+
+    /// Update only the camera transform.
+    pub fn update_camera(&self, device: &Arc<RenderDevice>, camera_matrix_bytes: &[u8; 64]) {
+        device
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, camera_matrix_bytes);
     }
 
     /// Draw the smoke overlay.

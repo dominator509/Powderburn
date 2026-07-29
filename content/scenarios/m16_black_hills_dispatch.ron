@@ -1,6 +1,15 @@
 (
   id: "scn_m16_black_hills_dispatch",
   display_name: "Black Hills Dispatch",
+  briefing: [
+    "A delayed dispatch proves Teague redirected supplies and scouts for profit during the Black Hills crisis. It arrives too late to prevent the fixed historical disaster.",
+    "It is not too late to expose the theft or save the courier Ring scouts are hunting through flooded ground.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"Four days late can be the distance between warning and mourning.", voice:Some("m16_01_whitehorse.wav")),
+    (speaker:"Elias Ward", text:"We cannot steal those days back. We can keep Teague from stealing the truth.", voice:Some("m16_02_elias.wav")),
+  ],
+  score: Some("winter_count.wav"),
   date: "1876-06-29",
   map: (
     width: 24,

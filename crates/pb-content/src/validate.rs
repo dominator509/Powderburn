@@ -723,6 +723,9 @@ mod tests {
         ScenarioData {
             id: id.into(),
             display_name: "Test".into(),
+            briefing: Vec::new(),
+            prebattle_dialogue: Vec::new(),
+            score: None,
             date: "1867-10-21".into(),
             map: MapData {
                 width: 10,

@@ -1,6 +1,15 @@
 (
   id: "scn_m18_great_strike",
   display_name: "Great Railroad Strike",
+  briefing: [
+    "Rail workers have stopped the line. Teague's hired provocateurs plan to fire on guards and workers alike, manufacturing the bloodshed needed to crush the strike and erase his payroll theft.",
+    "Expose and stop the provocateurs without pretending Powderburn controls the fixed course of the national strike.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Ames", text:"Teague does not care which side shoots first. He owns the story after.", voice:Some("m18_01_ames.wav")),
+    (speaker:"Doyle", text:"Then we remove his storytellers before they pull a trigger.", voice:Some("m18_02_doyle.wav")),
+  ],
+  score: Some("iron_road.wav"),
   date: "1877-07-21",
   map: (
     width: 24,

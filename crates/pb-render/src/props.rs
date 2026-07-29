@@ -33,6 +33,38 @@ impl PropSystem {
         ))
     }
 
+    /// Build props with a pipeline matching the destination target.
+    pub fn new_with_format(
+        device: &Arc<RenderDevice>,
+        props: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
+        Self(SpriteSystem::new_with_atlas_and_format(
+            device,
+            props,
+            camera_matrix_bytes,
+            PROP_ATLAS,
+            "frontier environmental prop atlas",
+            target_format,
+        ))
+    }
+
+    /// Update the tactical camera without recreating the prop atlas/pipeline.
+    pub fn update_camera(&self, device: &Arc<RenderDevice>, camera_matrix_bytes: &[u8; 64]) {
+        self.0.update_camera(device, camera_matrix_bytes);
+    }
+
+    /// Refresh state-derived props without recreating their atlas/pipeline.
+    pub fn update(
+        &mut self,
+        device: &Arc<RenderDevice>,
+        props: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+    ) {
+        self.0.update(device, props, camera_matrix_bytes);
+    }
+
     /// Draw all props inside an existing render pass.
     pub fn render<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
         self.0.render(rpass);
@@ -106,7 +138,10 @@ pub fn prop_instances_from_state(state: &pb_sim::state::SimState) -> Vec<SpriteI
     ordered.sort_by_key(|(tile, _)| (tile.x + tile.y, tile.y, tile.x));
     ordered
         .into_iter()
-        .map(|(tile, prop)| prop_sprite(tile, prop))
+        .map(|(tile, prop)| {
+            let elevation = state.tile_elevations.get(&tile).copied().unwrap_or(0);
+            prop_sprite(tile, prop, elevation)
+        })
         .collect()
 }
 
@@ -123,11 +158,11 @@ fn stable_cell(tile: TileXY, scenario_id: u32) -> u32 {
         ^ scenario_id.wrapping_mul(13)
 }
 
-fn prop_sprite(tile: TileXY, prop: u8) -> SpriteInstance {
+fn prop_sprite(tile: TileXY, prop: u8, elevation: i32) -> SpriteInstance {
     let grid_x = f32::from(tile.x);
     let grid_y = f32::from(tile.y);
     let iso_x = (grid_x - grid_y) * 32.0;
-    let tile_y = (grid_x + grid_y) * 16.0;
+    let tile_y = (grid_x + grid_y) * 16.0 + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP;
     let (width, height) = match prop {
         3 | 4 | 7 | 8 => (112.0, 112.0),
         9 | 10 => (104.0, 88.0),

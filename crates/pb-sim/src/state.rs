@@ -345,6 +345,8 @@ pub enum SimError {
     InvalidMoveDistance { actor: ActorId, distance: i16 },
     /// Sprinting is only legal while Standing.
     CannotSprint(ActorId),
+    /// A stance action requested the stance the actor already occupies.
+    AlreadyInStance(ActorId, Stance),
     /// A location-specific wound prevents use of the equipped weapon.
     CannotUseWeapon(ActorId),
     /// A Broken actor must spend its first two AP retreating.
