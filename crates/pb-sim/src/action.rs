@@ -103,7 +103,11 @@ pub fn action_cost(action: &Action, actor: &ActorState) -> pb_core::ids::Ap {
         // SPEC-001 costs
         Action::StanceCrouch => Ap(1),
         Action::StanceProne => Ap(2),
-        Action::RiseFromProne => Ap(2),
+        Action::RiseFromProne => Ap(if actor.stance == Stance::Crouched {
+            1
+        } else {
+            2
+        }),
         Action::FanHammer(_) => Ap(6),
         Action::Volley(_) => Ap(0),
         Action::LeftHandDraw(_) => Ap(3),
@@ -1433,19 +1437,14 @@ pub fn choose_retreat_tile(state: &SimState, actor_id: ActorId) -> Option<TileXY
         .map(|(tile, _)| tile)
 }
 
-fn has_outward_retreat(state: &SimState, actor_id: ActorId) -> bool {
-    choose_retreat_tile(state, actor_id).is_some()
-}
-
 fn execute_hold(state: &mut SimState, actor_id: ActorId) -> Vec<Event> {
-    let cornered = state
+    let abandoning_mandatory_retreat = state
         .broken_retreat_remaining
         .get(&actor_id)
         .copied()
         .unwrap_or(0)
-        > 0
-        && !has_outward_retreat(state, actor_id);
-    if !cornered {
+        > 0;
+    if !abandoning_mandatory_retreat {
         return Vec::new();
     }
     if let Some(actor) = state.actors.get_mut(&actor_id) {
@@ -1479,7 +1478,10 @@ fn enforce_broken_retreat(
     }
     let destination = match action {
         Action::Move(tile) | Action::Sprint(tile) => *tile,
-        Action::Hold if !has_outward_retreat(state, actor_id) => return Ok(()),
+        // End Turn is a total command. A Broken actor who declines their
+        // mandatory retreat leaves the field instead of trapping the client
+        // on an unfinishable turn.
+        Action::Hold => return Ok(()),
         _ => return Err(SimError::MustRetreat(actor_id)),
     };
     let Some(actor) = state.actors.get(&actor_id) else {
@@ -1893,8 +1895,10 @@ mod tests {
 
     #[test]
     fn action_cost_rise_from_prone() {
-        let actor = make_actor();
+        let mut actor = make_actor();
         assert_eq!(action_cost(&Action::RiseFromProne, &actor), Ap(2));
+        actor.stance = Stance::Crouched;
+        assert_eq!(action_cost(&Action::RiseFromProne, &actor), Ap(1));
     }
 
     #[test]
@@ -2243,6 +2247,50 @@ mod tests {
         assert_eq!(state.actors[&broken].sand, 0);
         assert!(!state.sequence_clock.contains_key(&broken));
         assert!(events.contains(&Event::Routed { actor: broken }));
+    }
+
+    #[test]
+    fn end_turn_routes_broken_actor_who_declines_an_available_retreat() {
+        let mut state = SimState::new(42, 1);
+        let broken = ActorId(1);
+        let enemy = ActorId(2);
+        let mut broken_actor = make_actor();
+        broken_actor.name = "broken_player".to_string();
+        broken_actor.faction_id = "player".to_string();
+        broken_actor.sand = 3;
+        broken_actor.position = TileXY::new(2, 2);
+        broken_actor.ap = Ap(5);
+        state.actors.insert(broken, broken_actor);
+        let mut enemy_actor = make_actor();
+        enemy_actor.name = "pursuer".to_string();
+        enemy_actor.faction_id = "outlaw".to_string();
+        enemy_actor.position = TileXY::new(4, 2);
+        state.actors.insert(enemy, enemy_actor);
+        state.broken_retreat_remaining.insert(broken, 2);
+        state.sequence_clock.insert(broken, 0);
+        state.active_actor = Some(broken);
+
+        assert!(
+            choose_retreat_tile(&state, broken).is_some(),
+            "fixture must have an available outward retreat"
+        );
+        let events = step(
+            &mut state,
+            Command {
+                actor_id: broken,
+                action: Action::Hold,
+            },
+        )
+        .expect("End Turn must never be rejected");
+
+        assert!(state.actors[&broken].routed);
+        assert_eq!(state.actors[&broken].ap, Ap(0));
+        assert_eq!(state.active_actor, None);
+        assert!(!state.sequence_clock.contains_key(&broken));
+        assert!(events.contains(&Event::Routed { actor: broken }));
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, Event::TurnEnd { actor, .. } if *actor == broken)));
     }
 
     #[test]

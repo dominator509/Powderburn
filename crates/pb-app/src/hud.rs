@@ -427,10 +427,17 @@ impl HudRenderer {
         });
 
         // Mouse-first tactical command bar.
-        let action_buttons = if matches!(
+        let player_can_act = matches!(
             game_state.phase,
             InteractionPhase::SelectedActor(_) | InteractionPhase::Targeting { .. }
-        ) {
+        ) || game_state.sim.as_ref().is_some_and(|sim| {
+            sim.active_actor.is_some_and(|id| {
+                sim.actors
+                    .get(&id)
+                    .is_some_and(|actor| actor.alive && actor.faction_id == "player")
+            })
+        });
+        let action_buttons = if player_can_act {
             battle_action_layout(screen_w, screen_h)
         } else {
             Vec::new()

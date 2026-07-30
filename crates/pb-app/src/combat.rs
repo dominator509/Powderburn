@@ -1096,7 +1096,7 @@ pub fn battle_action_layout(
         (BattleHudAction::Fire, "FIRE"),
         (BattleHudAction::Aim, "AIM"),
         (BattleHudAction::Reload, "RELOAD"),
-        (BattleHudAction::Crouch, "CROUCH - 1 AP"),
+        (BattleHudAction::Crouch, "CROUCH / STAND"),
         (BattleHudAction::Hold, "END TURN"),
     ];
     let gap = 10.0;
@@ -1123,22 +1123,29 @@ pub fn battle_action_at(
     viewport_width: u32,
     viewport_height: u32,
 ) -> Option<BattleHudAction> {
-    matches!(
+    let player_can_act = matches!(
         game_state.phase,
         InteractionPhase::SelectedActor(_) | InteractionPhase::Targeting { .. }
-    )
-    .then(|| {
-        battle_action_layout(viewport_width, viewport_height)
-            .into_iter()
-            .find(|(_, _, [x, y, width, height])| {
-                game_state.mouse_x >= f64::from(*x)
-                    && game_state.mouse_x <= f64::from(*x + *width)
-                    && game_state.mouse_y >= f64::from(*y)
-                    && game_state.mouse_y <= f64::from(*y + *height)
-            })
-            .map(|(action, _, _)| action)
-    })
-    .flatten()
+    ) || game_state.sim.as_ref().is_some_and(|sim| {
+        sim.active_actor.is_some_and(|id| {
+            sim.actors
+                .get(&id)
+                .is_some_and(|actor| actor.alive && is_ally(actor))
+        })
+    });
+    player_can_act
+        .then(|| {
+            battle_action_layout(viewport_width, viewport_height)
+                .into_iter()
+                .find(|(_, _, [x, y, width, height])| {
+                    game_state.mouse_x >= f64::from(*x)
+                        && game_state.mouse_x <= f64::from(*x + *width)
+                        && game_state.mouse_y >= f64::from(*y)
+                        && game_state.mouse_y <= f64::from(*y + *height)
+                })
+                .map(|(action, _, _)| action)
+        })
+        .flatten()
 }
 
 /// Activate a clickable tactical command.
@@ -1146,10 +1153,27 @@ pub fn activate_battle_action(
     game_state: &mut GameState,
     action: BattleHudAction,
 ) -> Result<(), String> {
-    let actor = match game_state.phase {
-        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => id,
-        _ => return Err("select your active ally first".to_string()),
+    let selected = match game_state.phase {
+        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => {
+            Some(id)
+        }
+        _ => None,
     };
+    let actor = game_state
+        .sim
+        .as_ref()
+        .and_then(|sim| {
+            selected
+                .filter(|id| sim.active_actor == Some(*id))
+                .or_else(|| {
+                    sim.active_actor.filter(|id| {
+                        sim.actors
+                            .get(id)
+                            .is_some_and(|actor| actor.alive && is_ally(actor))
+                    })
+                })
+        })
+        .ok_or_else(|| "wait for your squad's turn".to_string())?;
     match action {
         BattleHudAction::Fire | BattleHudAction::Aim => {
             let player_action = if action == BattleHudAction::Fire {
@@ -1335,11 +1359,17 @@ pub fn handle_combat_click(
             }
         }
         InteractionPhase::SelectedActor(selected_id) => {
-            // If clicking the same actor, deselect
+            // Keep the active unit selected when it is clicked again. Repeated
+            // selection clicks are common during tactical play and must not
+            // silently disable the action bar.
             if let Some((id, _)) = actor_at {
                 if id == selected_id {
-                    game_state.phase = InteractionPhase::Idle;
-                    game_state.message = "Deselected".to_string();
+                    if let Some(actor) = sim.actors.get(&id) {
+                        game_state.message = format!(
+                            "Selected {} (HP: {}/{}, AP: {})",
+                            actor.name, actor.hit_points, actor.max_hp, actor.ap.0
+                        );
+                    }
                 } else if let Some(actor) = sim.actors.get(&id) {
                     if actor.alive && is_ally(actor) && sim.active_actor == Some(id) {
                         // Switch selection to different ally
@@ -1476,15 +1506,16 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
             | PlayerAction::Volley
             | PlayerAction::LeftHandDraw
     );
+    // Execute via sim step
+    let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    let events = step(sim, cmd).map_err(|e| format!("action failed: {e:?}"))?;
+    let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    gs.battle_events.extend(events.iter().cloned());
     if is_shot {
         if let Some(ref audio) = gs.audio {
             audio.play(pb_audio::Sfx::PistolShot);
         }
     }
-
-    // Execute via sim step
-    let events = step(sim, cmd).map_err(|e| format!("action failed: {e:?}"))?;
-    gs.battle_events.extend(events.iter().cloned());
 
     // Play hit/miss/death sounds from events
     play_sfx_from_events(&mut gs.audio, &events);
@@ -1502,11 +1533,14 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
         .join("; ");
     gs.message = if summary.is_empty() {
         format!(
-            "Action executed (AP remaining: {:?})",
-            sim.actors.get(&actor_id).map(|a| a.ap.0).unwrap_or(0)
+            "Action executed — AP {before_ap} - {} = {after_ap}",
+            before_ap.saturating_sub(after_ap)
         )
     } else {
-        summary
+        format!(
+            "AP {before_ap} - {} = {after_ap} — {summary}",
+            before_ap.saturating_sub(after_ap)
+        )
     };
 
     gs.phase = InteractionPhase::Executing;
@@ -1520,7 +1554,7 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
                 from: actor.position,
                 to: hovered,
                 started: Instant::now(),
-                duration_ms: 520,
+                duration_ms: 720,
                 kind: BattleAnimationKind::Recoil,
             });
         }
@@ -1582,26 +1616,17 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
 
     let sim_action = match action {
         PlayerAction::Hold => Action::Hold,
-        PlayerAction::Reload => {
-            // Play reload sound
-            if let Some(ref audio) = gs.audio {
-                audio.play(pb_audio::Sfx::Reload);
-            }
-            Action::Reload
-        }
+        PlayerAction::Reload => Action::Reload,
         PlayerAction::Crouch => {
             let actor = sim
                 .actors
                 .get(&actor_id)
                 .ok_or_else(|| "selected actor is missing".to_string())?;
             if actor.stance == Stance::Crouched {
-                gs.message = format!(
-                    "{} is already crouched — 0 AP spent; {} AP remaining",
-                    actor.name, actor.ap.0
-                );
-                return Ok(());
+                Action::RiseFromProne
+            } else {
+                Action::StanceCrouch
             }
-            Action::StanceCrouch
         }
         PlayerAction::Prone => {
             if sim
@@ -1627,6 +1652,10 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
     };
 
     let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    let actor_name = sim
+        .actors
+        .get(&actor_id)
+        .map_or_else(|| "The active unit".to_string(), |actor| actor.name.clone());
     let before_stance = sim
         .actors
         .get(&actor_id)
@@ -1638,6 +1667,14 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         ),
         _ => format!("action failed: {error:?}"),
     })?;
+    let ended_by_routing = events
+        .iter()
+        .any(|event| matches!(event, Event::Routed { actor } if *actor == actor_id));
+    if action == PlayerAction::Reload {
+        if let Some(ref audio) = gs.audio {
+            audio.play(pb_audio::Sfx::Reload);
+        }
+    }
     gs.battle_events.extend(events.iter().cloned());
     let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
     let after_stance = sim
@@ -1649,12 +1686,14 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
             .actors
             .get(&actor_id)
             .map_or(TileXY::new(0, 0), |actor| actor.position);
+        gs.battle_animations
+            .retain(|animation| animation.actor != actor_id);
         gs.battle_animations.push(BattleAnimation {
             actor: actor_id,
             from: position,
             to: position,
             started: Instant::now(),
-            duration_ms: 360,
+            duration_ms: 520,
             kind: BattleAnimationKind::StanceShift {
                 from: before_stance,
                 to: after_stance,
@@ -1668,8 +1707,13 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         .collect::<Vec<_>>()
         .join("; ");
     gs.message = if action == PlayerAction::Crouch {
+        let stance_name = match after_stance {
+            Stance::Standing => "Standing",
+            Stance::Crouched => "Crouched",
+            Stance::Prone => "Prone",
+        };
         format!(
-            "Crouched — AP {before_ap} - {} = {after_ap}",
+            "{stance_name} — AP {before_ap} - {} = {after_ap}",
             before_ap.saturating_sub(after_ap)
         )
     } else {
@@ -1698,6 +1742,19 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         gs.phase = InteractionPhase::Executing;
         run_enemy_ai(gs)?;
         check_victory_conditions(gs);
+        if ended_by_routing && gs.screen == crate::state::GameScreen::Battle {
+            let next_turn = gs
+                .sim
+                .as_ref()
+                .and_then(|sim| {
+                    let id = sim.active_actor?;
+                    let actor = sim.actors.get(&id)?;
+                    Some(format!("{} now has {} AP", actor.name, actor.ap.0))
+                })
+                .unwrap_or_else(|| "initiative advanced".to_string());
+            gs.message =
+                format!("{actor_name} fled after declining a mandatory retreat — {next_turn}");
+        }
     }
 
     Ok(())
@@ -1750,14 +1807,14 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
             let player_states: Vec<(ActorId, ActorState)> = sim
                 .actors
                 .iter()
-                .filter(|(_, candidate)| candidate.alive && is_ally(candidate))
+                .filter(|(_, candidate)| candidate.alive && !candidate.routed && is_ally(candidate))
                 .map(|(id, candidate)| (*id, candidate.clone()))
                 .collect();
             let enemy_side: Vec<ActorState> = sim
                 .actors
                 .iter()
                 .filter(|(id, candidate)| {
-                    candidate.alive && **id != actor_id && is_enemy(candidate)
+                    candidate.alive && !candidate.routed && **id != actor_id && is_enemy(candidate)
                 })
                 .map(|(_, candidate)| candidate.clone())
                 .collect();
@@ -1842,7 +1899,19 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
     if let Some(sim) = gs.sim.as_ref() {
         gs.tick = sim.tick.0;
     }
-    gs.phase = InteractionPhase::Idle;
+    let active_ally = gs.sim.as_ref().and_then(|sim| {
+        sim.active_actor.filter(|id| {
+            sim.actors
+                .get(id)
+                .is_some_and(|actor| actor.alive && is_ally(actor))
+        })
+    });
+    gs.phase = active_ally.map_or(InteractionPhase::Idle, InteractionPhase::SelectedActor);
+    if let Some(actor_id) = active_ally {
+        if let Some(actor) = gs.sim.as_ref().and_then(|sim| sim.actors.get(&actor_id)) {
+            gs.message = format!("{}'s turn — {} AP available", actor.name, actor.ap.0);
+        }
+    }
 
     // Record AI turn timing
     let elapsed_ms = match u64::try_from(timer.elapsed().as_millis()) {
@@ -1875,12 +1944,12 @@ pub fn check_victory_conditions(gs: &mut GameState) {
     let allies_alive = sim
         .actors
         .values()
-        .filter(|a| a.alive && is_ally(a))
+        .filter(|a| a.alive && !a.routed && is_ally(a))
         .count();
     let enemies_alive = sim
         .actors
         .values()
-        .filter(|a| a.alive && is_enemy(a))
+        .filter(|a| a.alive && !a.routed && is_enemy(a))
         .count();
 
     if enemies_alive == 0 {
@@ -2091,7 +2160,7 @@ fn queue_event_animations(game_state: &mut GameState, events: &[Event]) {
                         from,
                         to,
                         started,
-                        duration_ms: 520,
+                        duration_ms: 720,
                         kind: BattleAnimationKind::Recoil,
                     });
                 }
@@ -2331,8 +2400,8 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                     motion.scale_y *= 1.0 - kick * 0.025;
                     motion.top_sway -= kick * 7.5;
                     motion.top_scale_x *= 1.0 + kick * 0.025;
-                    if progress < 0.18 {
-                        firing_effect = Some((animation.from, animation.to, 1.0 - progress / 0.18));
+                    if progress < 0.32 {
+                        firing_effect = Some((animation.from, animation.to, 1.0 - progress / 0.32));
                     }
                 }
                 BattleAnimationKind::StanceShift { from, to } if progress < 1.0 => {
@@ -2571,7 +2640,7 @@ mod coverage_tests {
     }
 
     #[test]
-    fn crouch_spends_once_and_repeated_or_unaffordable_input_spends_nothing() {
+    fn crouch_button_toggles_stance_and_each_transition_spends_exactly_one_ap() {
         let mut state = authored_battle();
         let actor_id = active_ally(&state);
         let before_ap = state.sim.as_ref().expect("simulation").actors[&actor_id]
@@ -2597,16 +2666,26 @@ mod coverage_tests {
             .message
             .contains(&format!("AP {before_ap} - 1 = {}", after_first.ap.0)));
 
-        let event_count = state.battle_events.len();
         state.phase = InteractionPhase::SelectedActor(actor_id);
-        execute_immediate_action(&mut state, PlayerAction::Crouch).expect("repeated crouch");
-        assert_eq!(
-            state.sim.as_ref().expect("simulation").actors[&actor_id].ap,
-            after_first.ap
-        );
-        assert_eq!(state.battle_events.len(), event_count);
-        assert!(state.message.contains("already crouched"));
-        assert!(state.message.contains("0 AP spent"));
+        execute_immediate_action(&mut state, PlayerAction::Crouch).expect("stand again");
+        let after_second = state.sim.as_ref().expect("simulation").actors[&actor_id].clone();
+        assert_eq!(after_second.stance, Stance::Standing);
+        assert_eq!(after_second.ap.0, after_first.ap.0 - 1);
+        assert!(state.battle_animations.iter().any(|animation| {
+            animation.actor == actor_id
+                && matches!(
+                    animation.kind,
+                    BattleAnimationKind::StanceShift {
+                        from: Stance::Crouched,
+                        to: Stance::Standing
+                    }
+                )
+        }));
+        assert!(state.message.contains("Standing"));
+        assert!(state.message.contains(&format!(
+            "AP {} - 1 = {}",
+            after_first.ap.0, after_second.ap.0
+        )));
 
         {
             let actor = state
@@ -2716,6 +2795,34 @@ mod coverage_tests {
         check_victory_conditions(&mut state);
         assert_eq!(state.screen, GameScreen::AfterAction);
         assert_eq!(state.last_victory, Some(true));
+    }
+
+    #[test]
+    fn end_turn_never_sticks_when_active_ally_has_a_mandatory_retreat() {
+        let mut state = authored_battle();
+        let actor_id = active_ally(&state);
+        {
+            let sim = state.sim.as_mut().expect("simulation");
+            sim.broken_retreat_remaining.insert(actor_id, 2);
+            let actor = sim.actors.get_mut(&actor_id).expect("active ally");
+            actor.sand = 1;
+            actor.ap = pb_core::ids::Ap(5);
+        }
+        state.phase = InteractionPhase::SelectedActor(actor_id);
+
+        execute_immediate_action(&mut state, PlayerAction::Hold)
+            .expect("End Turn must resolve a mandatory retreat");
+
+        let actor = &state.sim.as_ref().expect("simulation").actors[&actor_id];
+        assert!(actor.routed);
+        assert_eq!(actor.ap, pb_core::ids::Ap(0));
+        assert_ne!(
+            state.sim.as_ref().expect("simulation").active_actor,
+            Some(actor_id)
+        );
+        assert_eq!(state.screen, GameScreen::AfterAction);
+        assert_eq!(state.last_victory, Some(false));
+        assert!(state.message.contains("Defeat"));
     }
 }
 
