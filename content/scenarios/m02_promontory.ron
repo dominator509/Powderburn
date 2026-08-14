@@ -1,6 +1,16 @@
 (
   id: "scn_m02_promontory",
   display_name: "Promontory: The Last Spike",
+  briefing: [
+    "At Promontory Summit, cameras frame a nation joined by rail. Outside the frame, Wen Li recognizes Teague's foreman paying saboteurs to destroy a payroll car after the ceremony.",
+    "The blast will kill Chinese grade workers and erase the accounts proving the Ring skimmed wages across two rail companies.",
+    "History keeps its famous photograph. Your fight begins after the dignitaries leave: stop the saboteurs and get Wen's workers home.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Wen Li", text:"They will print the photograph without men like us. Teague means to erase the payroll too.", voice:Some("m02_01_wen.wav")),
+    (speaker:"Naomi Freed", text:"Then we keep the workers breathing and make the missing wages impossible to ignore.", voice:Some("m02_02_naomi.wav")),
+  ],
+  score: Some("iron_road.wav"),
   date: "1869-05-10",
   map: (
     width: 24,

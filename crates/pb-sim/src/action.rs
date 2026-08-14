@@ -179,6 +179,75 @@ pub fn effective_action_cost(
     Ok(cost)
 }
 
+/// Return the exact AP cost when a movement destination is currently legal.
+///
+/// This is the shared, non-mutating authority for client movement-range
+/// previews and for `step`; a destination shown by the client therefore cannot
+/// disagree with simulation distance, occupancy, stance, wound, retreat, turn,
+/// or AP rules.
+pub fn legal_movement_cost(
+    state: &SimState,
+    actor_id: ActorId,
+    target: TileXY,
+    sprint: bool,
+) -> Result<pb_core::ids::Ap, SimError> {
+    if let Some(active) = state.active_actor {
+        if active != actor_id {
+            return Err(SimError::OutOfTurn {
+                actor: actor_id,
+                active,
+            });
+        }
+    }
+    let actor = state
+        .actors
+        .get(&actor_id)
+        .ok_or(SimError::ActorNotFound(actor_id))?;
+    if !actor.alive {
+        return Err(SimError::ActorDead(actor_id));
+    }
+
+    let distance = actor.position.chebyshev_distance(target);
+    let action = if sprint {
+        if distance != 2 {
+            return Err(SimError::InvalidMoveDistance {
+                actor: actor_id,
+                distance,
+            });
+        }
+        if actor.stance != Stance::Standing
+            || state
+                .wound_effects
+                .get(&actor_id)
+                .and_then(|effects| effects.broken_locations.get(&HitLocationType::Legs))
+                .is_some_and(|count| *count > 0)
+        {
+            return Err(SimError::CannotSprint(actor_id));
+        }
+        Action::Sprint(target)
+    } else {
+        if distance != 1 {
+            return Err(SimError::InvalidMoveDistance {
+                actor: actor_id,
+                distance,
+            });
+        }
+        Action::Move(target)
+    };
+
+    validate_destination(state, actor_id, target)?;
+    enforce_broken_retreat(state, actor_id, &action)?;
+    let cost = effective_action_cost(state, actor_id, &action)?;
+    if actor.ap < cost {
+        return Err(SimError::InsufficientAp {
+            actor: actor_id,
+            have: actor.ap,
+            need: cost,
+        });
+    }
+    Ok(cost)
+}
+
 /// Update the `sim.actors.alive` and `progression.xp.total` metric gauges
 /// based on the current simulation state.
 pub(crate) fn update_alive_and_xp(state: &SimState) {
@@ -214,36 +283,20 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
         return Err(SimError::ActorDead(cmd.actor_id));
     }
     match &cmd.action {
+        Action::StanceCrouch if actor.stance == Stance::Crouched => {
+            return Err(SimError::AlreadyInStance(cmd.actor_id, Stance::Crouched));
+        }
+        Action::StanceProne if actor.stance == Stance::Prone => {
+            return Err(SimError::AlreadyInStance(cmd.actor_id, Stance::Prone));
+        }
+        Action::RiseFromProne if actor.stance == Stance::Standing => {
+            return Err(SimError::AlreadyInStance(cmd.actor_id, Stance::Standing));
+        }
         Action::Move(target) => {
-            let distance = actor.position.chebyshev_distance(*target);
-            if distance != 1 {
-                return Err(SimError::InvalidMoveDistance {
-                    actor: cmd.actor_id,
-                    distance,
-                });
-            }
-            validate_destination(state, cmd.actor_id, *target)?;
+            legal_movement_cost(state, cmd.actor_id, *target, false)?;
         }
         Action::Sprint(target) => {
-            let distance = actor.position.chebyshev_distance(*target);
-            if distance != 2 {
-                return Err(SimError::InvalidMoveDistance {
-                    actor: cmd.actor_id,
-                    distance,
-                });
-            }
-            if actor.stance != Stance::Standing {
-                return Err(SimError::CannotSprint(cmd.actor_id));
-            }
-            validate_destination(state, cmd.actor_id, *target)?;
-            if state
-                .wound_effects
-                .get(&cmd.actor_id)
-                .and_then(|effects| effects.broken_locations.get(&HitLocationType::Legs))
-                .is_some_and(|count| *count > 0)
-            {
-                return Err(SimError::CannotSprint(cmd.actor_id));
-            }
+            legal_movement_cost(state, cmd.actor_id, *target, true)?;
         }
         Action::Melee(target) | Action::Loot(target) | Action::Bandage(target) => {
             let target_actor = state
@@ -2410,6 +2463,27 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(state.actors[&id].stance, Stance::Crouched);
         assert_eq!(state.actors[&id].ap, Ap(9)); // 10 - 1
+    }
+
+    #[test]
+    fn repeated_crouch_is_rejected_without_spending_ap() {
+        let mut state = SimState::new(42, 1);
+        let id = ActorId(1);
+        let mut actor = make_actor();
+        actor.stance = Stance::Crouched;
+        state.actors.insert(id, actor);
+        let before = state.clone();
+
+        let result = step(
+            &mut state,
+            Command {
+                actor_id: id,
+                action: Action::StanceCrouch,
+            },
+        );
+
+        assert_eq!(result, Err(SimError::AlreadyInStance(id, Stance::Crouched)));
+        assert_eq!(state, before);
     }
 
     #[test]

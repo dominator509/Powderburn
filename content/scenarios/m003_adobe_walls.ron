@@ -1,6 +1,15 @@
 (
   id: "scn_m003_adobe_walls",
   display_name: "Adobe Walls: Second Morning",
+  briefing: [
+    "The fixed battle at Adobe Walls has begun. Powderburn cannot turn history into a private rescue fantasy.",
+    "Inside the confusion, Teague's gunmen are murdering their own wounded couriers and burning correspondence. Stop that separate crime and preserve the evidence without changing the battle's recorded course.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"Do not mistake fighting Teague for owning what happens here.", voice:Some("m003_01_whitehorse.wav")),
+    (speaker:"Naomi Freed", text:"We own only our choices. Teague's killers are one of them.", voice:Some("m003_02_naomi.wav")),
+  ],
+  score: Some("hard_road.wav"),
   date: "1874-06-27",
   map: (
     width: 24,

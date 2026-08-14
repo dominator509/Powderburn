@@ -1,7 +1,7 @@
 //! Combat screen — renders the isometric battlefield from SimState.
 //!
-//! Builds pb-render systems each frame to display tiles, actors, overlays,
-//! and smoke. Handles tile hover/selection and AI stepping.
+//! Retains pb-render systems while displaying tiles, actors, overlays, and
+//! smoke. Handles pointer selection/targeting and AI stepping.
 //!
 //! Also provides the full interactive combat loop: player clicks to select,
 //! keyboard to choose actions, clicks to target, AI runs for enemies.
@@ -19,17 +19,19 @@ use pb_core::ids::ActorId;
 use pb_core::metrics::MetricsRegistry;
 use pb_render::camera::IsoCamera;
 use pb_render::device::RenderDevice;
-use pb_render::overlay::{OverlaySystem, OverlayTileKind};
+use pb_render::overlay::{OverlaySystem, OverlayTile, OverlayTileKind};
 use pb_render::props::{prop_instances_from_state, PropSystem};
 use pb_render::smoke::{SmokeSystem, SmokeTile};
 use pb_render::sprites::{SpriteInstance, SpriteSystem};
 use pb_render::tiles::{TileSystem, TileVisual};
-use pb_sim::action::{effective_action_cost, overwatch_threats_at, step, Action, Command};
+use pb_sim::action::{legal_movement_cost, overwatch_threats_at, step, Action, Command};
 use pb_sim::clock::advance_to_next_actor;
 use pb_sim::shot::{compute_hit_chance_breakdown, HitChanceBreakdown};
 use pb_sim::state::{ActorState, SimError, SimState, Stance};
 
-use crate::state::{GameState, InteractionPhase, PlayerAction};
+use crate::state::{
+    BattleAnimation, BattleAnimationKind, GameState, InteractionPhase, PlayerAction,
+};
 use pb_core::event::Event;
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -41,10 +43,27 @@ const GRID_ROWS: u32 = 12;
 /// Isometric tile dimensions in pixels (at zoom = 1.0).
 const TILE_W: f32 = 64.0;
 const TILE_H: f32 = 32.0;
+const GRID_EDGE_GUTTER: f32 = 24.0;
+
+/// Keep the complete outer diamonds inside the viewport at every supported
+/// resolution. The requested zoom remains the upper bound, so zooming out
+/// still works while zooming in can never cut a perimeter tile in half.
+fn fitted_battle_zoom(requested: f32, viewport_width: f32, viewport_height: f32) -> f32 {
+    let board_width = (GRID_COLS + GRID_ROWS) as f32 * TILE_W * 0.5;
+    let board_height = (GRID_COLS + GRID_ROWS) as f32 * TILE_H * 0.5;
+    let available_width = (viewport_width - GRID_EDGE_GUTTER * 2.0).max(TILE_W);
+    let available_height = (viewport_height - GRID_EDGE_GUTTER * 2.0).max(TILE_H);
+    let fit = (available_width / board_width).min(available_height / board_height);
+
+    requested.max(0.25).min(fit.max(0.25))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MovementPreview {
     pub ap_cost: u8,
+    pub remaining_ap: u8,
+    pub distance: u8,
+    pub ends_turn: bool,
     pub leaves_cover: bool,
     pub crosses_overwatch: bool,
 }
@@ -166,21 +185,30 @@ pub fn rotate_selected_facing(game_state: &mut GameState, clockwise: bool) -> Re
 /// Return the exact movement consequences for the selected actor and hovered
 /// tile, sharing AP and overwatch rules with command execution.
 pub fn movement_preview(game_state: &GameState) -> Option<MovementPreview> {
+    movement_preview_for(
+        game_state,
+        TileXY::new(game_state.hovered_tile_x, game_state.hovered_tile_y),
+    )
+}
+
+fn movement_preview_for(game_state: &GameState, destination: TileXY) -> Option<MovementPreview> {
     let sim = game_state.sim.as_ref()?;
     let actor_id = match game_state.phase {
         InteractionPhase::SelectedActor(id) => id,
         _ => return None,
     };
     let actor = sim.actors.get(&actor_id)?;
-    let destination = TileXY::new(game_state.hovered_tile_x, game_state.hovered_tile_y);
     let distance = actor.position.chebyshev_distance(destination);
-    let action = match distance {
-        1 => Action::Move(destination),
-        2 if actor.stance == Stance::Standing => Action::Sprint(destination),
+    let sprint = match distance {
+        1 => false,
+        2 => true,
         _ => return None,
     };
-    let cost = effective_action_cost(sim, actor_id, &action).ok()?.0;
+    let cost = legal_movement_cost(sim, actor_id, destination, sprint)
+        .ok()?
+        .0;
     let ap_cost = u8::try_from(cost.max(0)).unwrap_or(u8::MAX);
+    let remaining_ap = u8::try_from(actor.ap.0.saturating_sub(cost).max(0)).unwrap_or(0);
     let has_cover = |tile| {
         sim.cover_edges.iter().any(|(edge, cover)| {
             edge.tile == tile && cover.level != pb_sim::state::CoverLevel::None
@@ -188,9 +216,40 @@ pub fn movement_preview(game_state: &GameState) -> Option<MovementPreview> {
     };
     Some(MovementPreview {
         ap_cost,
+        remaining_ap,
+        distance: u8::try_from(distance.max(0)).unwrap_or(u8::MAX),
+        ends_turn: sprint,
         leaves_cover: has_cover(actor.position) && !has_cover(destination),
         crosses_overwatch: !overwatch_threats_at(sim, actor_id, destination).is_empty(),
     })
+}
+
+fn movement_range(game_state: &GameState) -> Vec<(u32, u32, MovementPreview)> {
+    let Some(sim) = game_state.sim.as_ref() else {
+        return Vec::new();
+    };
+    let actor_id = match game_state.phase {
+        InteractionPhase::SelectedActor(id) => id,
+        _ => return Vec::new(),
+    };
+    let Some(actor) = sim.actors.get(&actor_id) else {
+        return Vec::new();
+    };
+
+    let mut destinations = Vec::with_capacity(24);
+    for y in actor.position.y.saturating_sub(2)..=actor.position.y.saturating_add(2) {
+        for x in actor.position.x.saturating_sub(2)..=actor.position.x.saturating_add(2) {
+            let destination = TileXY::new(x, y);
+            if let Some(preview) = movement_preview_for(game_state, destination) {
+                destinations.push((
+                    u32::try_from(x).unwrap_or(0),
+                    u32::try_from(y).unwrap_or(0),
+                    preview,
+                ));
+            }
+        }
+    }
+    destinations
 }
 
 // ── Coordinate conversion ─────────────────────────────────────────────────
@@ -217,7 +276,10 @@ pub fn screen_to_tile(
     // Inverse: compute (x, y) from (mouse_x, mouse_y)
     let zoom = camera_zoom.max(0.01);
     let sx = (mouse_x as f32 - viewport_width * 0.5) / zoom + camera_x;
-    let sy = (mouse_y as f32 - viewport_height * 0.5) / zoom + camera_y;
+    // Window coordinates grow down while the tactical world's +Y axis grows
+    // up.  Mirroring here keeps pointer picking aligned with IsoCamera's
+    // orthographic projection.
+    let sy = (viewport_height * 0.5 - mouse_y as f32) / zoom + camera_y;
 
     let half_w = TILE_W * 0.5;
     let half_h = TILE_H * 0.5;
@@ -229,10 +291,65 @@ pub fn screen_to_tile(
     let a = sx / half_w;
     let b = sy / half_h;
 
-    let tile_x = ((a + b) * 0.5).floor() as i16;
-    let tile_y = ((b - a) * 0.5).floor() as i16;
+    // Rendered diamonds are centered on integer tile coordinates. Flooring
+    // would instead center the selectable region on (x + 0.5, y + 0.5),
+    // exactly where four rendered tile corners meet.
+    let tile_x = ((a + b) * 0.5).round() as i16;
+    let tile_y = ((b - a) * 0.5).round() as i16;
 
     TileXY::new(tile_x, tile_y)
+}
+
+/// Elevation-aware pointer picking against the actual raised tile diamonds.
+pub fn screen_to_tile_in_state(
+    game_state: &GameState,
+    mouse_x: f64,
+    mouse_y: f64,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> TileXY {
+    let zoom = fitted_battle_zoom(game_state.camera_zoom, viewport_width, viewport_height);
+    let fallback = screen_to_tile(
+        mouse_x,
+        mouse_y,
+        game_state.camera_x,
+        game_state.camera_y,
+        zoom,
+        viewport_width,
+        viewport_height,
+    );
+    let Some(sim) = game_state.sim.as_ref() else {
+        return fallback;
+    };
+    let world_x = (mouse_x as f32 - viewport_width * 0.5) / zoom + game_state.camera_x;
+    let world_y = (viewport_height * 0.5 - mouse_y as f32) / zoom + game_state.camera_y;
+    let mut best = None::<(f32, i32, TileXY)>;
+
+    for y in 0..GRID_ROWS {
+        for x in 0..GRID_COLS {
+            let tile = TileXY::new(x as i16, y as i16);
+            let elevation = sim.tile_elevations.get(&tile).copied().unwrap_or(0);
+            let center_x = (x as f32 - y as f32) * TILE_W * 0.5;
+            let center_y = (x as f32 + y as f32) * TILE_H * 0.5
+                + elevation as f32 * pb_render::tiles::ELEVATION_SCREEN_STEP;
+            let distance = (world_x - center_x).abs() / (TILE_W * 0.5)
+                + (world_y - center_y).abs() / (TILE_H * 0.5);
+            if distance > 1.001 {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|(best_distance, best_elevation, _)| {
+                    distance < *best_distance
+                        || ((distance - *best_distance).abs() < 0.001
+                            && elevation > *best_elevation)
+                })
+            {
+                best = Some((distance, elevation, tile));
+            }
+        }
+    }
+    best.map_or(fallback, |(_, _, tile)| tile)
 }
 
 fn parse_stance(s: &str) -> Stance {
@@ -258,6 +375,9 @@ fn parse_tile_key(key: &str) -> Option<TileXY> {
 fn apply_authored_map(sim: &mut SimState, scenario: &pb_content::schema::ScenarioData) {
     sim.smoke_cols = scenario.map.width;
     sim.smoke_rows = scenario.map.height;
+    sim.terrain_tiles.clear();
+    sim.tile_elevations.clear();
+    sim.difficult_tiles.clear();
     let cells = scenario
         .map
         .width
@@ -272,6 +392,8 @@ fn apply_authored_map(sim: &mut SimState, scenario: &pb_content::schema::Scenari
         if !matches!(tile.terrain.as_str(), "Clear" | "Grass" | "Floor" | "Road") {
             sim.difficult_tiles.insert(position);
         }
+        sim.terrain_tiles.insert(position, tile.terrain.clone());
+        sim.tile_elevations.insert(position, tile.elevation);
         if position.x >= 0
             && position.y >= 0
             && (position.x as u32) < sim.smoke_cols
@@ -468,16 +590,8 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
         .current_mission
         .as_deref()
         .ok_or_else(|| "no campaign mission selected".to_string())?;
-    let scenario_id = content
-        .campaign_nodes
-        .get(mission_id)
-        .and_then(|node| node.scenario_id.as_deref())
-        .ok_or_else(|| format!("campaign mission {mission_id} has no scenario"))?;
-
-    let scenario = content
-        .scenarios
-        .get(scenario_id)
-        .ok_or_else(|| format!("scenario {scenario_id} not found"))?;
+    let scenario = crate::campaign::scenario_for_mission(&content, mission_id)?;
+    let scenario_id = scenario.id.as_str();
 
     let seed = game_state
         .campaign
@@ -679,8 +793,6 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
         apply_actor_runtime_metadata(&mut sim, actor_id, actor_data, &content);
     }
 
-    advance_to_next_actor(&mut sim);
-
     game_state.sim = Some(sim);
     game_state.camera_x = (scenario.map.width as f32 - scenario.map.height as f32) * TILE_W * 0.25;
     game_state.camera_y = scenario
@@ -693,20 +805,175 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
     game_state.camera_zoom = 1.35;
     game_state.phase = InteractionPhase::Idle;
     game_state.tick = 0;
-    game_state.message = format!("{} loaded — click an ally to act", scenario.display_name);
+    game_state.message = format!("{} loaded — preparing first turn", scenario.display_name);
+
+    // Let the clock choose the first actor exactly once.  `run_enemy_ai`
+    // advances through any opening enemy turns and stops with the first player
+    // actor active; pre-advancing here used to skip that actor entirely.
+    run_enemy_ai(game_state)?;
+    check_victory_conditions(game_state);
+    if game_state.screen == crate::state::GameScreen::Battle {
+        let active_name = game_state
+            .sim
+            .as_ref()
+            .and_then(|state| state.active_actor)
+            .and_then(|id| {
+                game_state
+                    .sim
+                    .as_ref()
+                    .and_then(|state| state.actors.get(&id))
+            })
+            .map_or("your active ally", |actor| actor.name.as_str());
+        game_state.message = format!(
+            "{} loaded — left-click {active_name} to act",
+            scenario.display_name
+        );
+    }
 
     Ok(())
 }
 
-/// Render one frame of the combat screen.
+/// Persistent tactical GPU resources.
 ///
-/// Builds all pb-render systems from scratch each frame, draws them in
-/// z-order: tiles → smoke → overlay → props → sprites.
+/// Pipelines and decoded atlases are expensive to create—particularly on
+/// software Vulkan adapters—so they live for the battle instead of one frame.
+#[allow(missing_debug_implementations)]
+pub struct CombatRenderer {
+    scenario_id: u32,
+    surface_format: wgpu::TextureFormat,
+    camera_bytes: [u8; 64],
+    smoke_tiles: Vec<SmokeTile>,
+    overlay_tiles: Vec<OverlayTile>,
+    props: Vec<SpriteInstance>,
+    sprites: Vec<SpriteInstance>,
+    tile_system: TileSystem,
+    smoke_system: SmokeSystem,
+    overlay_system: OverlaySystem,
+    prop_system: PropSystem,
+    sprite_system: SpriteSystem,
+}
+
+impl CombatRenderer {
+    fn new(
+        game_state: &GameState,
+        render_device: &Arc<RenderDevice>,
+        surface_format: wgpu::TextureFormat,
+        camera_bytes: &[u8; 64],
+    ) -> Self {
+        let tiles = build_tile_visuals(game_state);
+        let smoke_tiles = build_smoke_grid(game_state);
+        let overlay_tiles = build_overlay_tiles(game_state);
+        let props = game_state
+            .sim
+            .as_ref()
+            .map(prop_instances_from_state)
+            .unwrap_or_default();
+        let sprites = build_sprite_instances(game_state);
+        let tile_system = TileSystem::new_with_format(
+            render_device,
+            GRID_COLS,
+            GRID_ROWS,
+            &tiles,
+            camera_bytes,
+            surface_format,
+        );
+        let smoke_system = SmokeSystem::new_with_format(
+            render_device,
+            GRID_COLS,
+            GRID_ROWS,
+            &smoke_tiles,
+            camera_bytes,
+            surface_format,
+        );
+        let overlay_system = OverlaySystem::new_with_format(
+            render_device,
+            &overlay_tiles,
+            camera_bytes,
+            surface_format,
+        );
+        let prop_system =
+            PropSystem::new_with_format(render_device, &props, camera_bytes, surface_format);
+        let sprite_system =
+            SpriteSystem::new_with_format(render_device, &sprites, camera_bytes, surface_format);
+        Self {
+            scenario_id: game_state
+                .sim
+                .as_ref()
+                .map_or(u32::MAX, |state| state.scenario_id),
+            surface_format,
+            camera_bytes: *camera_bytes,
+            smoke_tiles,
+            overlay_tiles,
+            props,
+            sprites,
+            tile_system,
+            smoke_system,
+            overlay_system,
+            prop_system,
+            sprite_system,
+        }
+    }
+
+    fn update(
+        &mut self,
+        game_state: &GameState,
+        render_device: &Arc<RenderDevice>,
+        camera_bytes: &[u8; 64],
+    ) {
+        let camera_changed = self.camera_bytes != *camera_bytes;
+        let smoke_tiles = build_smoke_grid(game_state);
+        let overlay_tiles = build_overlay_tiles(game_state);
+        let props = game_state
+            .sim
+            .as_ref()
+            .map(prop_instances_from_state)
+            .unwrap_or_default();
+        let sprites = build_sprite_instances(game_state);
+
+        if smoke_tiles != self.smoke_tiles {
+            self.smoke_system.update(
+                render_device,
+                GRID_COLS,
+                GRID_ROWS,
+                &smoke_tiles,
+                camera_bytes,
+            );
+            self.smoke_tiles = smoke_tiles;
+        }
+        if overlay_tiles != self.overlay_tiles {
+            self.overlay_system
+                .update(render_device, &overlay_tiles, camera_bytes);
+            self.overlay_tiles = overlay_tiles;
+        }
+        if props != self.props {
+            self.prop_system.update(render_device, &props, camera_bytes);
+            self.props = props;
+        }
+        if sprites != self.sprites {
+            self.sprite_system
+                .update(render_device, &sprites, camera_bytes);
+            self.sprites = sprites;
+        }
+        if camera_changed {
+            self.tile_system.update_camera(render_device, camera_bytes);
+            self.smoke_system.update_camera(render_device, camera_bytes);
+            self.overlay_system
+                .update_camera(render_device, camera_bytes);
+            self.prop_system.update_camera(render_device, camera_bytes);
+            self.sprite_system
+                .update_camera(render_device, camera_bytes);
+            self.camera_bytes = *camera_bytes;
+        }
+    }
+}
+
+/// Render one frame of the combat screen using persistent GPU resources.
 pub fn render_combat_frame(
+    renderer: &mut Option<CombatRenderer>,
     game_state: &GameState,
     render_device: &Arc<RenderDevice>,
     view: &wgpu::TextureView,
-    _surface_format: wgpu::TextureFormat,
+    surface_format: wgpu::TextureFormat,
     viewport_width: u32,
     viewport_height: u32,
 ) {
@@ -716,7 +983,11 @@ pub fn render_combat_frame(
     let camera = IsoCamera {
         center_x: game_state.camera_x,
         center_y: game_state.camera_y,
-        zoom: game_state.camera_zoom,
+        zoom: fitted_battle_zoom(
+            game_state.camera_zoom,
+            viewport_width as f32,
+            viewport_height as f32,
+        ),
         viewport_width: viewport_width as f32,
         viewport_height: viewport_height as f32,
         tile_w: TILE_W,
@@ -724,35 +995,26 @@ pub fn render_combat_frame(
     };
     let camera_bytes = camera.ortho_matrix_bytes();
 
-    // ── Tile grid ───────────────────────────────────────────────────────
-    let tiles = build_tile_visuals(game_state);
-    let tile_system = TileSystem::new(render_device, GRID_COLS, GRID_ROWS, &tiles, &camera_bytes);
-
-    // ── Smoke overlay ───────────────────────────────────────────────────
-    let smoke_tiles = build_smoke_grid(game_state);
-    let smoke_system = SmokeSystem::new(
-        render_device,
-        GRID_COLS,
-        GRID_ROWS,
-        &smoke_tiles,
-        &camera_bytes,
-    );
-
-    // ── Overlay (hovered tile, selected actor highlight) ────────────────
-    let overlay_tiles = build_overlay_tiles(game_state);
-    let overlay_system = OverlaySystem::new(render_device, &overlay_tiles, &camera_bytes);
-
-    // ── Presentation-only environmental props ──────────────────────────
-    let props = game_state
+    let scenario_id = game_state
         .sim
         .as_ref()
-        .map(prop_instances_from_state)
-        .unwrap_or_default();
-    let prop_system = PropSystem::new(render_device, &props, &camera_bytes);
-
-    // ── Actor sprites ───────────────────────────────────────────────────
-    let sprites = build_sprite_instances(game_state);
-    let sprite_system = SpriteSystem::new(render_device, &sprites, &camera_bytes);
+        .map_or(u32::MAX, |state| state.scenario_id);
+    let rebuild = renderer.as_ref().is_none_or(|cached| {
+        cached.scenario_id != scenario_id || cached.surface_format != surface_format
+    });
+    if rebuild {
+        *renderer = Some(CombatRenderer::new(
+            game_state,
+            render_device,
+            surface_format,
+            &camera_bytes,
+        ));
+    } else if let Some(cached) = renderer.as_mut() {
+        cached.update(game_state, render_device, &camera_bytes);
+    }
+    let Some(renderer) = renderer.as_ref() else {
+        return;
+    };
 
     // ── Command encoder & render pass ───────────────────────────────────
     let mut encoder =
@@ -784,11 +1046,11 @@ pub fn render_combat_frame(
         });
 
         // Draw in z-order: terrain → smoke → overlay → props → sprites
-        tile_system.render(&mut rpass);
-        smoke_system.render(&mut rpass);
-        overlay_system.render(&mut rpass);
-        prop_system.render(&mut rpass);
-        sprite_system.render(&mut rpass);
+        renderer.tile_system.render(&mut rpass);
+        renderer.smoke_system.render(&mut rpass);
+        renderer.overlay_system.render(&mut rpass);
+        renderer.prop_system.render(&mut rpass);
+        renderer.sprite_system.render(&mut rpass);
     }
 
     render_device
@@ -806,19 +1068,243 @@ pub fn render_combat_frame(
 ///
 /// Selects/deselects actors, fires on targets, and orchestrates the combat
 /// turn cycle.
-pub fn handle_combat_click(game_state: &mut GameState) -> Result<(), String> {
+/// Mouse button used by the tactical pointer controls.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatPointerButton {
+    /// Select allies, choose actions, and move to open tiles.
+    Left,
+    /// Target and fire at an enemy with the selected ally.
+    Right,
+}
+
+/// Clickable tactical command shown above the combat status bar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BattleHudAction {
+    Fire,
+    Aim,
+    Reload,
+    Crouch,
+    Hold,
+}
+
+/// Stable screen-space layout shared by rendering and pointer hit-testing.
+pub fn battle_action_layout(
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Vec<(BattleHudAction, &'static str, [f32; 4])> {
+    let actions = [
+        (BattleHudAction::Fire, "FIRE"),
+        (BattleHudAction::Aim, "AIM"),
+        (BattleHudAction::Reload, "RELOAD"),
+        (BattleHudAction::Crouch, "CROUCH - 1 AP"),
+        (BattleHudAction::Hold, "END TURN"),
+    ];
+    let gap = 10.0;
+    let width = (((viewport_width as f32 - 48.0) / actions.len() as f32) - gap).clamp(76.0, 132.0);
+    let total_width = width * actions.len() as f32 + gap * (actions.len() - 1) as f32;
+    let start_x = ((viewport_width as f32 - total_width) * 0.5).max(8.0);
+    let y = (viewport_height as f32 - 168.0).max(52.0);
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, (action, label))| {
+            (
+                action,
+                label,
+                [start_x + index as f32 * (width + gap), y, width, 42.0],
+            )
+        })
+        .collect()
+}
+
+/// Return the tactical HUD command under the pointer.
+pub fn battle_action_at(
+    game_state: &GameState,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Option<BattleHudAction> {
+    matches!(
+        game_state.phase,
+        InteractionPhase::SelectedActor(_) | InteractionPhase::Targeting { .. }
+    )
+    .then(|| {
+        battle_action_layout(viewport_width, viewport_height)
+            .into_iter()
+            .find(|(_, _, [x, y, width, height])| {
+                game_state.mouse_x >= f64::from(*x)
+                    && game_state.mouse_x <= f64::from(*x + *width)
+                    && game_state.mouse_y >= f64::from(*y)
+                    && game_state.mouse_y <= f64::from(*y + *height)
+            })
+            .map(|(action, _, _)| action)
+    })
+    .flatten()
+}
+
+/// Activate a clickable tactical command.
+pub fn activate_battle_action(
+    game_state: &mut GameState,
+    action: BattleHudAction,
+) -> Result<(), String> {
+    let actor = match game_state.phase {
+        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => id,
+        _ => return Err("select your active ally first".to_string()),
+    };
+    match action {
+        BattleHudAction::Fire | BattleHudAction::Aim => {
+            let player_action = if action == BattleHudAction::Fire {
+                PlayerAction::SnapShot
+            } else {
+                PlayerAction::AimedShot
+            };
+            game_state.phase = InteractionPhase::Targeting {
+                actor,
+                action: player_action,
+            };
+            game_state.message = format!(
+                "{} selected — right-click an enemy",
+                if action == BattleHudAction::Fire {
+                    "Snapshot"
+                } else {
+                    "Aimed shot"
+                }
+            );
+            Ok(())
+        }
+        BattleHudAction::Reload => {
+            game_state.phase = InteractionPhase::SelectedActor(actor);
+            execute_immediate_action(game_state, PlayerAction::Reload)
+        }
+        BattleHudAction::Crouch => {
+            game_state.phase = InteractionPhase::SelectedActor(actor);
+            execute_immediate_action(game_state, PlayerAction::Crouch)
+        }
+        BattleHudAction::Hold => {
+            game_state.phase = InteractionPhase::SelectedActor(actor);
+            execute_immediate_action(game_state, PlayerAction::Hold)
+        }
+    }
+}
+
+/// Return the alive actor whose rendered sprite is under the pointer.
+///
+/// Picking against the visible sprite instead of only its diamond tile makes
+/// tall character art behave the way players expect.  The projection mirrors
+/// `IsoCamera::ortho_matrix`, including the sprite's feet-to-center offset.
+fn actor_at_pointer(
+    game_state: &GameState,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Option<ActorId> {
+    let sim = game_state.sim.as_ref()?;
+    let zoom = fitted_battle_zoom(
+        game_state.camera_zoom,
+        viewport_width as f32,
+        viewport_height as f32,
+    );
+    let pointer_x = game_state.mouse_x as f32;
+    let pointer_y = game_state.mouse_y as f32;
+
+    sim.actors
+        .iter()
+        .filter(|(_, actor)| actor.alive)
+        .filter_map(|(id, actor)| {
+            let half_w = TILE_W * 0.5;
+            let half_h = TILE_H * 0.5;
+            let world_x = (actor.position.x as f32 - actor.position.y as f32) * half_w;
+            let mut world_y = (actor.position.x as f32 + actor.position.y as f32) * half_h - 24.0;
+            let mut sprite_width = 58.0;
+            let mut sprite_height = 82.0;
+            match actor.stance {
+                Stance::Standing => {}
+                Stance::Crouched => {
+                    sprite_height *= 0.82;
+                    world_y -= 5.0;
+                }
+                Stance::Prone => {
+                    sprite_height *= 0.58;
+                    sprite_width *= 1.18;
+                    world_y -= 12.0;
+                }
+            }
+
+            let screen_x = (world_x - game_state.camera_x) * zoom + viewport_width as f32 * 0.5;
+            let screen_y = viewport_height as f32 * 0.5 - (world_y - game_state.camera_y) * zoom;
+            let half_screen_width = sprite_width * zoom * 0.5 + 9.0;
+            let half_screen_height = sprite_height * zoom * 0.5 + 7.0;
+            let inside = (pointer_x - screen_x).abs() <= half_screen_width
+                && (pointer_y - screen_y).abs() <= half_screen_height;
+            inside.then_some((*id, (pointer_x - screen_x).hypot(pointer_y - screen_y)))
+        })
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(id, _)| id)
+}
+
+pub fn handle_combat_click(
+    game_state: &mut GameState,
+    button: CombatPointerButton,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<(), String> {
     let Some(ref sim) = game_state.sim else {
         return Err("no simulation loaded".to_string());
     };
 
+    let picked_actor = actor_at_pointer(game_state, viewport_width, viewport_height);
+    if let Some(id) = picked_actor {
+        if let Some(actor) = sim.actors.get(&id) {
+            game_state.hovered_tile_x = actor.position.x;
+            game_state.hovered_tile_y = actor.position.y;
+        }
+    }
     let hovered = TileXY::new(game_state.hovered_tile_x, game_state.hovered_tile_y);
 
     // Check if an actor is at the hovered tile
-    let actor_at = sim.actors.iter().find(|(_, a)| a.position == hovered);
+    let actor_at = picked_actor
+        .and_then(|id| sim.actors.get(&id).map(|actor| (id, actor)))
+        .or_else(|| {
+            sim.actors
+                .iter()
+                .find(|(_, actor)| actor.position == hovered)
+                .map(|(id, actor)| (*id, actor))
+        });
+
+    if button == CombatPointerButton::Right {
+        let Some((_target_id, target)) = actor_at else {
+            game_state.message = "Right-click an enemy to target".to_string();
+            return Ok(());
+        };
+        if !target.alive || !is_enemy(target) {
+            game_state.message = "Right-click an enemy to target".to_string();
+            return Ok(());
+        }
+        let (selected_id, selected_action) = match game_state.phase {
+            InteractionPhase::SelectedActor(id) => (id, PlayerAction::SnapShot),
+            InteractionPhase::Targeting { actor, action } => (actor, action),
+            _ => {
+                game_state.message =
+                    "Left-click your active ally, then right-click an enemy to fire".to_string();
+                return Ok(());
+            }
+        };
+        game_state.phase = InteractionPhase::Targeting {
+            actor: selected_id,
+            action: selected_action,
+        };
+        game_state.hovered_tile_x = target.position.x;
+        game_state.hovered_tile_y = target.position.y;
+        game_state.message = format!("Targeting {} — firing", target.name);
+        return handle_combat_click(
+            game_state,
+            CombatPointerButton::Left,
+            viewport_width,
+            viewport_height,
+        );
+    }
 
     match game_state.phase {
         InteractionPhase::Idle => {
-            if let Some((&id, actor)) = actor_at {
+            if let Some((id, actor)) = actor_at {
                 if actor.alive && is_ally(actor) {
                     if sim.active_actor != Some(id) {
                         let active_name = sim
@@ -850,7 +1336,7 @@ pub fn handle_combat_click(game_state: &mut GameState) -> Result<(), String> {
         }
         InteractionPhase::SelectedActor(selected_id) => {
             // If clicking the same actor, deselect
-            if let Some((&id, _)) = actor_at {
+            if let Some((id, _)) = actor_at {
                 if id == selected_id {
                     game_state.phase = InteractionPhase::Idle;
                     game_state.message = "Deselected".to_string();
@@ -981,7 +1467,7 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
 
     let cmd = Command { actor_id, action };
 
-    if matches!(
+    let is_shot = matches!(
         player_action,
         PlayerAction::SnapShot
             | PlayerAction::AimedShot
@@ -989,7 +1475,8 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
             | PlayerAction::FanHammer
             | PlayerAction::Volley
             | PlayerAction::LeftHandDraw
-    ) {
+    );
+    if is_shot {
         if let Some(ref audio) = gs.audio {
             audio.play(pb_audio::Sfx::PistolShot);
         }
@@ -1024,6 +1511,20 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
 
     gs.phase = InteractionPhase::Executing;
     gs.tick = sim.tick.0;
+    if is_shot {
+        if let Some(actor) = sim.actors.get(&actor_id) {
+            gs.battle_animations
+                .retain(|animation| animation.actor != actor_id);
+            gs.battle_animations.push(BattleAnimation {
+                actor: actor_id,
+                from: actor.position,
+                to: hovered,
+                started: Instant::now(),
+                duration_ms: 520,
+                kind: BattleAnimationKind::Recoil,
+            });
+        }
+    }
 
     Ok(())
 }
@@ -1035,6 +1536,10 @@ fn execute_move_to(
     sprint: bool,
 ) -> Result<(), String> {
     let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
+    let from = sim
+        .actors
+        .get(&actor_id)
+        .map_or(target, |actor| actor.position);
     let action = if sprint {
         Action::Sprint(target)
     } else {
@@ -1052,6 +1557,16 @@ fn execute_move_to(
         .collect::<Vec<_>>()
         .join("; ");
     gs.tick = sim.tick.0;
+    gs.battle_animations
+        .retain(|animation| animation.actor != actor_id);
+    gs.battle_animations.push(BattleAnimation {
+        actor: actor_id,
+        from,
+        to: target,
+        started: Instant::now(),
+        duration_ms: movement_duration_ms(from, target, sprint),
+        kind: BattleAnimationKind::Move,
+    });
     Ok(())
 }
 
@@ -1074,7 +1589,20 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
             }
             Action::Reload
         }
-        PlayerAction::Crouch => Action::StanceCrouch,
+        PlayerAction::Crouch => {
+            let actor = sim
+                .actors
+                .get(&actor_id)
+                .ok_or_else(|| "selected actor is missing".to_string())?;
+            if actor.stance == Stance::Crouched {
+                gs.message = format!(
+                    "{} is already crouched — 0 AP spent; {} AP remaining",
+                    actor.name, actor.ap.0
+                );
+                return Ok(());
+            }
+            Action::StanceCrouch
+        }
         PlayerAction::Prone => {
             if sim
                 .actors
@@ -1098,26 +1626,63 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         action: sim_action,
     };
 
-    let events = step(sim, cmd).map_err(|e| format!("action failed: {e:?}"))?;
+    let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    let before_stance = sim
+        .actors
+        .get(&actor_id)
+        .map_or(Stance::Standing, |actor| actor.stance);
+    let events = step(sim, cmd).map_err(|error| match error {
+        SimError::InsufficientAp { have, need, .. } if action == PlayerAction::Crouch => format!(
+            "Crouch needs {} AP; only {} AP remaining — 0 AP spent",
+            need.0, have.0
+        ),
+        _ => format!("action failed: {error:?}"),
+    })?;
     gs.battle_events.extend(events.iter().cloned());
+    let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    let after_stance = sim
+        .actors
+        .get(&actor_id)
+        .map_or(before_stance, |actor| actor.stance);
+    if before_stance != after_stance {
+        let position = sim
+            .actors
+            .get(&actor_id)
+            .map_or(TileXY::new(0, 0), |actor| actor.position);
+        gs.battle_animations.push(BattleAnimation {
+            actor: actor_id,
+            from: position,
+            to: position,
+            started: Instant::now(),
+            duration_ms: 360,
+            kind: BattleAnimationKind::StanceShift {
+                from: before_stance,
+                to: after_stance,
+            },
+        });
+    }
 
     let summary = events
         .iter()
         .map(|e| format!("{}", e))
         .collect::<Vec<_>>()
         .join("; ");
-    gs.message = format!(
-        "{:?} done. {}",
-        action,
-        if summary.is_empty() {
-            format!(
-                "AP remaining: {}",
-                sim.actors.get(&actor_id).map(|a| a.ap.0).unwrap_or(0)
-            )
-        } else {
-            summary
-        }
-    );
+    gs.message = if action == PlayerAction::Crouch {
+        format!(
+            "Crouched — AP {before_ap} - {} = {after_ap}",
+            before_ap.saturating_sub(after_ap)
+        )
+    } else {
+        format!(
+            "{:?} done. {}",
+            action,
+            if summary.is_empty() {
+                format!("AP remaining: {after_ap}")
+            } else {
+                summary
+            }
+        )
+    };
 
     check_victory_conditions(gs);
     if gs.screen != crate::state::GameScreen::Battle {
@@ -1249,6 +1814,7 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
                 }
             }
         };
+        queue_event_animations(gs, &events);
         gs.battle_events.extend(events.iter().cloned());
 
         for event in &events {
@@ -1394,18 +1960,6 @@ fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
     for y in 0..GRID_ROWS {
         for x in 0..GRID_COLS {
             let tile_position = TileXY::new(x as i16, y as i16);
-            let alive_actor_at = game_state.sim.as_ref().is_some_and(|sim| {
-                sim.actors
-                    .iter()
-                    .any(|(_, a)| a.position.x == x as i16 && a.position.y == y as i16 && a.alive)
-            });
-
-            let dead_actor_at = game_state.sim.as_ref().is_some_and(|sim| {
-                sim.actors
-                    .iter()
-                    .any(|(_, a)| a.position.x == x as i16 && a.position.y == y as i16 && !a.alive)
-            });
-
             let elevation = game_state
                 .sim
                 .as_ref()
@@ -1417,14 +1971,11 @@ fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
                 .and_then(|sim| sim.terrain_tiles.get(&tile_position))
                 .map_or(0, |terrain| pb_render::tiles::material_for_terrain(terrain));
 
-            let (r, g, b) = if dead_actor_at {
-                (0.90, 0.56, 0.52)
-            } else if alive_actor_at {
-                (0.78, 0.98, 0.78)
-            } else {
-                let shade = 0.92 + ((x + y) % 3) as f32 * 0.025;
-                (shade, shade, shade)
-            };
+            // Actor state belongs to sprites and health meters, not terrain.
+            // Keeping this color occupancy-independent prevents unexplained
+            // green/red tiles from appearing as actors move or die.
+            let shade = 0.92 + ((x + y) % 3) as f32 * 0.025;
+            let (r, g, b) = (shade, shade, shade);
 
             tiles.push(TileVisual::new(r, g, b, elevation).with_material(material));
         }
@@ -1450,48 +2001,252 @@ fn build_smoke_grid(game_state: &GameState) -> Vec<SmokeTile> {
 }
 
 /// Build overlay tile highlights based on hovered tile and selected actor.
-fn build_overlay_tiles(game_state: &GameState) -> Vec<(u32, u32, OverlayTileKind)> {
-    let mut overlays = Vec::new();
+fn build_overlay_tiles(game_state: &GameState) -> Vec<OverlayTile> {
+    let elevation_at = |x: u32, y: u32| {
+        game_state
+            .sim
+            .as_ref()
+            .and_then(|sim| sim.tile_elevations.get(&TileXY::new(x as i16, y as i16)))
+            .copied()
+            .unwrap_or(0)
+    };
+    let mut overlays = movement_range(game_state)
+        .into_iter()
+        .map(|(x, y, preview)| {
+            (
+                x,
+                y,
+                elevation_at(x, y),
+                OverlayTileKind::MovementRange {
+                    ap_cost: preview.ap_cost,
+                    ends_turn: preview.ends_turn,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
 
     let hx = game_state.hovered_tile_x.max(0).min(GRID_COLS as i16 - 1) as u32;
     let hy = game_state.hovered_tile_y.max(0).min(GRID_ROWS as i16 - 1) as u32;
     let hovered_kind = if let Some(preview) = movement_preview(game_state) {
         if preview.crosses_overwatch {
-            OverlayTileKind::Overwatch {
+            Some(OverlayTileKind::Overwatch {
                 ap_cost: preview.ap_cost,
-            }
+            })
         } else if preview.leaves_cover {
-            OverlayTileKind::LeavesCover {
+            Some(OverlayTileKind::LeavesCover {
                 ap_cost: preview.ap_cost,
-            }
+            })
         } else {
-            OverlayTileKind::Movable {
+            Some(OverlayTileKind::Movable {
                 ap_cost: preview.ap_cost,
-            }
+            })
         }
     } else if let Some(hit) = compute_hit_chance_for_hover(game_state) {
-        OverlayTileKind::Attackable {
+        Some(OverlayTileKind::Attackable {
             hit_chance: u8::try_from(hit.total.clamp(0, 100)).unwrap_or(0),
-        }
+        })
     } else {
-        OverlayTileKind::Movable { ap_cost: 0 }
+        None
     };
-    overlays.push((hx, hy, hovered_kind));
 
-    // Highlight selected actor's tile
-    if let InteractionPhase::SelectedActor(id) = game_state.phase {
-        if let Some(ref sim) = game_state.sim {
-            if let Some(actor) = sim.actors.get(&id) {
-                let ax = actor.position.x.max(0).min(GRID_COLS as i16 - 1) as u32;
-                let ay = actor.position.y.max(0).min(GRID_ROWS as i16 - 1) as u32;
-                if ax != hx || ay != hy {
-                    overlays.push((ax, ay, OverlayTileKind::Movable { ap_cost: 0 }));
+    if let Some(kind) = hovered_kind {
+        overlays.retain(|(x, y, _, _)| *x != hx || *y != hy);
+        overlays.push((hx, hy, elevation_at(hx, hy), kind));
+    }
+    overlays
+}
+
+fn movement_duration_ms(from: TileXY, to: TileXY, sprint: bool) -> u64 {
+    let distance = u64::from(from.x.abs_diff(to.x)) + u64::from(from.y.abs_diff(to.y));
+    let milliseconds_per_tile = if sprint { 110 } else { 155 };
+    distance
+        .max(1)
+        .saturating_mul(milliseconds_per_tile)
+        .clamp(280, 900)
+}
+
+fn queue_event_animations(game_state: &mut GameState, events: &[Event]) {
+    let started = Instant::now();
+    let mut queued = Vec::new();
+    for event in events {
+        match *event {
+            Event::Moved { actor, from, to } => queued.push(BattleAnimation {
+                actor,
+                from,
+                to,
+                started,
+                duration_ms: movement_duration_ms(from, to, false),
+                kind: BattleAnimationKind::Move,
+            }),
+            Event::Fired { actor, target } => {
+                let positions = game_state.sim.as_ref().and_then(|sim| {
+                    Some((
+                        sim.actors.get(&actor)?.position,
+                        sim.actors.get(&target)?.position,
+                    ))
+                });
+                if let Some((from, to)) = positions {
+                    queued.push(BattleAnimation {
+                        actor,
+                        from,
+                        to,
+                        started,
+                        duration_ms: 520,
+                        kind: BattleAnimationKind::Recoil,
+                    });
                 }
             }
+            _ => {}
         }
     }
+    for animation in queued {
+        game_state
+            .battle_animations
+            .retain(|active| active.actor != animation.actor);
+        game_state.battle_animations.push(animation);
+    }
+}
 
-    overlays
+fn health_meter_sprites(
+    x: f32,
+    y: f32,
+    z: f32,
+    hit_points: i32,
+    max_hp: i32,
+    enemy: bool,
+) -> [SpriteInstance; 3] {
+    let ratio = if max_hp <= 0 {
+        0.0
+    } else {
+        (hit_points.max(0) as f32 / max_hp as f32).clamp(0.0, 1.0)
+    };
+
+    let mut frame = SpriteInstance::new(x, y, z);
+    frame.width = 52.0;
+    frame.height = 10.0;
+    if enemy {
+        frame.r = 0.78;
+        frame.g = 0.16;
+        frame.b = 0.12;
+    } else {
+        frame.r = 0.18;
+        frame.g = 0.48;
+        frame.b = 0.78;
+    }
+    frame.a = 0.98;
+    frame.set_solid_color();
+
+    let mut track = SpriteInstance::new(x, y, z + 0.01);
+    track.width = 48.0;
+    track.height = 6.0;
+    track.r = 0.055;
+    track.g = 0.045;
+    track.b = 0.035;
+    track.a = 0.96;
+    track.set_solid_color();
+
+    let fill_width = 48.0 * ratio;
+    let mut fill = SpriteInstance::new(x - (48.0 - fill_width) * 0.5, y, z + 0.02);
+    fill.width = fill_width;
+    fill.height = 6.0;
+    (fill.r, fill.g, fill.b) = if ratio > 0.60 {
+        (0.18, 0.82, 0.26)
+    } else if ratio > 0.30 {
+        (0.94, 0.72, 0.14)
+    } else {
+        (0.92, 0.18, 0.12)
+    };
+    fill.a = 1.0;
+    fill.visible = fill_width > 0.0;
+    fill.set_solid_color();
+
+    [frame, track, fill]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BodyMotion {
+    lift: f32,
+    sway: f32,
+    rotation: f32,
+    scale_x: f32,
+    scale_y: f32,
+    top_sway: f32,
+    top_scale_x: f32,
+}
+
+impl Default for BodyMotion {
+    fn default() -> Self {
+        Self {
+            lift: 0.0,
+            sway: 0.0,
+            rotation: 0.0,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            top_sway: 0.0,
+            top_scale_x: 1.0,
+        }
+    }
+}
+
+/// Continuous presentation-only motion for a living actor.
+///
+/// Each identity receives a stable phase offset, preventing the squad from
+/// breathing and shifting in lockstep. The simulation clock and state hashes
+/// never observe this animation.
+fn idle_body_motion(
+    actor_id: ActorId,
+    stance: Stance,
+    presentation_frame: u64,
+    selected: bool,
+    alive: bool,
+) -> BodyMotion {
+    if !alive {
+        return BodyMotion::default();
+    }
+    let seconds = (presentation_frame % 216_000) as f32 / 60.0;
+    let phase = actor_id.0 as f32 * 0.731;
+    let breath = (seconds * std::f32::consts::TAU * 0.22 + phase).sin();
+    let weight = (seconds * std::f32::consts::TAU * 0.075 + phase * 1.61).sin();
+    let settle = (seconds * std::f32::consts::TAU * 0.41 + phase * 0.37).sin();
+    let steadiness = if selected { 0.68 } else { 1.0 };
+
+    match stance {
+        Stance::Standing => BodyMotion {
+            lift: breath * 0.62,
+            sway: weight * 1.15 * steadiness,
+            rotation: weight * 0.009 * steadiness,
+            scale_x: 1.0 - breath * 0.0035,
+            scale_y: 1.0 + breath * 0.007,
+            top_sway: (weight * 1.25 + settle * 0.45) * steadiness,
+            top_scale_x: 1.0 + breath * 0.004,
+        },
+        Stance::Crouched => BodyMotion {
+            lift: breath * 0.34 + settle.abs() * 0.14,
+            sway: weight * 1.45 * steadiness,
+            rotation: weight * 0.013 * steadiness,
+            scale_x: 1.0 - breath * 0.004,
+            scale_y: 1.0 + breath * 0.009,
+            top_sway: (weight * 1.7 + settle * 0.62) * steadiness,
+            top_scale_x: 1.0 + breath * 0.006,
+        },
+        Stance::Prone => BodyMotion {
+            lift: breath * 0.18,
+            sway: weight * 0.38 * steadiness,
+            rotation: weight * 0.003 * steadiness,
+            scale_x: 1.0 - breath * 0.004,
+            scale_y: 1.0 + breath * 0.012,
+            top_sway: (weight * 0.5 + settle * 0.28) * steadiness,
+            top_scale_x: 1.0 + breath * 0.005,
+        },
+    }
+}
+
+fn stance_sprite_shape(stance: Stance) -> (f32, f32, f32) {
+    match stance {
+        Stance::Standing => (1.0, 1.0, 0.0),
+        Stance::Crouched => (0.82, 1.0, -5.0),
+        Stance::Prone => (0.58, 1.18, -12.0),
+    }
 }
 
 /// Build sprite instances from all actors in the simulation.
@@ -1506,18 +2261,102 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
         _ => None,
     };
 
-    let mut sprites = Vec::with_capacity(sim.actors.len());
+    let mut sprites = Vec::with_capacity(sim.actors.len() * 7);
+    let mut unit_meters = Vec::with_capacity(sim.actors.len() * 3);
 
     for (id, actor) in &sim.actors {
         let half_w = TILE_W * 0.5;
         let half_h = TILE_H * 0.5;
-        let wx = (actor.position.x as f32 - actor.position.y as f32) * half_w;
-        let wy = (actor.position.x as f32 + actor.position.y as f32) * half_h;
+        let mut display_x = actor.position.x as f32;
+        let mut display_y = actor.position.y as f32;
+        let mut display_elevation = sim
+            .tile_elevations
+            .get(&actor.position)
+            .copied()
+            .unwrap_or(0) as f32;
+        let mut motion = idle_body_motion(
+            *id,
+            actor.stance,
+            game_state.presentation_frame,
+            Some(*id) == selected_id,
+            actor.alive,
+        );
+        let mut firing_effect = None;
+        let mut stance_transition = None;
+        if let Some(animation) = game_state
+            .battle_animations
+            .iter()
+            .rev()
+            .find(|animation| animation.actor == *id)
+        {
+            let elapsed_ms = animation.started.elapsed().as_secs_f32() * 1_000.0;
+            let progress = (elapsed_ms / animation.duration_ms.max(1) as f32).clamp(0.0, 1.0);
+            match animation.kind {
+                BattleAnimationKind::Move if progress < 1.0 => {
+                    let eased = 1.0 - (1.0 - progress).powi(3);
+                    display_x = animation.from.x as f32
+                        + (animation.to.x - animation.from.x) as f32 * eased;
+                    display_y = animation.from.y as f32
+                        + (animation.to.y - animation.from.y) as f32 * eased;
+                    let from_elevation = sim
+                        .tile_elevations
+                        .get(&animation.from)
+                        .copied()
+                        .unwrap_or(0) as f32;
+                    let to_elevation =
+                        sim.tile_elevations.get(&animation.to).copied().unwrap_or(0) as f32;
+                    display_elevation = from_elevation + (to_elevation - from_elevation) * eased;
+                    let distance = f32::from(animation.from.x.abs_diff(animation.to.x))
+                        + f32::from(animation.from.y.abs_diff(animation.to.y));
+                    let stride = (progress * distance.max(1.0) * std::f32::consts::TAU * 1.4).sin();
+                    motion.lift += stride.abs() * 4.5;
+                    motion.sway += stride * 2.4;
+                    motion.rotation += stride * 0.035;
+                    motion.scale_x *= 1.0 - stride.abs() * 0.025;
+                    motion.scale_y *= 1.0 + stride.abs() * 0.035;
+                    motion.top_sway += stride * 2.8;
+                    motion.top_scale_x *= 1.0 - stride.abs() * 0.012;
+                }
+                BattleAnimationKind::Recoil if progress < 1.0 => {
+                    let kick = if progress < 0.16 {
+                        (progress / 0.16 * std::f32::consts::FRAC_PI_2).sin()
+                    } else {
+                        let recovery = ((progress - 0.16) / 0.84).clamp(0.0, 1.0);
+                        (1.0 - recovery).powi(2)
+                    };
+                    motion.lift += kick * 3.0;
+                    motion.sway -= kick * 5.5;
+                    motion.rotation -= kick * 0.055;
+                    motion.scale_x *= 1.0 + kick * 0.035;
+                    motion.scale_y *= 1.0 - kick * 0.025;
+                    motion.top_sway -= kick * 7.5;
+                    motion.top_scale_x *= 1.0 + kick * 0.025;
+                    if progress < 0.18 {
+                        firing_effect = Some((animation.from, animation.to, 1.0 - progress / 0.18));
+                    }
+                }
+                BattleAnimationKind::StanceShift { from, to } if progress < 1.0 => {
+                    let eased = progress * progress * (3.0 - 2.0 * progress);
+                    stance_transition = Some((from, to, eased));
+                    motion.lift += (progress * std::f32::consts::PI).sin() * 1.2;
+                    motion.top_sway += (progress * std::f32::consts::PI).sin()
+                        * if selected_id == Some(*id) { 1.1 } else { 0.7 };
+                }
+                _ => {}
+            }
+        }
+        let wx = (display_x - display_y) * half_w + motion.sway;
+        let wy = (display_x + display_y) * half_h
+            + motion.lift
+            + display_elevation * pb_render::tiles::ELEVATION_SCREEN_STEP;
         let z = if actor.alive { 2.0 } else { 0.5 };
 
         let mut sprite = SpriteInstance::new(wx, wy, z);
-        sprite.width = 58.0;
-        sprite.height = 82.0;
+        sprite.width = 58.0 * motion.scale_x;
+        sprite.height = 82.0 * motion.scale_y;
+        sprite.rotation = motion.rotation;
+        sprite.top_sway = motion.top_sway;
+        sprite.top_scale_x = motion.top_scale_x;
         sprite.y -= 24.0;
         sprite.set_character(id.0);
 
@@ -1527,18 +2366,21 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
             sprite.b = 0.2;
             sprite.a = 0.48;
         } else {
-            match actor.stance {
-                Stance::Standing => {}
-                Stance::Crouched => {
-                    sprite.height *= 0.82;
-                    sprite.y -= 5.0;
-                }
-                Stance::Prone => {
-                    sprite.height *= 0.58;
-                    sprite.width *= 1.18;
-                    sprite.y -= 12.0;
-                }
-            }
+            let (height_scale, width_scale, vertical_offset) = stance_transition.map_or_else(
+                || stance_sprite_shape(actor.stance),
+                |(from, to, progress)| {
+                    let from = stance_sprite_shape(from);
+                    let to = stance_sprite_shape(to);
+                    (
+                        from.0 + (to.0 - from.0) * progress,
+                        from.1 + (to.1 - from.1) * progress,
+                        from.2 + (to.2 - from.2) * progress,
+                    )
+                },
+            );
+            sprite.height *= height_scale;
+            sprite.width *= width_scale;
+            sprite.y += vertical_offset;
             if Some(*id) == selected_id {
                 sprite.r = 1.0;
                 sprite.g = 1.0;
@@ -1557,9 +2399,59 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
             }
         }
 
+        if actor.alive {
+            let meter_y = sprite.y + sprite.height * 0.5 + 10.0;
+            unit_meters.extend(health_meter_sprites(
+                sprite.x,
+                meter_y,
+                z + 0.5,
+                actor.hit_points,
+                actor.max_hp,
+                is_enemy(actor),
+            ));
+        }
         sprites.push(sprite);
+
+        if let Some((from, to, alpha)) = firing_effect {
+            let from_wx = f32::from(from.x - from.y) * half_w;
+            let from_wy = f32::from(from.x + from.y) * half_h
+                + sim.tile_elevations.get(&from).copied().unwrap_or(0) as f32
+                    * pb_render::tiles::ELEVATION_SCREEN_STEP;
+            let to_wx = f32::from(to.x - to.y) * half_w;
+            let to_wy = f32::from(to.x + to.y) * half_h
+                + sim.tile_elevations.get(&to).copied().unwrap_or(0) as f32
+                    * pb_render::tiles::ELEVATION_SCREEN_STEP;
+            let delta_x = to_wx - from_wx;
+            let delta_y = to_wy - from_wy;
+            let length = (delta_x * delta_x + delta_y * delta_y).sqrt().max(1.0);
+            let direction_x = delta_x / length;
+            let direction_y = delta_y / length;
+            let angle = direction_y.atan2(direction_x);
+            let muzzle_x = wx + direction_x * 34.0;
+            let muzzle_y = wy - 17.0 + direction_y * 24.0;
+
+            for (rotation, width, height, opacity) in [
+                (angle, 30.0, 6.0, alpha),
+                (angle + std::f32::consts::FRAC_PI_2, 17.0, 4.0, alpha * 0.82),
+                (angle + std::f32::consts::FRAC_PI_4, 13.0, 3.0, alpha * 0.68),
+            ] {
+                let mut flash = SpriteInstance::new(muzzle_x, muzzle_y, z + 0.2);
+                flash.width = width;
+                flash.height = height;
+                flash.rotation = rotation;
+                flash.r = 1.0;
+                flash.g = 0.72;
+                flash.b = 0.18;
+                flash.a = opacity;
+                flash.set_solid_color();
+                sprites.push(flash);
+            }
+        }
     }
 
+    // Draw unit meters after all character and weapon-effect quads so they
+    // remain legible when sprites overlap.
+    sprites.extend(unit_meters);
     sprites
 }
 
@@ -1602,10 +2494,22 @@ mod coverage_tests {
         let sim = state.sim.as_ref().expect("simulation");
         assert!(sim.actors.values().any(is_ally));
         assert!(sim.actors.values().any(is_enemy));
+        assert_eq!(
+            sim.terrain_tiles
+                .get(&TileXY::new(9, 2))
+                .map(String::as_str),
+            Some("Creek")
+        );
+        assert_eq!(sim.tile_elevations.get(&TileXY::new(9, 2)), Some(&-1));
+        assert_eq!(sim.tile_elevations.get(&TileXY::new(16, 2)), Some(&1));
         assert!(!build_tile_visuals(&state).is_empty());
-        assert_eq!(build_sprite_instances(&state).len(), sim.actors.len());
+        let sprites = build_sprite_instances(&state);
+        assert_eq!(
+            sprites.iter().filter(|sprite| sprite.u0 >= 0.0).count(),
+            sim.actors.len()
+        );
         assert!(!build_smoke_grid(&state).is_empty());
-        assert!(!build_overlay_tiles(&state).is_empty());
+        assert!(build_overlay_tiles(&state).len() <= 24);
 
         select_squad_member(&mut state, 0).expect("select first squad member");
         assert!(matches!(state.phase, InteractionPhase::SelectedActor(_)));
@@ -1635,6 +2539,94 @@ mod coverage_tests {
     }
 
     #[test]
+    fn terrain_colors_do_not_change_when_actors_move_or_die() {
+        let mut state = authored_battle();
+        let actor_id = active_ally(&state);
+        let before = build_tile_visuals(&state);
+
+        {
+            let actor = state
+                .sim
+                .as_mut()
+                .and_then(|sim| sim.actors.get_mut(&actor_id))
+                .expect("active ally");
+            actor.position = TileXY::new(11, 7);
+            actor.alive = false;
+            actor.hit_points = 0;
+        }
+
+        let after = build_tile_visuals(&state);
+        assert_eq!(before.len(), after.len());
+        for (before_tile, after_tile) in before.iter().zip(&after) {
+            assert_eq!(
+                (before_tile.r, before_tile.g, before_tile.b),
+                (after_tile.r, after_tile.g, after_tile.b)
+            );
+        }
+    }
+
+    #[test]
+    fn overlays_are_empty_without_a_selected_action() {
+        assert!(build_overlay_tiles(&GameState::new()).is_empty());
+    }
+
+    #[test]
+    fn crouch_spends_once_and_repeated_or_unaffordable_input_spends_nothing() {
+        let mut state = authored_battle();
+        let actor_id = active_ally(&state);
+        let before_ap = state.sim.as_ref().expect("simulation").actors[&actor_id]
+            .ap
+            .0;
+        state.phase = InteractionPhase::SelectedActor(actor_id);
+
+        execute_immediate_action(&mut state, PlayerAction::Crouch).expect("first crouch");
+        let after_first = state.sim.as_ref().expect("simulation").actors[&actor_id].clone();
+        assert_eq!(after_first.stance, Stance::Crouched);
+        assert_eq!(after_first.ap.0, before_ap - 1);
+        assert!(state.battle_animations.iter().any(|animation| {
+            animation.actor == actor_id
+                && matches!(
+                    animation.kind,
+                    BattleAnimationKind::StanceShift {
+                        from: Stance::Standing,
+                        to: Stance::Crouched
+                    }
+                )
+        }));
+        assert!(state
+            .message
+            .contains(&format!("AP {before_ap} - 1 = {}", after_first.ap.0)));
+
+        let event_count = state.battle_events.len();
+        state.phase = InteractionPhase::SelectedActor(actor_id);
+        execute_immediate_action(&mut state, PlayerAction::Crouch).expect("repeated crouch");
+        assert_eq!(
+            state.sim.as_ref().expect("simulation").actors[&actor_id].ap,
+            after_first.ap
+        );
+        assert_eq!(state.battle_events.len(), event_count);
+        assert!(state.message.contains("already crouched"));
+        assert!(state.message.contains("0 AP spent"));
+
+        {
+            let actor = state
+                .sim
+                .as_mut()
+                .and_then(|sim| sim.actors.get_mut(&actor_id))
+                .expect("active ally");
+            actor.stance = Stance::Standing;
+            actor.ap = pb_core::ids::Ap(0);
+        }
+        state.phase = InteractionPhase::SelectedActor(actor_id);
+        let error = execute_immediate_action(&mut state, PlayerAction::Crouch)
+            .expect_err("zero AP crouch must fail");
+        let actor = &state.sim.as_ref().expect("simulation").actors[&actor_id];
+        assert_eq!(actor.stance, Stance::Standing);
+        assert_eq!(actor.ap, pb_core::ids::Ap(0));
+        assert!(error.contains("0 AP spent"));
+    }
+
+    #[test]
     fn click_targeting_and_immediate_actions_drive_the_real_kernel() {
         let mut state = authored_battle();
         let actor_id = active_ally(&state);
@@ -1642,6 +2634,15 @@ mod coverage_tests {
         execute_immediate_action(&mut state, PlayerAction::Crouch).expect("crouch");
         state.phase = InteractionPhase::SelectedActor(actor_id);
         execute_immediate_action(&mut state, PlayerAction::Prone).expect("prone");
+
+        let mut state = authored_battle();
+        let actor_id = active_ally(&state);
+        state
+            .sim
+            .as_mut()
+            .and_then(|sim| sim.actors.get_mut(&actor_id))
+            .expect("active ally")
+            .stance = Stance::Prone;
         state.phase = InteractionPhase::SelectedActor(actor_id);
         execute_immediate_action(&mut state, PlayerAction::Prone).expect("rise");
 
@@ -1691,7 +2692,8 @@ mod coverage_tests {
         state.phase = InteractionPhase::Idle;
         state.hovered_tile_x = target_position.x;
         state.hovered_tile_y = target_position.y;
-        handle_combat_click(&mut state).expect("enemy click handled");
+        handle_combat_click(&mut state, CombatPointerButton::Left, 1280, 720)
+            .expect("enemy click handled");
         assert!(!state.message.is_empty());
     }
 
@@ -1724,8 +2726,161 @@ mod turn_tests {
 
     #[test]
     fn screen_to_tile_accounts_for_pan_and_zoom() {
-        let tile = screen_to_tile(787.2, 432.0, 128.0, 240.0, 1.35, 1920.0, 1080.0);
+        let tile = screen_to_tile(787.2, 648.0, 128.0, 240.0, 1.35, 1920.0, 1080.0);
         assert_eq!(tile, TileXY::new(5, 5));
+    }
+
+    #[test]
+    fn fitted_camera_keeps_every_perimeter_diamond_fully_inside_the_viewport() {
+        let center_x = (GRID_COLS as f32 - GRID_ROWS as f32) * TILE_W * 0.25;
+        let center_y = (GRID_COLS + GRID_ROWS - 2) as f32 * TILE_H * 0.25;
+        let min_x = -(GRID_ROWS as f32) * TILE_W * 0.5;
+        let max_x = GRID_COLS as f32 * TILE_W * 0.5;
+        let min_y = -TILE_H * 0.5;
+        let max_y = (GRID_COLS + GRID_ROWS - 1) as f32 * TILE_H * 0.5;
+
+        for (width, height) in [(800.0, 600.0), (1280.0, 720.0), (1920.0, 1080.0)] {
+            let zoom = fitted_battle_zoom(1.7, width, height);
+            let left = width * 0.5 + (min_x - center_x) * zoom;
+            let right = width * 0.5 + (max_x - center_x) * zoom;
+            let top = height * 0.5 - (max_y - center_y) * zoom;
+            let bottom = height * 0.5 - (min_y - center_y) * zoom;
+
+            assert!(left >= GRID_EDGE_GUTTER - 0.01, "{width} left={left}");
+            assert!(
+                right <= width - GRID_EDGE_GUTTER + 0.01,
+                "{width} right={right}"
+            );
+            assert!(top >= GRID_EDGE_GUTTER - 0.01, "{height} top={top}");
+            assert!(
+                bottom <= height - GRID_EDGE_GUTTER + 0.01,
+                "{height} bottom={bottom}"
+            );
+        }
+    }
+
+    #[test]
+    fn rendered_diamond_center_and_interior_select_the_same_tile() {
+        let expected = TileXY::new(5, 5);
+        // Tile (5,5) renders at world (0,160), or screen (500,240).
+        for (x, y) in [
+            (500.0, 240.0),
+            (500.0, 225.0),
+            (500.0, 255.0),
+            (469.0, 240.0),
+            (531.0, 240.0),
+        ] {
+            assert_eq!(
+                screen_to_tile(x, y, 0.0, 0.0, 1.0, 1_000.0, 800.0),
+                expected,
+                "pointer ({x},{y}) missed the rendered diamond"
+            );
+        }
+    }
+
+    #[test]
+    fn raised_tile_surface_remains_pointer_selectable() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        sim.tile_elevations.insert(TileXY::new(5, 5), 2);
+        game.sim = Some(sim);
+        game.camera_zoom = 1.0;
+        let viewport_width = 1_000.0;
+        let viewport_height = 800.0;
+        let zoom = fitted_battle_zoom(game.camera_zoom, viewport_width, viewport_height);
+        let tile_world_x = 0.0;
+        let tile_world_y = 160.0 + 2.0 * pb_render::tiles::ELEVATION_SCREEN_STEP;
+        let pointer_x = viewport_width * 0.5 + (tile_world_x - game.camera_x) * zoom;
+        let pointer_y = viewport_height * 0.5 - (tile_world_y - game.camera_y) * zoom;
+
+        assert_eq!(
+            screen_to_tile_in_state(
+                &game,
+                f64::from(pointer_x),
+                f64::from(pointer_y),
+                viewport_width,
+                viewport_height,
+            ),
+            TileXY::new(5, 5)
+        );
+    }
+
+    #[test]
+    fn crossing_a_diamond_edge_selects_the_visible_neighbor() {
+        assert_eq!(
+            screen_to_tile(533.0, 240.0, 0.0, 0.0, 1.0, 1_000.0, 800.0),
+            TileXY::new(6, 4)
+        );
+        assert_eq!(
+            screen_to_tile(500.0, 223.0, 0.0, 0.0, 1.0, 1_000.0, 800.0),
+            TileXY::new(6, 6)
+        );
+    }
+
+    #[test]
+    fn visible_sprite_hitbox_selects_the_active_ally() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        let id = ActorId(1);
+        let mut actor = build_actor(id, "Player", 5, 100, 20, TileXY::new(5, 5));
+        actor.faction_id = "player".to_string();
+        sim.actors.insert(id, actor);
+        sim.active_actor = Some(id);
+        game.sim = Some(sim);
+        game.camera_zoom = 1.0;
+        game.mouse_x = 500.0;
+        // Tile (5,5) projects to world (0,160); the 82px sprite is centred
+        // 24px above its feet, at client-space y=264.
+        game.mouse_y = 264.0;
+
+        assert!(handle_combat_click(&mut game, CombatPointerButton::Left, 1_000, 800).is_ok());
+        assert_eq!(game.phase, InteractionPhase::SelectedActor(id));
+    }
+
+    #[test]
+    fn battle_action_hitboxes_and_right_click_dispatch_mouse_commands() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        let player_id = ActorId(1);
+        let enemy_id = ActorId(2);
+        let mut player = build_actor(player_id, "Player", 5, 100, 20, TileXY::new(2, 2));
+        player.faction_id = "player".to_string();
+        player.ap = pb_core::ids::Ap(5);
+        player.ap = pb_core::ids::Ap(10);
+        let mut enemy = build_actor(enemy_id, "Enemy", 5, 100, 20, TileXY::new(3, 2));
+        enemy.faction_id = "enemy".to_string();
+        sim.actors.insert(player_id, player);
+        sim.actors.insert(enemy_id, enemy);
+        sim.active_actor = Some(player_id);
+        game.sim = Some(sim);
+        game.phase = InteractionPhase::SelectedActor(player_id);
+        game.camera_zoom = 1.0;
+
+        let (action, _, [x, y, width, height]) = battle_action_layout(1_000, 800)[1];
+        game.mouse_x = f64::from(x + width * 0.5);
+        game.mouse_y = f64::from(y + height * 0.5);
+        assert_eq!(
+            battle_action_at(&game, 1_000, 800),
+            Some(BattleHudAction::Aim)
+        );
+        assert!(activate_battle_action(&mut game, action).is_ok());
+        assert!(matches!(
+            game.phase,
+            InteractionPhase::Targeting {
+                action: PlayerAction::AimedShot,
+                ..
+            }
+        ));
+
+        // Enemy at tile (3,2): click the rendered tile center at screen
+        // (532,320), not the old four-corner intersection or sprite midpoint.
+        game.mouse_x = 532.0;
+        game.mouse_y = 320.0;
+        assert!(handle_combat_click(&mut game, CombatPointerButton::Right, 1_000, 800).is_ok());
+        assert!(game
+            .battle_events
+            .iter()
+            .any(|event| matches!(event, Event::Fired { actor, target } if *actor == player_id && *target == enemy_id)));
     }
 
     #[test]
@@ -1808,6 +2963,7 @@ mod turn_tests {
 
         let mut player = build_actor(player_id, "Player", 5, 100, 20, TileXY::new(2, 2));
         player.faction_id = "player".to_string();
+        player.ap = pb_core::ids::Ap(5);
         let mut watcher = build_actor(watcher_id, "Watcher", 5, 100, 20, TileXY::new(5, 2));
         watcher.faction_id = "enemy".to_string();
         watcher.facing = pb_core::geom::Facing::West;
@@ -1837,9 +2993,62 @@ mod turn_tests {
             movement_preview(&game),
             Some(MovementPreview {
                 ap_cost: 2,
+                remaining_ap: 3,
+                distance: 1,
+                ends_turn: false,
                 leaves_cover: true,
                 crosses_overwatch: true,
             })
+        );
+    }
+
+    #[test]
+    fn selected_actor_exposes_complete_legal_move_and_sprint_range() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        let actor_id = ActorId(1);
+        let mut actor = build_actor(actor_id, "Player", 5, 100, 20, TileXY::new(5, 5));
+        actor.faction_id = "player".to_string();
+        actor.ap = pb_core::ids::Ap(5);
+        sim.actors.insert(actor_id, actor);
+        sim.active_actor = Some(actor_id);
+        game.sim = Some(sim);
+        game.phase = InteractionPhase::SelectedActor(actor_id);
+
+        let range = movement_range(&game);
+        assert_eq!(
+            range
+                .iter()
+                .filter(|(_, _, preview)| !preview.ends_turn)
+                .count(),
+            8
+        );
+        assert_eq!(
+            range
+                .iter()
+                .filter(|(_, _, preview)| preview.ends_turn)
+                .count(),
+            16
+        );
+        assert!(range.iter().all(|(_, _, preview)| {
+            (preview.distance == 1 && preview.ap_cost == 1 && preview.remaining_ap == 4)
+                || (preview.distance == 2 && preview.ap_cost == 2 && preview.remaining_ap == 3)
+        }));
+
+        let overlays = build_overlay_tiles(&game);
+        assert_eq!(overlays.len(), 24);
+        assert_eq!(
+            overlays
+                .iter()
+                .filter(|(_, _, _, kind)| matches!(
+                    kind,
+                    OverlayTileKind::MovementRange {
+                        ends_turn: true,
+                        ..
+                    }
+                ))
+                .count(),
+            16
         );
     }
 
@@ -1868,5 +3077,94 @@ mod turn_tests {
             assert_eq!(sim.actors[&enemy_id].ap.0, 0);
             assert_eq!(sim.tick.0, 0);
         }
+    }
+
+    #[test]
+    fn living_actors_never_share_one_frozen_idle_pose() {
+        let first = idle_body_motion(ActorId(1), Stance::Standing, 0, false, true);
+        let later = idle_body_motion(ActorId(1), Stance::Standing, 31, false, true);
+        let squadmate = idle_body_motion(ActorId(2), Stance::Standing, 0, false, true);
+        let fallen = idle_body_motion(ActorId(1), Stance::Standing, 31, false, false);
+
+        assert_ne!(first, later);
+        assert_ne!(first, squadmate);
+        assert_eq!(fallen, BodyMotion::default());
+        assert!(later.lift.abs() < 1.0);
+        assert!(later.top_sway.abs() < 2.0);
+    }
+
+    #[test]
+    fn standing_crouched_and_prone_have_distinct_balance_motion() {
+        let standing = idle_body_motion(ActorId(7), Stance::Standing, 93, false, true);
+        let crouched = idle_body_motion(ActorId(7), Stance::Crouched, 93, false, true);
+        let prone = idle_body_motion(ActorId(7), Stance::Prone, 93, false, true);
+
+        assert_ne!(standing, crouched);
+        assert_ne!(crouched, prone);
+        assert!(crouched.rotation.abs() >= standing.rotation.abs());
+        assert!(prone.sway.abs() < crouched.sway.abs());
+    }
+
+    #[test]
+    fn movement_animation_duration_scales_with_distance_and_sprint() {
+        let from = TileXY::new(1, 1);
+        let near = TileXY::new(2, 1);
+        let far = TileXY::new(6, 1);
+
+        assert_eq!(movement_duration_ms(from, near, false), 280);
+        assert!(movement_duration_ms(from, far, false) > movement_duration_ms(from, near, false));
+        assert!(movement_duration_ms(from, far, true) < movement_duration_ms(from, far, false));
+        assert!(movement_duration_ms(from, TileXY::new(40, 40), false) <= 900);
+    }
+
+    #[test]
+    fn firing_animation_adds_three_solid_muzzle_flash_layers() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        let actor_id = ActorId(1);
+        let target_id = ActorId(2);
+        let actor_position = TileXY::new(2, 2);
+        let target_position = TileXY::new(5, 2);
+        let mut actor = build_actor(actor_id, "Player", 5, 100, 20, actor_position);
+        actor.faction_id = "player".to_string();
+        let mut target = build_actor(target_id, "Enemy", 5, 100, 20, target_position);
+        target.faction_id = "enemy".to_string();
+        sim.actors.insert(actor_id, actor);
+        sim.actors.insert(target_id, target);
+        game.sim = Some(sim);
+        game.battle_animations.push(BattleAnimation {
+            actor: actor_id,
+            from: actor_position,
+            to: target_position,
+            started: Instant::now(),
+            duration_ms: 520,
+            kind: BattleAnimationKind::Recoil,
+        });
+
+        let sprites = build_sprite_instances(&game);
+        assert_eq!(sprites.len(), 11);
+        assert_eq!(
+            sprites
+                .iter()
+                .filter(|sprite| {
+                    sprite.u0 < 0.0
+                        && (sprite.r - 1.0).abs() < f32::EPSILON
+                        && (sprite.g - 0.72).abs() < f32::EPSILON
+                })
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn health_meter_fill_tracks_damage_and_uses_critical_color() {
+        let [frame, track, fill] = health_meter_sprites(100.0, 80.0, 3.0, 25, 100, false);
+
+        assert!(frame.b > frame.r, "allied frame should be blue");
+        assert_eq!(track.width, 48.0);
+        assert_eq!(fill.width, 12.0);
+        assert_eq!(fill.x, 82.0);
+        assert!(fill.r > fill.g, "critical health should be red");
+        assert!(fill.visible);
     }
 }

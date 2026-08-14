@@ -56,6 +56,12 @@ pub struct SpriteInstance {
     pub z: f32,
     pub width: f32,
     pub height: f32,
+    /// Clockwise rotation in radians around the sprite center.
+    pub rotation: f32,
+    /// Presentation-only horizontal bend applied progressively toward the head.
+    pub top_sway: f32,
+    /// Presentation-only upper-body width multiplier; feet remain anchored.
+    pub top_scale_x: f32,
     pub r: f32,
     pub g: f32,
     pub b: f32,
@@ -75,6 +81,9 @@ impl SpriteInstance {
             z,
             width: 32.0,
             height: 32.0,
+            rotation: 0.0,
+            top_sway: 0.0,
+            top_scale_x: 1.0,
             r: 1.0,
             g: 1.0,
             b: 1.0,
@@ -101,6 +110,14 @@ impl SpriteInstance {
     pub fn set_character(&mut self, index: u32) {
         let index = index % 8;
         self.set_atlas_cell((index % 4) as u8, (index / 4) as u8);
+    }
+
+    /// Render this instance as a solid-color quad instead of sampling the atlas.
+    pub fn set_solid_color(&mut self) {
+        self.u0 = -1.0;
+        self.v0 = -1.0;
+        self.u1 = -1.0;
+        self.v1 = -1.0;
     }
 }
 
@@ -134,6 +151,23 @@ impl SpriteSystem {
         )
     }
 
+    /// Create a sprite system whose pipeline matches the destination target.
+    pub fn new_with_format(
+        device: &Arc<RenderDevice>,
+        sprites: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_atlas_and_format(
+            device,
+            sprites,
+            camera_matrix_bytes,
+            include_bytes!("../../../assets/sprites/frontier_company_atlas_v2.png"),
+            "frontier company atlas",
+            target_format,
+        )
+    }
+
     /// Create a sprite system backed by a caller-selected PNG atlas.
     ///
     /// This keeps actor and environmental-prop rendering on one GPU path while
@@ -144,6 +178,25 @@ impl SpriteSystem {
         camera_matrix_bytes: &[u8; 64],
         atlas_bytes: &[u8],
         atlas_label: &str,
+    ) -> Self {
+        Self::new_with_atlas_and_format(
+            device,
+            sprites,
+            camera_matrix_bytes,
+            atlas_bytes,
+            atlas_label,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )
+    }
+
+    /// Create an atlas-backed sprite system for a specific target format.
+    pub fn new_with_atlas_and_format(
+        device: &Arc<RenderDevice>,
+        sprites: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+        atlas_bytes: &[u8],
+        atlas_label: &str,
+        target_format: wgpu::TextureFormat,
     ) -> Self {
         let decoded_atlas =
             match image::load_from_memory_with_format(atlas_bytes, image::ImageFormat::Png) {
@@ -226,10 +279,23 @@ impl SpriteSystem {
             let half_w = sprite.width * 0.5;
             let half_h = sprite.height * 0.5;
 
-            let vtx = |dx: f32, dy: f32, u: f32, v: f32| SpriteVertex {
-                position: [sprite.x + dx, sprite.y + dy, sprite.z],
-                tex_coord: [u, v],
-                color: [sprite.r, sprite.g, sprite.b, sprite.a],
+            let sin = sprite.rotation.sin();
+            let cos = sprite.rotation.cos();
+            let vtx = |dx: f32, dy: f32, u: f32, v: f32| {
+                let top_weight = if half_h > f32::EPSILON {
+                    ((dy + half_h) / (half_h * 2.0)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let upper_scale = 1.0 + (sprite.top_scale_x - 1.0) * top_weight;
+                let shaped_x = dx * upper_scale + sprite.top_sway * top_weight;
+                let rotated_x = shaped_x * cos - dy * sin;
+                let rotated_y = shaped_x * sin + dy * cos;
+                SpriteVertex {
+                    position: [sprite.x + rotated_x, sprite.y + rotated_y, sprite.z],
+                    tex_coord: [u, v],
+                    color: [sprite.r, sprite.g, sprite.b, sprite.a],
+                }
             };
 
             let base = vertices.len() as u32;
@@ -358,7 +424,7 @@ impl SpriteSystem {
                     entry_point: Some("fs_main"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: target_format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::OVER,
                             alpha: wgpu::BlendComponent::OVER,
@@ -396,6 +462,74 @@ impl SpriteSystem {
             texture_view,
             sampler,
         }
+    }
+
+    /// Refresh dynamic sprite geometry and the camera while retaining the
+    /// decoded atlas, bind group, shader, and render pipeline.
+    pub fn update(
+        &mut self,
+        device: &Arc<RenderDevice>,
+        sprites: &[SpriteInstance],
+        camera_matrix_bytes: &[u8; 64],
+    ) {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        for sprite in sprites {
+            if !sprite.visible {
+                continue;
+            }
+            let half_w = sprite.width * 0.5;
+            let half_h = sprite.height * 0.5;
+            let sin = sprite.rotation.sin();
+            let cos = sprite.rotation.cos();
+            let vtx = |dx: f32, dy: f32, u: f32, v: f32| {
+                let top_weight = if half_h > f32::EPSILON {
+                    ((dy + half_h) / (half_h * 2.0)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let upper_scale = 1.0 + (sprite.top_scale_x - 1.0) * top_weight;
+                let shaped_x = dx * upper_scale + sprite.top_sway * top_weight;
+                let rotated_x = shaped_x * cos - dy * sin;
+                let rotated_y = shaped_x * sin + dy * cos;
+                SpriteVertex {
+                    position: [sprite.x + rotated_x, sprite.y + rotated_y, sprite.z],
+                    tex_coord: [u, v],
+                    color: [sprite.r, sprite.g, sprite.b, sprite.a],
+                }
+            };
+            let base = vertices.len() as u32;
+            vertices.push(vtx(-half_w, -half_h, sprite.u0, sprite.v1));
+            vertices.push(vtx(half_w, -half_h, sprite.u1, sprite.v1));
+            vertices.push(vtx(half_w, half_h, sprite.u1, sprite.v0));
+            vertices.push(vtx(-half_w, half_h, sprite.u0, sprite.v0));
+            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+        }
+        self.num_indices = indices.len() as u32;
+        self.vertex_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite vertex buffer dynamic"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        self.index_buffer = device
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sprite index buffer dynamic"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        device
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, camera_matrix_bytes);
+    }
+
+    /// Update only the camera transform.
+    pub fn update_camera(&self, device: &Arc<RenderDevice>, camera_matrix_bytes: &[u8; 64]) {
+        device
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, camera_matrix_bytes);
     }
 
     /// Draw all sprites. Must be called inside a render pass.

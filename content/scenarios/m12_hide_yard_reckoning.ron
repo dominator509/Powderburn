@@ -1,6 +1,15 @@
 (
   id: "scn_m12_hide_yard_reckoning",
   display_name: "Hide Yard Reckoning",
+  briefing: [
+    "The Company took Teague's hide contract to reach his supply network. The bargain worked—and put Powderburn guards beside prisoners the Ring means to kill.",
+    "Turn on Teague's overseers, free the captives, and accept that the witnesses will remember who wore the Ring's badge to get close.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Naomi Freed", text:"The badge got us inside. It also told those prisoners exactly who they had to fear.", voice:Some("m12h_01_naomi.wav")),
+    (speaker:"Elias Ward", text:"We free them first. They may judge the disguise after.", voice:Some("m12h_02_elias.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1878-11-12",
   map: (
     width: 24,

@@ -3,9 +3,11 @@
 //! Manages the interaction flow: IDLE → SELECTED_ACTOR → TARGETING → EXECUTING
 
 use pb_core::event::HitLocationType;
+use pb_core::geom::TileXY;
 use pb_core::ids::ActorId;
 pub use pb_render::ui_contract::GameScreen;
-use pb_sim::state::SimState;
+use pb_sim::state::{SimState, Stance};
+use std::time::Instant;
 
 /// What the player is currently doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +68,25 @@ pub struct PendingLedgerWrite {
     pub selected_index: u8,
 }
 
+/// Presentation-only actor motion; simulation positions remain authoritative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BattleAnimationKind {
+    Move,
+    Recoil,
+    StanceShift { from: Stance, to: Stance },
+}
+
+/// Short interpolation played after a mouse-issued tactical command.
+#[derive(Debug, Clone, Copy)]
+pub struct BattleAnimation {
+    pub actor: ActorId,
+    pub from: TileXY,
+    pub to: TileXY,
+    pub started: Instant,
+    pub duration_ms: u64,
+    pub kind: BattleAnimationKind,
+}
+
 /// Top-level game state.
 #[derive(Debug)]
 pub struct GameState {
@@ -87,6 +108,10 @@ pub struct GameState {
     pub map_choices: Vec<String>,
     /// Campaign graph node selected for the active briefing/battle.
     pub current_mission: Option<String>,
+    /// Current page of the pre-battle cinematic: situation, then dialogue/objectives.
+    pub briefing_page: u8,
+    /// Active line within the current cinematic page.
+    pub briefing_line: usize,
     /// Outcome of the battle currently shown on the after-action screen.
     pub last_victory: Option<bool>,
     pub phase: InteractionPhase,
@@ -99,6 +124,9 @@ pub struct GameState {
     pub camera_y: f32,
     /// Three-step tactical camera zoom: 1.0, 1.35, or 1.7.
     pub camera_zoom: f32,
+    /// Monotonic presentation-only frame clock used by visual animation.
+    /// It is intentionally excluded from simulation hashes and save data.
+    pub presentation_frame: u64,
     pub tick: u64,
     pub message: String,
     /// Whether the game is paused (pause menu overlay shown).
@@ -115,12 +143,16 @@ pub struct GameState {
     pub called_shot_entries: Vec<CalledShotEntry>,
     /// Complete battle event stream used by the after-action report.
     pub battle_events: Vec<pb_core::event::Event>,
+    /// Active presentation-only movement and weapon animations.
+    pub battle_animations: Vec<BattleAnimation>,
     /// Authored Ledger choices awaiting player acknowledgement.
     pub pending_ledger_writes: Vec<PendingLedgerWrite>,
     pub ledger_write_cursor: usize,
     pub ledger_filter_act: Option<u8>,
     pub ledger_allies_only: bool,
     pub ledger_scroll: usize,
+    /// Active player-facing bibliography category.
+    pub bibliography_section: usize,
 }
 
 impl GameState {
@@ -151,6 +183,8 @@ impl GameState {
             new_company_way: None,
             map_choices: Vec::new(),
             current_mission: None,
+            briefing_page: 0,
+            briefing_line: 0,
             last_victory: None,
             phase: InteractionPhase::Idle,
             mouse_x: 0.0,
@@ -161,6 +195,7 @@ impl GameState {
             camera_x: 0.0,
             camera_y: 0.0,
             camera_zoom: 1.35,
+            presentation_frame: 0,
             tick: 0,
             message: String::new(),
             paused: false,
@@ -213,11 +248,13 @@ impl GameState {
                 },
             ],
             battle_events: Vec::new(),
+            battle_animations: Vec::new(),
             pending_ledger_writes: Vec::new(),
             ledger_write_cursor: 0,
             ledger_filter_act: None,
             ledger_allies_only: false,
             ledger_scroll: 0,
+            bibliography_section: 0,
         }
     }
 }

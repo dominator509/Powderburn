@@ -1,6 +1,15 @@
 (
   id: "scn_m21_yellow_fever",
   display_name: "Memphis Yellow Fever",
+  briefing: [
+    "Yellow fever has emptied Memphis streets and filled its wards. Teague's agents are stealing quinine and relief funds, betting that the dead cannot testify.",
+    "Doctor Alcantara has located the medicine wagon. Recover it before dawn and keep the ward volunteers alive.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Alcantara", text:"The fever does not choose victims. Teague does, even here.", voice:Some("m21_01_alcantara.wav")),
+    (speaker:"Naomi Freed", text:"Then we take back the medicine and leave him nobody to count as profit.", voice:Some("m21_02_naomi.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1878-09-01",
   map: (
     width: 24,

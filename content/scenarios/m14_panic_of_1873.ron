@@ -1,6 +1,15 @@
 (
   id: "scn_m14_panic_of_1873",
   display_name: "Panic of 1873",
+  briefing: [
+    "The market has collapsed. Teague's eastern patron is burning correspondence before creditors arrive, and the Ring is killing clerks who know where the western money went.",
+    "Secure the surviving books after the fixed collapse. Their contents will force the Company to choose: warn people marked for death at Adobe Walls, or take Teague's contract and enter the hide trade from inside.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Ames", text:"The patron is ruined. Men like Teague become most dangerous when money stops protecting them.", voice:Some("m14_01_ames.wav")),
+    (speaker:"Naomi Freed", text:"Then we take his protection away and survive what he does next.", voice:Some("m14_02_naomi.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1873-09-18",
   map: (
     width: 24,

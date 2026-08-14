@@ -1,6 +1,15 @@
 (
   id: "scn_m19_fort_marion",
   display_name: "Fort Marion: Names Carried",
+  briefing: [
+    "At Fort Marion, imprisoned Plains men are being renamed, photographed, and turned into a story told by their captors. Teague's thieves stole a list of the prisoners' own names for leverage against families west.",
+    "Recover the names outside the fixed incarceration. Whitehorse decides how they are carried and who may read them.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"A name is not evidence for your cause. It belongs first to the person who answers to it.", voice:Some("m19_01_whitehorse.wav")),
+    (speaker:"Elias Ward", text:"You carry the list. You decide where it goes.", voice:Some("m19_02_elias.wav")),
+  ],
+  score: Some("winter_count.wav"),
   date: "1878-04-13",
   map: (
     width: 24,

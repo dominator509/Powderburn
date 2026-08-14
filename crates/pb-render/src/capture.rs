@@ -22,7 +22,7 @@ pub struct CaptureScene {
     pub props: Vec<crate::sprites::SpriteInstance>,
     pub sprites: Vec<crate::sprites::SpriteInstance>,
     pub smoke: Vec<crate::smoke::SmokeTile>,
-    pub overlays: Vec<(u32, u32, crate::overlay::OverlayTileKind)>,
+    pub overlays: Vec<crate::overlay::OverlayTile>,
 }
 
 impl CaptureScene {
@@ -73,7 +73,14 @@ impl CaptureScene {
             let grid_x = f32::from(actor.position.x);
             let grid_y = f32::from(actor.position.y);
             let iso_x = (grid_x - grid_y) * 32.0;
-            let iso_y = (grid_x + grid_y) * 16.0 - 38.0;
+            let elevation = state
+                .tile_elevations
+                .get(&actor.position)
+                .copied()
+                .unwrap_or(0);
+            let iso_y = (grid_x + grid_y) * 16.0
+                + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP
+                - 38.0;
             let mut sprite = crate::sprites::SpriteInstance::new(iso_x, iso_y, 20.0 + grid_y);
             sprite.width = 104.0;
             sprite.height = 104.0;
@@ -112,6 +119,7 @@ impl CaptureScene {
             overlays.push((
                 x,
                 y,
+                state.tile_elevations.get(&edge.tile).copied().unwrap_or(0),
                 crate::overlay::OverlayTileKind::Cover {
                     hard: cover.level >= pb_sim::state::CoverLevel::Hard,
                 },

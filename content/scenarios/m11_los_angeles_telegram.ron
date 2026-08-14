@@ -1,6 +1,15 @@
 (
   id: "scn_m11_los_angeles_telegram",
   display_name: "Los Angeles Telegram",
+  briefing: [
+    "A decoded telegram names Teague's judges, freight agents, and killers from Kansas to California. Wen's contact died getting it out of the wire office.",
+    "Carry the telegram across the depot before the Ring closes the rail line. If it reaches a newspaper and a federal prosecutor, Teague can no longer contain the story locally.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Wen Li", text:"He died for eleven lines of wire copy. Make them travel farther than he did.", voice:Some("m11_01_wen.wav")),
+    (speaker:"Naomi Freed", text:"They reach the train. We remember the man who could not.", voice:Some("m11_02_naomi.wav")),
+  ],
+  score: Some("iron_road.wav"),
   date: "1871-10-27",
   map: (
     width: 24,

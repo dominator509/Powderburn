@@ -1,6 +1,16 @@
 (
   id: "scn_m07_washita_winter",
   display_name: "Washita Winter",
+  briefing: [
+    "Winter closes around the Washita. The coming historical violence cannot be made clean, reversed, or turned into the Company's victory.",
+    "But Teague's bounty riders are hunting two Kiowa witnesses beyond the fixed battlefield. Whitehorse knows the ravine where the families are hiding.",
+    "Extract the civilians before the Ring reaches them. This mission is rescue, not absolution.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"Do not call this saving us. Save the people in that ravine. Leave the larger words alone.", voice:Some("m07_01_whitehorse.wav")),
+    (speaker:"Elias Ward", text:"No larger words. Show me the ravine.", voice:Some("m07_02_elias.wav")),
+  ],
+  score: Some("winter_count.wav"),
   date: "1868-11-26",
   map: (
     width: 24,

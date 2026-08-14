@@ -5,12 +5,37 @@
 use std::path::Path;
 
 use pb_content::campaign::{advance_interludes, build_graph, complete_node};
-use pb_content::schema::{ActorData, ItemStack, LedgerEntryData, SaveFileData, TileXYData};
+use pb_content::schema::{
+    ActorData, Content, ItemStack, LedgerEntryData, SaveFileData, ScenarioData, TileXYData,
+};
 use pb_save::ledger::{LedgerChain, LedgerEntry};
 
 use crate::state::GameState;
 
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Resolve a campaign graph node to its authored playable scenario.
+///
+/// `GameState::current_mission` intentionally stores the graph node ID so
+/// campaign completion and Ledger writes retain their authored identity.
+/// Presentation and combat must cross this resolver before reading scenarios.
+pub fn scenario_for_mission<'a>(
+    content: &'a Content,
+    mission_id: &str,
+) -> Result<&'a ScenarioData, String> {
+    let node = content
+        .campaign_nodes
+        .get(mission_id)
+        .ok_or_else(|| format!("E-CAMPAIGN-GRAPH: missing mission node {mission_id}"))?;
+    let scenario_id = node.scenario_id.as_deref().ok_or_else(|| {
+        format!("E-CAMPAIGN-CONTENT: mission node {mission_id} has no playable scenario")
+    })?;
+    content.scenarios.get(scenario_id).ok_or_else(|| {
+        format!(
+            "E-CAMPAIGN-CONTENT: mission node {mission_id} references missing scenario {scenario_id}"
+        )
+    })
+}
 
 fn ledger_weight_increment(newly_written: u32, ledger_keeper: bool) -> u32 {
     newly_written.saturating_mul(if ledger_keeper { 1 } else { 2 })
@@ -693,6 +718,32 @@ mod tests {
             Ok("m01_elk_creek".to_string())
         );
         assert_eq!(state.current_mission.as_deref(), Some("m01_elk_creek"));
+    }
+
+    #[test]
+    fn on_screen_campaign_path_resolves_briefing_and_starts_battle() {
+        use pb_render::ui_contract::GameScreen;
+
+        let root = content_root();
+        let content = pb_content::load::load_all(&root).unwrap();
+        let way_id = content.ways.keys().next().cloned().unwrap();
+        let mut state = GameState::new();
+
+        assert_eq!(state.go_to(GameScreen::NewCompany), Ok(()));
+        assert!(start_new_with_way(&mut state, &root, 90210, &way_id).is_ok());
+        assert_eq!(state.go_to(GameScreen::Camp), Ok(()));
+        assert_eq!(state.go_to(GameScreen::MapTravel), Ok(()));
+        assert_eq!(
+            select_next(&mut state, &root),
+            Ok("m01_elk_creek".to_string())
+        );
+        assert_eq!(state.go_to(GameScreen::Briefing), Ok(()));
+
+        let scenario = scenario_for_mission(&content, "m01_elk_creek").unwrap();
+        assert_eq!(scenario.id, "scn_m01_elk_creek");
+        assert!(crate::combat::init_combat(&mut state, &root).is_ok());
+        assert_eq!(state.go_to(GameScreen::Battle), Ok(()));
+        assert!(state.sim.is_some());
     }
 
     #[test]

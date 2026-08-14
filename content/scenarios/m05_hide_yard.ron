@@ -1,6 +1,15 @@
 (
   id: "scn_m05_hide_yard",
   display_name: "Adobe Walls: The Hide Yard",
+  briefing: [
+    "After the fixed battle, Doyle finds Teague's private killing book in an abandoned hide yard: prices beside the names of scouts, families, and labor organizers.",
+    "The Ring is coming to burn the yard. Seize the book and destroy the bounty money before another rider is paid.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Doyle", text:"I have tracked animals with kinder records than this.", voice:Some("m05_01_doyle.wav")),
+    (speaker:"Naomi Freed", text:"Take the names. Burn the prices. People are not Teague's inventory.", voice:Some("m05_02_naomi.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1874-06-27",
   map: (
     width: 24,

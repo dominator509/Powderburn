@@ -1,6 +1,15 @@
 (
   id: "scn_m10_denver_extension",
   display_name: "Denver Extension",
+  briefing: [
+    "Teague's Denver office is buying bankrupt claims with the stolen rail payroll. Surveyor Ames copied the deeds before hired guns cornered him in the switchyard.",
+    "The night train arrives in an hour. Clear the yard, rescue Ames, and keep the deeds out of Teague's furnace.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Ames", text:"Every red line on this survey crosses somebody's kitchen, grave, or well.", voice:Some("m10_01_ames.wav")),
+    (speaker:"Naomi Freed", text:"Then those lines stop being Teague's property tonight.", voice:Some("m10_02_naomi.wav")),
+  ],
+  score: Some("iron_road.wav"),
   date: "1870-06-24",
   map: (
     width: 24,

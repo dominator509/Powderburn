@@ -102,9 +102,9 @@ impl Sfx {
                 music: false,
             },
             Self::FrontierTheme => Cue {
-                filename: "frontier_theme.wav",
+                filename: "dust_and_ashes.wav",
                 speaker: "Music",
-                subtitle: "Frontier theme",
+                subtitle: "Dust and Ashes",
                 music: true,
             },
         }

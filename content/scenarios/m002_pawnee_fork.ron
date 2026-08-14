@@ -1,6 +1,16 @@
 (
   id: "scn_m002_pawnee_fork",
   display_name: "Pawnee Fork: Hancock's Shadow",
+  briefing: [
+    "A week after Elk Creek, one of Teague's couriers rides west with the Ring's cipher key. Without it, Naomi's counter-book is only columns and initials; with it, every payment becomes a name.",
+    "The courier has hidden among riders scavenging in the wake of Hancock's campaign. The historical column is not your target. Teague's four hired guns are.",
+    "Take the cipher alive if you can. Recover it if you cannot. Do not let the Ring hide its crimes inside a larger tragedy.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Naomi Freed", text:"That courier knows which initials bought my brother's rope.", voice:Some("m002_01_naomi.wav")),
+    (speaker:"Elias Ward", text:"Then we take the key, and Teague loses the shelter of numbers.", voice:Some("m002_02_elias.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1867-04-19",
   map: (
     width: 24,

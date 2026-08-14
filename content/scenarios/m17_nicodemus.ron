@@ -1,6 +1,15 @@
 (
   id: "scn_m17_nicodemus",
   display_name: "Nicodemus",
+  briefing: [
+    "Naomi has spent ten years carrying proof of what was stolen. At Nicodemus, families are building something Teague never authored: a town chosen by freed people for themselves.",
+    "Ring riders arrive with forged claims and torches. Defend the settlement's survey stakes, homes, and people after its fixed founding.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Naomi Freed", text:"This is why I carried the names. Not to live inside grief. To make room for this.", voice:Some("m17_01_naomi.wav")),
+    (speaker:"Elias Ward", text:"Then this ground, these homes, and your future are the mission.", voice:Some("m17_02_elias.wav")),
+  ],
+  score: Some("dust_and_ashes.wav"),
   date: "1877-09-17",
   map: (
     width: 24,

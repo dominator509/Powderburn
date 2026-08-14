@@ -1,6 +1,15 @@
 (
   id: "scn_m15_red_river_supply",
   display_name: "Red River Supply",
+  briefing: [
+    "Teague is selling cartridges and false intelligence to every force that will prolong the Red River War. His private column travels apart from the historical campaign.",
+    "Cut the Ring convoy, recover the prisoner list, and do not attack the fixed military column.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"Every crate you stop is one less payment for somebody else's suffering.", voice:Some("m15_01_whitehorse.wav")),
+    (speaker:"Doyle", text:"Convoy is four wagons, six rifles, and no innocence. I can work with that.", voice:Some("m15_02_doyle.wav")),
+  ],
+  score: Some("hard_road.wav"),
   date: "1874-09-12",
   map: (
     width: 24,

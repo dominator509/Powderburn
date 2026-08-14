@@ -1,6 +1,15 @@
 (
   id: "scn_m12_adobe_walls_relief",
   display_name: "Relief at Adobe Walls",
+  briefing: [
+    "The Company chose to warn the people Teague marked. His riders have surrounded the last witness camp outside Adobe Walls and intend to leave no one alive before morning.",
+    "Break the private siege and extract the witnesses. The historical battle remains ahead; this fight belongs to Teague alone.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Whitehorse", text:"We warned them. A warning is not protection.", voice:Some("m12r_01_whitehorse.wav")),
+    (speaker:"Elias Ward", text:"No. Protection is what we do next.", voice:Some("m12r_02_elias.wav")),
+  ],
+  score: Some("winter_count.wav"),
   date: "1878-11-12",
   map: (
     width: 24,

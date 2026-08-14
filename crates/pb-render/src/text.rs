@@ -6,6 +6,8 @@
 //! Font atlas layout: 128×48 PNG with 96 ASCII glyphs (32–127) in a 16×6
 //! grid. Each glyph is 8×8 pixels, white on transparent.
 
+use ab_glyph::{point, Font, FontRef, Glyph, PxScale, ScaleFont};
+
 // ── Font atlas constants ────────────────────────────────────────────────
 
 /// Width of each glyph in pixels.
@@ -24,6 +26,89 @@ pub const ATLAS_H: u32 = 48;
 pub const FIRST_CHAR: u8 = 32; // space
 /// Last ASCII code (exclusive) stored in the atlas.
 pub const LAST_CHAR: u8 = 127;
+const VECTOR_FONT_PX: f32 = 20.0;
+const VECTOR_CELL_W: u32 = 28;
+const VECTOR_CELL_H: u32 = 28;
+const VECTOR_PADDING: f32 = 3.0;
+const VECTOR_RENDER_SCALE: f32 = 0.5;
+
+struct RasterizedFont {
+    pixels: Vec<u8>,
+    advances: [f32; (LAST_CHAR - FIRST_CHAR) as usize],
+}
+
+fn rasterize_ttf_atlas(ttf_bytes: &[u8]) -> Result<RasterizedFont, String> {
+    let font = FontRef::try_from_slice(ttf_bytes)
+        .map_err(|error| format!("invalid TTF font: {error:?}"))?;
+    let px_scale = PxScale::from(VECTOR_FONT_PX);
+    let scaled = font.as_scaled(px_scale);
+    let atlas_w = VECTOR_CELL_W * ATLAS_COLS;
+    let atlas_h = VECTOR_CELL_H * ATLAS_ROWS;
+    let mut pixels = vec![0_u8; (atlas_w * atlas_h * 4) as usize];
+    let mut advances = [0.0; (LAST_CHAR - FIRST_CHAR) as usize];
+
+    for code in FIRST_CHAR..LAST_CHAR {
+        let character = char::from(code);
+        let glyph_id = font.glyph_id(character);
+        let index = usize::from(code - FIRST_CHAR);
+        advances[index] = scaled.h_advance(glyph_id).max(1.0);
+        let glyph = Glyph {
+            id: glyph_id,
+            scale: px_scale,
+            position: point(VECTOR_PADDING, VECTOR_PADDING + scaled.ascent()),
+        };
+        let Some(outlined) = font.outline_glyph(glyph) else {
+            continue;
+        };
+        let bounds = outlined.px_bounds();
+        let cell_x = u32::from((code - FIRST_CHAR) % ATLAS_COLS as u8) * VECTOR_CELL_W;
+        let cell_y = u32::from((code - FIRST_CHAR) / ATLAS_COLS as u8) * VECTOR_CELL_H;
+        outlined.draw(|x, y, coverage| {
+            let pixel_x = cell_x as i32 + bounds.min.x.floor() as i32 + x as i32;
+            let pixel_y = cell_y as i32 + bounds.min.y.floor() as i32 + y as i32;
+            if pixel_x < cell_x as i32
+                || pixel_y < cell_y as i32
+                || pixel_x >= (cell_x + VECTOR_CELL_W) as i32
+                || pixel_y >= (cell_y + VECTOR_CELL_H) as i32
+            {
+                return;
+            }
+            let offset = ((pixel_y as u32 * atlas_w + pixel_x as u32) * 4) as usize;
+            let alpha = (coverage.clamp(0.0, 1.0) * 255.0).round() as u8;
+            pixels[offset..offset + 4].copy_from_slice(&[255, 255, 255, alpha]);
+        });
+    }
+
+    Ok(RasterizedFont { pixels, advances })
+}
+
+/// Convert authored UI copy to glyphs that exist in the shipped bitmap atlas.
+///
+/// Common typographic punctuation receives a readable ASCII equivalent.
+/// Everything else becomes `?` instead of being skipped or accidentally
+/// truncated to an unrelated glyph.
+pub fn normalize_bitmap_text(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            ' '..='~' => normalized.push(character),
+            '\u{00a0}' => normalized.push(' '),
+            '–' | '—' | '−' => normalized.push('-'),
+            '‘' | '’' | '‚' => normalized.push('\''),
+            '“' | '”' | '„' => normalized.push('"'),
+            '…' => normalized.push_str("..."),
+            '•' => normalized.push('*'),
+            '✗' | '×' => normalized.push('X'),
+            '○' | '●' => normalized.push('O'),
+            '→' | '▶' => normalized.push('>'),
+            '←' | '◀' => normalized.push('<'),
+            '─' | '━' => normalized.push('-'),
+            '\t' | '\r' | '\n' => normalized.push(' '),
+            _ => normalized.push('?'),
+        }
+    }
+    normalized
+}
 
 /// One measured line returned by the production word-wrapping algorithm.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +126,7 @@ pub fn layout_wrapped_text(text: &str, scale: f32, max_width: f32) -> Vec<TextLi
     if text.is_empty() || scale <= 0.0 || max_width <= 0.0 {
         return Vec::new();
     }
+    let text = normalize_bitmap_text(text);
     let glyph_width = GLYPH_W as f32 * scale;
     let glyph_height = GLYPH_H as f32 * scale;
     let max_chars = (max_width / glyph_width).floor().max(1.0) as usize;
@@ -89,9 +175,10 @@ pub fn fit_text(text: &str, scale: f32, max_width: f32) -> String {
     if scale <= 0.0 || max_width <= 0.0 {
         return String::new();
     }
+    let text = normalize_bitmap_text(text);
     let max_chars = (max_width / (GLYPH_W as f32 * scale)).floor() as usize;
     if text.chars().count() <= max_chars {
-        return text.to_string();
+        return text;
     }
     if max_chars <= 3 {
         return ".".repeat(max_chars);
@@ -125,22 +212,145 @@ pub struct TextMesh {
     pub indices: Vec<u16>,
 }
 
+impl TextMesh {
+    /// Append another mesh while rebasing its indices for one GPU upload.
+    ///
+    /// Returns `false` when the combined mesh would exceed the renderer's
+    /// fixed streaming buffers or the `u16` index range.
+    pub fn append(&mut self, other: &Self) -> bool {
+        let base = self.vertices.len();
+        let new_vertex_count = base.saturating_add(other.vertices.len());
+        let new_index_count = self.indices.len().saturating_add(other.indices.len());
+        if new_vertex_count > MAX_VERTS
+            || new_index_count > MAX_INDS
+            || base > usize::from(u16::MAX)
+            || other
+                .indices
+                .iter()
+                .any(|index| base + usize::from(*index) > usize::from(u16::MAX))
+        {
+            return false;
+        }
+        self.vertices.extend_from_slice(&other.vertices);
+        self.indices
+            .extend(other.indices.iter().map(|index| *index + base as u16));
+        true
+    }
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // BitmapFont – loads and holds the font texture
 // ═════════════════════════════════════════════════════════════════════════
 
-/// A bitmap font loaded from a PNG atlas.
+/// A GPU font atlas with per-glyph advances.
 #[allow(missing_debug_implementations)]
 pub struct BitmapFont {
     /// The GPU texture containing the atlas image.
     pub texture: wgpu::Texture,
     /// Default view of the atlas texture.
     pub view: wgpu::TextureView,
-    /// Sampler (nearest-neighbour) for crisp pixel text.
+    /// Sampler used for the font texture.
     pub sampler: wgpu::Sampler,
+    cell_width: f32,
+    cell_height: f32,
+    render_scale: f32,
+    padding: f32,
+    advances: [f32; (LAST_CHAR - FIRST_CHAR) as usize],
 }
 
 impl BitmapFont {
+    #[allow(clippy::too_many_arguments)]
+    fn from_rgba(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+        cell_width: u32,
+        cell_height: u32,
+        render_scale: f32,
+        padding: f32,
+        advances: [f32; (LAST_CHAR - FIRST_CHAR) as usize],
+        filter: wgpu::FilterMode,
+    ) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("font atlas"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("font sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: filter,
+            min_filter: filter,
+            mipmap_filter: filter,
+            ..Default::default()
+        });
+        Self {
+            texture,
+            view,
+            sampler,
+            cell_width: cell_width as f32,
+            cell_height: cell_height as f32,
+            render_scale,
+            padding,
+            advances,
+        }
+    }
+
+    /// Rasterize a proportional TrueType face into the GPU atlas.
+    pub fn from_ttf_bytes(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        ttf_bytes: &[u8],
+    ) -> Result<Self, String> {
+        let rasterized = rasterize_ttf_atlas(ttf_bytes)?;
+        Ok(Self::from_rgba(
+            device,
+            queue,
+            &rasterized.pixels,
+            VECTOR_CELL_W * ATLAS_COLS,
+            VECTOR_CELL_H * ATLAS_ROWS,
+            VECTOR_CELL_W,
+            VECTOR_CELL_H,
+            VECTOR_RENDER_SCALE,
+            VECTOR_PADDING,
+            rasterized.advances,
+            wgpu::FilterMode::Linear,
+        ))
+    }
+
     /// Load a font atlas from raw PNG bytes.
     ///
     /// Expects a 128×48 RGBA PNG with 96 ASCII glyphs (codes 32–127) laid
@@ -161,70 +371,30 @@ impl BitmapFont {
             ));
         }
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("font atlas"),
-            size: wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &img,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * w),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("font sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        Ok(Self {
-            texture,
-            view,
-            sampler,
-        })
+        Ok(Self::from_rgba(
+            device,
+            queue,
+            img.as_raw(),
+            w,
+            h,
+            GLYPH_W,
+            GLYPH_H,
+            1.0,
+            0.0,
+            [GLYPH_W as f32; (LAST_CHAR - FIRST_CHAR) as usize],
+            wgpu::FilterMode::Nearest,
+        ))
     }
 
     /// Compute UV coordinates `[[u0,v0],[u1,v1]]` for a character.
     ///
     /// Returns `None` for characters outside ASCII 32–126.
     pub fn char_uv(&self, c: char) -> Option<[[f32; 2]; 2]> {
-        let code = c as u8;
-        if !(FIRST_CHAR..LAST_CHAR).contains(&code) {
+        let code = u32::from(c);
+        if !(u32::from(FIRST_CHAR)..u32::from(LAST_CHAR)).contains(&code) {
             return None;
         }
-        let idx = code - FIRST_CHAR;
+        let idx = code as u8 - FIRST_CHAR;
         let col = f32::from(idx % 16);
         let row = f32::from(idx / 16);
 
@@ -238,12 +408,27 @@ impl BitmapFont {
 
     /// Build a `TextMesh` from a string, with screen-space input coords.
     ///
-    /// * `text` – the string to render (non-ASCII chars are skipped).
+    /// * `text` – the string to render (typographic punctuation is normalized).
     /// * `x`, `y` – top-left corner in **pixel** coordinates (origin at
     ///   top-left of the viewport).
-    /// * `scale` – multiplier for glyph size (1.0 → 8×8 px).
+    /// * `scale` – logical multiplier; vector faces preserve the legacy UI size.
     /// * `color` – tint applied to each glyph (RGBA, 0–1).
     /// * `screen_w`, `screen_h` – viewport dimensions for NDC conversion.
+    pub fn text_width(&self, text: &str, scale: f32) -> f32 {
+        let factor = scale * self.render_scale;
+        normalize_bitmap_text(text)
+            .chars()
+            .filter_map(|character| {
+                let code = character as u32;
+                if (u32::from(FIRST_CHAR)..u32::from(LAST_CHAR)).contains(&code) {
+                    Some(self.advances[code as usize - usize::from(FIRST_CHAR)] * factor)
+                } else {
+                    None
+                }
+            })
+            .sum()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn render_text(
         &self,
@@ -257,20 +442,18 @@ impl BitmapFont {
     ) -> TextMesh {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        let mut char_idx: u32 = 0;
+        let factor = scale * self.render_scale;
+        let gw = self.cell_width * factor;
+        let gh = self.cell_height * factor;
+        let mut caret_x = x;
 
-        let gw = GLYPH_W as f32 * scale;
-        let gh = GLYPH_H as f32 * scale;
-
-        for c in text.chars() {
+        for c in normalize_bitmap_text(text).chars() {
             let Some(uv) = self.char_uv(c) else {
-                // Skip characters not in the atlas; still consume the slot
-                // so positioning stays consistent.
-                char_idx += 1;
                 continue;
             };
 
-            let cx = x + char_idx as f32 * gw;
+            let index = c as usize - usize::from(FIRST_CHAR);
+            let cx = caret_x - self.padding * factor;
             let cy = y;
 
             // Pixel → NDC conversion.
@@ -306,7 +489,7 @@ impl BitmapFont {
             });
 
             indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
-            char_idx += 1;
+            caret_x += self.advances[index] * factor;
         }
 
         TextMesh { vertices, indices }
@@ -492,6 +675,30 @@ impl TextRenderer {
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         rpass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
     }
+
+    /// Batch several text meshes into one upload and one draw call.
+    ///
+    /// Every text element in a render pass must use this method together.
+    /// Repeated calls to [`Self::render`] in one unsubmitted pass would
+    /// overwrite the shared streaming buffer before the GPU consumes it.
+    pub fn render_many<'pass, 'mesh>(
+        &'pass self,
+        queue: &wgpu::Queue,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        meshes: impl IntoIterator<Item = &'mesh TextMesh>,
+    ) {
+        let mut combined = TextMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        for mesh in meshes {
+            if !combined.append(mesh) {
+                eprintln!("text batch exceeds the renderer's streaming capacity");
+                return;
+            }
+        }
+        self.render(queue, rpass, &combined);
+    }
 }
 
 use std::mem::size_of;
@@ -564,5 +771,46 @@ mod layout_tests {
         let lines = layout_wrapped_text("abcdefghijkl", 1.0, 32.0);
         assert_eq!(lines.len(), 3);
         assert!(lines.iter().all(|line| line.width <= 32.0));
+    }
+
+    #[test]
+    fn typographic_copy_maps_to_shipped_ascii_glyphs() {
+        assert_eq!(
+            normalize_bitmap_text("Elk Creek — “ready”… •"),
+            "Elk Creek - \"ready\"... *"
+        );
+        assert_eq!(normalize_bitmap_text("Kiowa ł"), "Kiowa ?");
+        assert!(normalize_bitmap_text("Line\nBreak").is_ascii());
+    }
+
+    #[test]
+    fn text_mesh_batch_rebases_indices_without_overwriting_prior_geometry() {
+        let vertex = TextVertex {
+            position: [0.0; 3],
+            uv: [0.0; 2],
+            color: [1.0; 4],
+        };
+        let mut combined = TextMesh {
+            vertices: vec![vertex; 4],
+            indices: vec![0, 1, 2, 2, 3, 0],
+        };
+        let second = TextMesh {
+            vertices: vec![vertex; 4],
+            indices: vec![0, 1, 2, 2, 3, 0],
+        };
+        assert!(combined.append(&second));
+        assert_eq!(&combined.indices[6..], &[4, 5, 6, 6, 7, 4]);
+    }
+
+    #[test]
+    fn embedded_serif_font_rasterizes_with_proportional_advances() {
+        let bytes = include_bytes!("../../../assets/fonts/DejaVuSerif.ttf");
+        let Ok(rasterized) = rasterize_ttf_atlas(bytes) else {
+            panic!("embedded DejaVu Serif must rasterize");
+        };
+        let i = usize::from(b'I' - FIRST_CHAR);
+        let w = usize::from(b'W' - FIRST_CHAR);
+        assert!(rasterized.advances[w] > rasterized.advances[i]);
+        assert!(rasterized.pixels.chunks_exact(4).any(|pixel| pixel[3] > 0));
     }
 }

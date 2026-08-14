@@ -112,11 +112,30 @@ pub struct ObjectiveData {
     pub actor_ids: Vec<String>,
 }
 
+/// A speaker-labelled line shown during a mission cinematic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoryLineData {
+    pub speaker: String,
+    pub text: String,
+    /// Optional WAV filename under `assets/audio/dialogue/`.
+    #[serde(default)]
+    pub voice: Option<String>,
+}
+
 /// A scenario definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioData {
     pub id: String,
     pub display_name: String,
+    /// Authored situation and stakes shown before deployment.
+    #[serde(default)]
+    pub briefing: Vec<String>,
+    /// Character exchange shown after the briefing and before deployment.
+    #[serde(default)]
+    pub prebattle_dialogue: Vec<StoryLineData>,
+    /// Mood score filename under `assets/audio/`.
+    #[serde(default)]
+    pub score: Option<String>,
     pub date: String,
     pub map: MapData,
     pub light: String,

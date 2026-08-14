@@ -1,6 +1,15 @@
 (
   id: "scn_m09_rail_grade",
   display_name: "The Rail Grade",
+  briefing: [
+    "Promontory made the railroad look inevitable. Two weeks later, Wen's grade crew is still unpaid while a Teague agency wagon carries their wages under armed guard.",
+    "Take back the payroll and protect the workers. This is not theft from the railroad; it is recovery from the men who stole months of labor.",
+  ],
+  prebattle_dialogue: [
+    (speaker:"Wen Li", text:"They call the grade finished. A road is not finished while the men who built it go hungry.", voice:Some("m09_01_wen.wav")),
+    (speaker:"Elias Ward", text:"Then we collect the wages, not another entry for the dead.", voice:Some("m09_02_elias.wav")),
+  ],
+  score: Some("iron_road.wav"),
   date: "1869-06-02",
   map: (
     width: 24,
