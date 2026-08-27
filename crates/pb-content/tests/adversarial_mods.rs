@@ -13,6 +13,7 @@
 
 #![allow(unused_imports, clippy::expect_used)]
 
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
@@ -46,6 +47,7 @@ fn temp_mod_dir(label: &str) -> std::path::PathBuf {
 // ---------------------------------------------------------------------------
 // zip_slip.mod — symlink inside mod pointing outside via relative ".."
 // ---------------------------------------------------------------------------
+#[cfg(unix)]
 #[test]
 fn zip_slip_symlink_returns_mod_path_error() {
     let mod_dir = temp_mod_dir("zip_slip");
@@ -74,6 +76,7 @@ fn zip_slip_symlink_returns_mod_path_error() {
 // ---------------------------------------------------------------------------
 // symlink_escape.mod — symlink pointing to an absolute path outside the mod
 // ---------------------------------------------------------------------------
+#[cfg(unix)]
 #[test]
 fn symlink_escape_returns_mod_path_error() {
     let mod_dir = temp_mod_dir("symlink_escape");

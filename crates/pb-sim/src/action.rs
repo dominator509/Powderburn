@@ -110,7 +110,10 @@ pub fn action_cost(action: &Action, actor: &ActorState) -> pb_core::ids::Ap {
         }),
         Action::FanHammer(_) => Ap(6),
         Action::Volley(_) => Ap(0),
-        Action::LeftHandDraw(_) => Ap(3),
+        // SPEC-001 and content/rules/marks.ron both author this as a
+        // four-AP action. Keep the kernel cost authoritative so the client
+        // cannot undercharge the one-use mark.
+        Action::LeftHandDraw(_) => Ap(4),
         Action::CapAndBallReload => Ap(8),
         Action::ClearJam => Ap(4),
         Action::DrawBead(_) => Ap(2), // minimum cost; remaining AP consumed in execution
@@ -125,7 +128,11 @@ pub fn action_cost(action: &Action, actor: &ActorState) -> pb_core::ids::Ap {
     };
     override_key
         .and_then(|key| actor.weapon_profile.ap_overrides.get(key).copied())
-        .map(Ap)
+        // Weapon data is content, but AP can never be zero or negative for a
+        // paid action: step subtracts this value transactionally. Clamping at
+        // the shared cost authority prevents malformed content from granting
+        // AP or silently accepting a free action.
+        .map(|cost| Ap(cost.max(1)))
         .unwrap_or(default)
 }
 
@@ -309,6 +316,11 @@ pub fn step(state: &mut SimState, cmd: Command) -> Result<Vec<Event>, SimError> 
                 .ok_or(SimError::TargetNotFound(*target))?;
             if actor.position.chebyshev_distance(target_actor.position) > 1 {
                 return Err(SimError::NotAdjacent(cmd.actor_id, *target));
+            }
+        }
+        Action::Volley(target) => {
+            if eligible_volley_shooters(state, cmd.actor_id, *target)?.is_empty() {
+                return Err(SimError::NoEligibleVolley(cmd.actor_id));
             }
         }
         Action::FanHammer(_) => {
@@ -1261,26 +1273,7 @@ fn execute_volley(
     commander: ActorId,
     target: ActorId,
 ) -> Result<Vec<Event>, SimError> {
-    let faction = state
-        .actors
-        .get(&commander)
-        .ok_or(SimError::ActorNotFound(commander))?
-        .faction_id
-        .clone();
-    let shooters: Vec<ActorId> = state
-        .actors
-        .iter()
-        .filter(|(id, actor)| {
-            actor.alive
-                && !actor.routed
-                && actor.faction_id == faction
-                && actor.ap.0 >= 3
-                && actor.loaded_rounds > 0
-                && !actor.jammed
-                && **id != target
-        })
-        .map(|(id, _)| *id)
-        .collect();
+    let shooters = eligible_volley_shooters(state, commander, target)?;
     let mut events = Vec::new();
     for shooter in shooters {
         if state.actors.get(&target).is_none_or(|actor| !actor.alive) {
@@ -1295,6 +1288,39 @@ fn execute_volley(
         events.extend(execute_shot(state, shooter, target, false, None, 0)?);
     }
     Ok(events)
+}
+
+/// Return the exact set of squad members who can pay for one Volley shot.
+///
+/// Volley has no commander AP cost; each eligible shooter pays 3 AP inside
+/// `execute_volley`. The validation and execution paths must share this list,
+/// otherwise a click can be accepted while no action is committed.
+fn eligible_volley_shooters(
+    state: &SimState,
+    commander: ActorId,
+    target: ActorId,
+) -> Result<Vec<ActorId>, SimError> {
+    let faction = state
+        .actors
+        .get(&commander)
+        .ok_or(SimError::ActorNotFound(commander))?
+        .faction_id
+        .clone();
+    Ok(state
+        .actors
+        .iter()
+        .filter(|(id, actor)| {
+            actor.alive
+                && !actor.routed
+                && actor.faction_id == faction
+                && actor.ap.0 >= 3
+                && actor.loaded_rounds > 0
+                && !actor.jammed
+                && !weapon_is_blocked(state, **id)
+                && **id != target
+        })
+        .map(|(id, _)| *id)
+        .collect())
 }
 
 fn execute_left_hand_draw(
@@ -1908,6 +1934,30 @@ mod tests {
     }
 
     #[test]
+    fn action_cost_left_hand_draw_matches_authored_mark() {
+        let actor = make_actor();
+        assert_eq!(
+            action_cost(&Action::LeftHandDraw(ActorId(2)), &actor),
+            Ap(4)
+        );
+    }
+
+    #[test]
+    fn weapon_ap_overrides_can_never_make_a_paid_action_free() {
+        let mut actor = make_actor();
+        actor
+            .weapon_profile
+            .ap_overrides
+            .insert("single".to_string(), 0);
+        assert_eq!(action_cost(&Action::SnapShot(ActorId(2)), &actor), Ap(1));
+        actor
+            .weapon_profile
+            .ap_overrides
+            .insert("single".to_string(), -4);
+        assert_eq!(action_cost(&Action::SnapShot(ActorId(2)), &actor), Ap(1));
+    }
+
+    #[test]
     fn action_cost_cap_and_ball_reload() {
         let actor = make_actor();
         assert_eq!(action_cost(&Action::CapAndBallReload, &actor), Ap(8));
@@ -1964,6 +2014,28 @@ mod tests {
                 need: Ap(3),
             }
         );
+    }
+
+    #[test]
+    fn volley_with_no_eligible_shooter_is_rejected_without_spending_ap() {
+        let commander = ActorId(1);
+        let mut state = SimState::new(42, 1);
+        let mut actor = make_actor();
+        actor.ap = Ap(2);
+        state.actors.insert(commander, actor);
+        let before = state.clone();
+
+        let error = step(
+            &mut state,
+            Command {
+                actor_id: commander,
+                action: Action::Volley(ActorId(2)),
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, SimError::NoEligibleVolley(commander));
+        assert_eq!(state, before);
     }
 
     #[test]

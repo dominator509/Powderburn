@@ -2276,7 +2276,7 @@ fn main() -> Result<(), String> {
                                 if let Err(error) =
                                     combat::execute_immediate_action(&mut game_state, player_action)
                                 {
-                                    game_state.message = format!("Action failed: {error}");
+                                    game_state.message = error;
                                 }
                                 if game_state.screen == GameScreen::AfterAction {
                                     if let Err(error) = campaign::prepare_ledger_writes(
@@ -2450,7 +2450,7 @@ fn main() -> Result<(), String> {
                             if let Err(error) =
                                 combat::activate_battle_action(&mut game_state, action)
                             {
-                                game_state.message = format!("Action failed: {error}");
+                                game_state.message = error;
                             }
                             return;
                         }

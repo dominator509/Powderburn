@@ -6,11 +6,14 @@ pub enum Sfx {
     PistolShot,
     RifleShot,
     Hit,
+    DamageMale,
+    DamageFemale,
     Miss,
     Click,
     Select,
     Victory,
-    Death,
+    DeathMale,
+    DeathFemale,
     Move,
     Reload,
     FrontierTheme,
@@ -25,15 +28,18 @@ pub struct Cue {
 }
 
 impl Sfx {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 14] = [
         Self::PistolShot,
         Self::RifleShot,
         Self::Hit,
+        Self::DamageMale,
+        Self::DamageFemale,
         Self::Miss,
         Self::Click,
         Self::Select,
         Self::Victory,
-        Self::Death,
+        Self::DeathMale,
+        Self::DeathFemale,
         Self::Move,
         Self::Reload,
         Self::FrontierTheme,
@@ -57,6 +63,18 @@ impl Sfx {
                 filename: "hit.wav",
                 speaker: "Battlefield",
                 subtitle: "Bullet strikes",
+                music: false,
+            },
+            Self::DamageMale => Cue {
+                filename: "damage_male.wav",
+                speaker: "Battlefield",
+                subtitle: "Male combatant cries out",
+                music: false,
+            },
+            Self::DamageFemale => Cue {
+                filename: "damage_female.wav",
+                speaker: "Battlefield",
+                subtitle: "Female combatant cries out",
                 music: false,
             },
             Self::Miss => Cue {
@@ -83,10 +101,16 @@ impl Sfx {
                 subtitle: "Victory theme",
                 music: true,
             },
-            Self::Death => Cue {
-                filename: "death.wav",
+            Self::DeathMale => Cue {
+                filename: "death_male.wav",
                 speaker: "Battlefield",
-                subtitle: "A combatant falls",
+                subtitle: "Male combatant falls",
+                music: false,
+            },
+            Self::DeathFemale => Cue {
+                filename: "death_female.wav",
+                speaker: "Battlefield",
+                subtitle: "Female combatant falls",
                 music: false,
             },
             Self::Move => Cue {

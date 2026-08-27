@@ -17,10 +17,10 @@ random.seed(0x1867)
 def write_wav(path, samples, sample_rate=SAMPLE_RATE):
     """Write 16-bit mono WAV file from float samples in [-1, 1]."""
     num_samples = len(samples)
-    data = b""
+    data = bytearray()
     for s in samples:
         s = max(-32768, min(32767, int(s * 32767)))
-        data += struct.pack("<h", s)
+        data.extend(struct.pack("<h", s))
 
     with open(path, "wb") as f:
         # RIFF header
@@ -109,6 +109,36 @@ def hit(duration=0.15, sample_rate=SAMPLE_RATE):
     return samples
 
 
+def damage_male(duration=0.28, sample_rate=SAMPLE_RATE):
+    """Lower, breathy impact cry for the male atlas identity."""
+    n = int(duration * sample_rate)
+    rng = random.Random(0xD4A6)
+    samples = []
+    for i in range(n):
+        t = i / sample_rate
+        envelope = math.exp(-t * 10) * (1 - math.exp(-t * 180))
+        fundamental = math.sin(2 * math.pi * (155 - 42 * t / duration) * t)
+        rasp = math.sin(2 * math.pi * 310 * t) * 0.22
+        noise = rng.uniform(-1, 1) * 0.11
+        samples.append((fundamental * 0.60 + rasp + noise) * envelope)
+    return samples
+
+
+def damage_female(duration=0.28, sample_rate=SAMPLE_RATE):
+    """Higher, breathier impact cry for the female atlas identity."""
+    n = int(duration * sample_rate)
+    rng = random.Random(0xFEA1E)
+    samples = []
+    for i in range(n):
+        t = i / sample_rate
+        envelope = math.exp(-t * 12) * (1 - math.exp(-t * 210))
+        fundamental = math.sin(2 * math.pi * (390 - 120 * t / duration) * t)
+        overtone = math.sin(2 * math.pi * 780 * t + 0.3) * 0.18
+        breath = rng.uniform(-1, 1) * 0.17
+        samples.append((fundamental * 0.48 + overtone + breath) * envelope)
+    return samples
+
+
 def miss(duration=0.2, sample_rate=SAMPLE_RATE):
     """Bullet whiz — high frequency sweep."""
     n = int(duration * sample_rate)
@@ -173,6 +203,35 @@ def death(duration=0.3, sample_rate=SAMPLE_RATE):
         envelope = math.sin(math.pi * t / duration)
         tone = math.sin(2 * math.pi * freq * t) * 0.4
         samples.append(tone * envelope)
+    return samples
+
+
+def death_male(duration=0.75, sample_rate=SAMPLE_RATE):
+    """Low descending, rough fall cue for the male atlas identity."""
+    n = int(duration * sample_rate)
+    samples = []
+    for i in range(n):
+        t = i / sample_rate
+        freq = 220 - 140 * (t / duration)
+        envelope = math.sin(math.pi * t / duration) ** 0.8
+        tone = math.sin(2 * math.pi * freq * t) * 0.42
+        rasp = math.sin(2 * math.pi * (freq * 2.01) * t) * 0.12
+        samples.append((tone + rasp) * envelope)
+    return samples
+
+
+def death_female(duration=0.82, sample_rate=SAMPLE_RATE):
+    """Higher descending, airy fall cue for the female atlas identity."""
+    n = int(duration * sample_rate)
+    rng = random.Random(0xDEAF)
+    samples = []
+    for i in range(n):
+        t = i / sample_rate
+        freq = 520 - 360 * (t / duration)
+        envelope = math.sin(math.pi * t / duration) ** 0.75
+        tone = math.sin(2 * math.pi * freq * t) * 0.34
+        breath = rng.uniform(-1, 1) * 0.08 * math.exp(-t * 4)
+        samples.append((tone + breath) * envelope)
     return samples
 
 
@@ -264,14 +323,17 @@ SOUNDS = [
     ("pistol_shot.wav", room(pistol_shot(0.65), [(0.08, 0.25), (0.19, 0.12)])),
     ("rifle_shot.wav", room(rifle_shot(0.85), [(0.11, 0.28), (0.27, 0.13)])),
     ("hit.wav", room(hit(0.28), [(0.07, 0.16)])),
+    ("damage_male.wav", room(damage_male(), [(0.06, 0.12)])),
+    ("damage_female.wav", room(damage_female(), [(0.06, 0.12)])),
     ("miss.wav", room(miss(0.34), [(0.05, 0.12)])),
     ("click.wav", click()),
     ("select.wav", room(select(0.18), [(0.06, 0.10)])),
     ("victory.wav", room(victory(1.4), [(0.16, 0.20), (0.31, 0.11)])),
     ("death.wav", room(death(0.75), [(0.12, 0.18)])),
+    ("death_male.wav", room(death_male(), [(0.12, 0.18)])),
+    ("death_female.wav", room(death_female(), [(0.14, 0.16)])),
     ("move.wav", room(move_sound(0.18), [(0.045, 0.08)])),
     ("reload.wav", room(reload(0.34), [(0.08, 0.12)])),
-    ("frontier_theme.wav", frontier_theme()),
 ]
 
 

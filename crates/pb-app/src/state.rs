@@ -72,8 +72,20 @@ pub struct PendingLedgerWrite {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleAnimationKind {
     Move,
-    Recoil,
-    StanceShift { from: Stance, to: Stance },
+    Recoil {
+        hit: bool,
+    },
+    HitReact {
+        damage: i32,
+        critical: bool,
+        killed: bool,
+    },
+    NearMiss,
+    MeleeStrike,
+    StanceShift {
+        from: Stance,
+        to: Stance,
+    },
 }
 
 /// Short interpolation played after a mouse-issued tactical command.
@@ -83,8 +95,32 @@ pub struct BattleAnimation {
     pub from: TileXY,
     pub to: TileXY,
     pub started: Instant,
+    /// Presentation-only delay used to sequence burst shots and impacts.
+    pub delay_ms: u64,
     pub duration_ms: u64,
     pub kind: BattleAnimationKind,
+}
+
+/// Semantic emphasis for one player-facing combat result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CombatLogTone {
+    Neutral,
+    Success,
+    Miss,
+    Critical,
+    Warning,
+    /// A command was rejected before the simulation committed it.
+    Failure,
+    Defeat,
+}
+
+/// A concise, human-readable combat result derived from the authoritative
+/// simulation events. The raw event stream remains available for after-action
+/// reports and replay diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombatLogEntry {
+    pub text: String,
+    pub tone: CombatLogTone,
 }
 
 /// Top-level game state.
@@ -145,6 +181,8 @@ pub struct GameState {
     pub battle_events: Vec<pb_core::event::Event>,
     /// Active presentation-only movement and weapon animations.
     pub battle_animations: Vec<BattleAnimation>,
+    /// Recent player-facing combat results, newest entry last.
+    pub combat_log: Vec<CombatLogEntry>,
     /// Authored Ledger choices awaiting player acknowledgement.
     pub pending_ledger_writes: Vec<PendingLedgerWrite>,
     pub ledger_write_cursor: usize,
@@ -249,6 +287,7 @@ impl GameState {
             ],
             battle_events: Vec::new(),
             battle_animations: Vec::new(),
+            combat_log: Vec::new(),
             pending_ledger_writes: Vec::new(),
             ledger_write_cursor: 0,
             ledger_filter_act: None,

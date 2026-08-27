@@ -56,12 +56,25 @@ pub struct SpriteInstance {
     pub z: f32,
     pub width: f32,
     pub height: f32,
-    /// Clockwise rotation in radians around the sprite center.
+    /// Clockwise rotation in radians around the sprite center, or around the
+    /// planted foot point when `anchor_bottom` is enabled.
     pub rotation: f32,
+    /// When true, `x/y` is the sprite's planted foot point instead of its
+    /// visual center. Rotation, recoil, and body sway then preserve the tile
+    /// anchor rather than swinging the actor across neighboring cells.
+    pub anchor_bottom: bool,
     /// Presentation-only horizontal bend applied progressively toward the head.
     pub top_sway: f32,
     /// Presentation-only upper-body width multiplier; feet remain anchored.
     pub top_scale_x: f32,
+    /// Presentation-only lower-body translation used by the walk cycle.
+    pub leg_sway: f32,
+    /// Presentation-only lower-body lift used by the walk cycle.
+    pub leg_lift: f32,
+    /// Presentation-only hip rotation used by the walk cycle.
+    pub hip_rotation: f32,
+    /// Presentation-only upper-body/arm counter-swing used by the walk cycle.
+    pub arm_swing: f32,
     pub r: f32,
     pub g: f32,
     pub b: f32,
@@ -73,6 +86,31 @@ pub struct SpriteInstance {
     pub v1: f32,
 }
 
+/// Presentation identity used to keep combat vocalizations aligned with the
+/// visible atlas cell. This is not a simulation rule or a character trait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AvatarGender {
+    Male,
+    Female,
+}
+
+const CHARACTER_COUNT: u32 = 8;
+const FEMALE_CHARACTER_INDEX: u32 = 6;
+
+/// Return the stable atlas identity selected by an actor ID.
+pub const fn character_atlas_index(index: u32) -> u32 {
+    index % CHARACTER_COUNT
+}
+
+/// Return the presentation gender of the selected company-atlas identity.
+pub const fn character_gender(index: u32) -> AvatarGender {
+    if character_atlas_index(index) == FEMALE_CHARACTER_INDEX {
+        AvatarGender::Female
+    } else {
+        AvatarGender::Male
+    }
+}
+
 impl SpriteInstance {
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Self {
@@ -82,8 +120,13 @@ impl SpriteInstance {
             width: 32.0,
             height: 32.0,
             rotation: 0.0,
+            anchor_bottom: false,
             top_sway: 0.0,
             top_scale_x: 1.0,
+            leg_sway: 0.0,
+            leg_lift: 0.0,
+            hip_rotation: 0.0,
+            arm_swing: 0.0,
             r: 1.0,
             g: 1.0,
             b: 1.0,
@@ -108,7 +151,7 @@ impl SpriteInstance {
 
     /// Select one of the eight company identities by a stable zero-based index.
     pub fn set_character(&mut self, index: u32) {
-        let index = index % 8;
+        let index = character_atlas_index(index);
         self.set_atlas_cell((index % 4) as u8, (index / 4) as u8);
     }
 
@@ -118,6 +161,99 @@ impl SpriteInstance {
         self.v0 = -1.0;
         self.u1 = -1.0;
         self.v1 = -1.0;
+    }
+}
+
+const SPRITE_ROWS: [f32; 4] = [0.0, 0.34, 0.62, 1.0];
+
+fn smoothstep01(value: f32) -> f32 {
+    let t = value.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Apply the presentation-only lower-body and upper-body walk deformation to
+/// one local point, then apply the sprite's whole-body transform.
+fn transformed_sprite_point(
+    sprite: &SpriteInstance,
+    half_h: f32,
+    dx: f32,
+    dy: f32,
+    pivot_y: f32,
+) -> [f32; 2] {
+    let top_weight = if half_h > f32::EPSILON {
+        ((dy + half_h) / (half_h * 2.0)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    // The feet stay planted while the shin/hip region bends above them. The
+    // second smoothstep fades the lower deformation out before the torso.
+    let leg_weight =
+        smoothstep01(top_weight / 0.16) * (1.0 - smoothstep01((top_weight - 0.62) / 0.20));
+    let leg_pivot_y = -half_h + half_h * 1.12;
+    let leg_angle = sprite.hip_rotation * leg_weight;
+    let leg_sin = leg_angle.sin();
+    let leg_cos = leg_angle.cos();
+    let leg_relative_y = dy - leg_pivot_y;
+    let leg_rotated_x = dx * leg_cos - leg_relative_y * leg_sin;
+    let leg_rotated_y = leg_relative_y * leg_cos + leg_pivot_y;
+    let mut shaped_x = dx + (leg_rotated_x - dx) * leg_weight + sprite.leg_sway * leg_weight;
+    let mut shaped_y = dy + (leg_rotated_y - dy) * leg_weight + sprite.leg_lift * leg_weight;
+
+    // The upper section carries the arm swing and counter-rotates against the
+    // hips, producing a readable walk silhouette on the subdivided quad.
+    let arm_weight = smoothstep01((top_weight - 0.34) / 0.40);
+    let arm_pivot_y = -half_h + half_h * 1.12;
+    let arm_angle = sprite.arm_swing * arm_weight;
+    let arm_sin = arm_angle.sin();
+    let arm_cos = arm_angle.cos();
+    let arm_relative_y = shaped_y - arm_pivot_y;
+    let arm_rotated_x = shaped_x * arm_cos - arm_relative_y * arm_sin;
+    let arm_rotated_y = arm_relative_y * arm_cos + arm_pivot_y;
+    shaped_x += (arm_rotated_x - shaped_x) * arm_weight;
+    shaped_y += (arm_rotated_y - shaped_y) * arm_weight;
+
+    let upper_scale = 1.0 + (sprite.top_scale_x - 1.0) * top_weight;
+    shaped_x = shaped_x * upper_scale + sprite.top_sway * top_weight;
+    let relative_y = shaped_y - pivot_y;
+    let sin = sprite.rotation.sin();
+    let cos = sprite.rotation.cos();
+    let rotated_x = shaped_x * cos - relative_y * sin;
+    let rotated_y = shaped_x * sin + relative_y * cos;
+    [rotated_x, rotated_y]
+}
+
+fn sprite_vertex(sprite: &SpriteInstance, dx: f32, dy: f32, u: f32, v: f32) -> SpriteVertex {
+    let half_h = sprite.height * 0.5;
+    let pivot_y = if sprite.anchor_bottom { -half_h } else { 0.0 };
+    let [rotated_x, rotated_y] = transformed_sprite_point(sprite, half_h, dx, dy, pivot_y);
+    SpriteVertex {
+        position: [sprite.x + rotated_x, sprite.y + rotated_y, sprite.z],
+        tex_coord: [u, v],
+        color: [sprite.r, sprite.g, sprite.b, sprite.a],
+    }
+}
+
+fn append_sprite_geometry(
+    vertices: &mut Vec<SpriteVertex>,
+    indices: &mut Vec<u32>,
+    sprite: &SpriteInstance,
+) {
+    let half_w = sprite.width * 0.5;
+    let half_h = sprite.height * 0.5;
+    let base = vertices.len() as u32;
+    for row in SPRITE_ROWS {
+        let dy = -half_h + half_h * 2.0 * row;
+        let v = sprite.v1 + (sprite.v0 - sprite.v1) * row;
+        vertices.push(sprite_vertex(sprite, -half_w, dy, sprite.u0, v));
+        vertices.push(sprite_vertex(sprite, half_w, dy, sprite.u1, v));
+    }
+    for row in 0..(SPRITE_ROWS.len() - 1) as u32 {
+        let left = base + row * 2;
+        let right = left + 1;
+        let next_left = left + 2;
+        let next_right = right + 2;
+        indices.extend_from_slice(&[left, right, next_right, next_right, next_left, left]);
     }
 }
 
@@ -276,35 +412,7 @@ impl SpriteSystem {
             if !sprite.visible {
                 continue;
             }
-            let half_w = sprite.width * 0.5;
-            let half_h = sprite.height * 0.5;
-
-            let sin = sprite.rotation.sin();
-            let cos = sprite.rotation.cos();
-            let vtx = |dx: f32, dy: f32, u: f32, v: f32| {
-                let top_weight = if half_h > f32::EPSILON {
-                    ((dy + half_h) / (half_h * 2.0)).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                let upper_scale = 1.0 + (sprite.top_scale_x - 1.0) * top_weight;
-                let shaped_x = dx * upper_scale + sprite.top_sway * top_weight;
-                let rotated_x = shaped_x * cos - dy * sin;
-                let rotated_y = shaped_x * sin + dy * cos;
-                SpriteVertex {
-                    position: [sprite.x + rotated_x, sprite.y + rotated_y, sprite.z],
-                    tex_coord: [u, v],
-                    color: [sprite.r, sprite.g, sprite.b, sprite.a],
-                }
-            };
-
-            let base = vertices.len() as u32;
-            // World-space +Y points up, while image V=0 is the atlas top.
-            vertices.push(vtx(-half_w, -half_h, sprite.u0, sprite.v1));
-            vertices.push(vtx(half_w, -half_h, sprite.u1, sprite.v1));
-            vertices.push(vtx(half_w, half_h, sprite.u1, sprite.v0));
-            vertices.push(vtx(-half_w, half_h, sprite.u0, sprite.v0));
-            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+            append_sprite_geometry(&mut vertices, &mut indices, sprite);
         }
 
         let num_indices = indices.len() as u32;
@@ -478,32 +586,7 @@ impl SpriteSystem {
             if !sprite.visible {
                 continue;
             }
-            let half_w = sprite.width * 0.5;
-            let half_h = sprite.height * 0.5;
-            let sin = sprite.rotation.sin();
-            let cos = sprite.rotation.cos();
-            let vtx = |dx: f32, dy: f32, u: f32, v: f32| {
-                let top_weight = if half_h > f32::EPSILON {
-                    ((dy + half_h) / (half_h * 2.0)).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                let upper_scale = 1.0 + (sprite.top_scale_x - 1.0) * top_weight;
-                let shaped_x = dx * upper_scale + sprite.top_sway * top_weight;
-                let rotated_x = shaped_x * cos - dy * sin;
-                let rotated_y = shaped_x * sin + dy * cos;
-                SpriteVertex {
-                    position: [sprite.x + rotated_x, sprite.y + rotated_y, sprite.z],
-                    tex_coord: [u, v],
-                    color: [sprite.r, sprite.g, sprite.b, sprite.a],
-                }
-            };
-            let base = vertices.len() as u32;
-            vertices.push(vtx(-half_w, -half_h, sprite.u0, sprite.v1));
-            vertices.push(vtx(half_w, -half_h, sprite.u1, sprite.v1));
-            vertices.push(vtx(half_w, half_h, sprite.u1, sprite.v0));
-            vertices.push(vtx(-half_w, half_h, sprite.u0, sprite.v0));
-            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+            append_sprite_geometry(&mut vertices, &mut indices, sprite);
         }
         self.num_indices = indices.len() as u32;
         self.vertex_buffer = device
@@ -544,5 +627,53 @@ impl SpriteSystem {
         if self.num_indices > 0 {
             rpass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        character_atlas_index, character_gender, transformed_sprite_point, AvatarGender,
+        SpriteInstance, SPRITE_ROWS,
+    };
+
+    #[test]
+    fn atlas_identity_and_voice_gender_are_stable() {
+        assert_eq!(character_atlas_index(14), 6);
+        assert_eq!(character_gender(6), AvatarGender::Female);
+        assert_eq!(character_gender(14), AvatarGender::Female);
+        assert_eq!(character_gender(0), AvatarGender::Male);
+        assert_eq!(character_gender(7), AvatarGender::Male);
+    }
+
+    #[test]
+    fn walk_deformation_keeps_feet_planted_and_moves_body_regions() {
+        let mut sprite = SpriteInstance::new(100.0, 200.0, 1.0);
+        sprite.width = 58.0;
+        sprite.height = 82.0;
+        sprite.anchor_bottom = true;
+        sprite.leg_sway = 2.4;
+        sprite.leg_lift = 1.6;
+        sprite.hip_rotation = 0.16;
+        sprite.arm_swing = -0.11;
+
+        let half_h = sprite.height * 0.5;
+        let pivot_y = -half_h;
+        let bottom_left =
+            transformed_sprite_point(&sprite, half_h, -sprite.width * 0.5, -half_h, pivot_y);
+        let lower = transformed_sprite_point(&sprite, half_h, 0.0, -half_h * 0.10, pivot_y);
+        let upper = transformed_sprite_point(&sprite, half_h, 0.0, half_h * 0.72, pivot_y);
+
+        assert!(
+            (bottom_left[0] + sprite.width * 0.5).abs() < 0.001,
+            "bottom-left x moved: {bottom_left:?}"
+        );
+        assert!(
+            bottom_left[1].abs() < 0.001,
+            "bottom-left y moved: {bottom_left:?}"
+        );
+        assert!(lower[0].abs() > 0.05 || (lower[1] + half_h * 0.10).abs() > 0.05);
+        assert!(upper[0].abs() > 0.05 || (upper[1] - half_h * 0.72).abs() > 0.05);
+        assert_eq!(SPRITE_ROWS.len(), 4);
     }
 }

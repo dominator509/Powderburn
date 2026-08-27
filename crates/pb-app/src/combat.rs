@@ -23,8 +23,10 @@ use pb_render::overlay::{OverlaySystem, OverlayTile, OverlayTileKind};
 use pb_render::props::{prop_instances_from_state, PropSystem};
 use pb_render::smoke::{SmokeSystem, SmokeTile};
 use pb_render::sprites::{SpriteInstance, SpriteSystem};
-use pb_render::tiles::{TileSystem, TileVisual};
-use pb_sim::action::{legal_movement_cost, overwatch_threats_at, step, Action, Command};
+use pb_render::tiles::{self, TileSystem, TileVisual};
+use pb_sim::action::{
+    effective_action_cost, legal_movement_cost, overwatch_threats_at, step, Action, Command,
+};
 use pb_sim::clock::advance_to_next_actor;
 use pb_sim::shot::{compute_hit_chance_breakdown, HitChanceBreakdown};
 use pb_sim::state::{ActorState, SimError, SimState, Stance};
@@ -32,7 +34,7 @@ use pb_sim::state::{ActorState, SimError, SimState, Stance};
 use crate::state::{
     BattleAnimation, BattleAnimationKind, GameState, InteractionPhase, PlayerAction,
 };
-use pb_core::event::Event;
+use pb_core::event::{Event, HitLocationType, WoundType};
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -41,21 +43,45 @@ const GRID_COLS: u32 = 20;
 const GRID_ROWS: u32 = 12;
 
 /// Isometric tile dimensions in pixels (at zoom = 1.0).
-const TILE_W: f32 = 64.0;
-const TILE_H: f32 = 32.0;
+const TILE_W: f32 = tiles::TILE_WIDTH;
+const TILE_H: f32 = tiles::TILE_HEIGHT;
 const GRID_EDGE_GUTTER: f32 = 24.0;
 
 /// Keep the complete outer diamonds inside the viewport at every supported
 /// resolution. The requested zoom remains the upper bound, so zooming out
 /// still works while zooming in can never cut a perimeter tile in half.
 fn fitted_battle_zoom(requested: f32, viewport_width: f32, viewport_height: f32) -> f32 {
-    let board_width = (GRID_COLS + GRID_ROWS) as f32 * TILE_W * 0.5;
-    let board_height = (GRID_COLS + GRID_ROWS) as f32 * TILE_H * 0.5;
+    fitted_battle_zoom_for_grid(
+        requested,
+        viewport_width,
+        viewport_height,
+        GRID_COLS,
+        GRID_ROWS,
+    )
+}
+
+fn fitted_battle_zoom_for_grid(
+    requested: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+    cols: u32,
+    rows: u32,
+) -> f32 {
+    let board_width = (cols.max(1) + rows.max(1)) as f32 * TILE_W * 0.5;
+    let board_height = (cols.max(1) + rows.max(1)) as f32 * TILE_H * 0.5;
     let available_width = (viewport_width - GRID_EDGE_GUTTER * 2.0).max(TILE_W);
     let available_height = (viewport_height - GRID_EDGE_GUTTER * 2.0).max(TILE_H);
     let fit = (available_width / board_width).min(available_height / board_height);
 
     requested.max(0.25).min(fit.max(0.25))
+}
+
+fn battle_grid_dimensions(game_state: &GameState) -> (u32, u32) {
+    game_state
+        .sim
+        .as_ref()
+        .map(|sim| (sim.smoke_cols.max(1), sim.smoke_rows.max(1)))
+        .unwrap_or((GRID_COLS, GRID_ROWS))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,8 +307,8 @@ pub fn screen_to_tile(
     // orthographic projection.
     let sy = (viewport_height * 0.5 - mouse_y as f32) / zoom + camera_y;
 
-    let half_w = TILE_W * 0.5;
-    let half_h = TILE_H * 0.5;
+    let half_w = tiles::TILE_HALF_WIDTH;
+    let half_h = tiles::TILE_HALF_HEIGHT;
 
     if half_w.abs() < f32::EPSILON || half_h.abs() < f32::EPSILON {
         return TileXY::new(0, 0);
@@ -308,7 +334,14 @@ pub fn screen_to_tile_in_state(
     viewport_width: f32,
     viewport_height: f32,
 ) -> TileXY {
-    let zoom = fitted_battle_zoom(game_state.camera_zoom, viewport_width, viewport_height);
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    let zoom = fitted_battle_zoom_for_grid(
+        game_state.camera_zoom,
+        viewport_width,
+        viewport_height,
+        cols,
+        rows,
+    );
     let fallback = screen_to_tile(
         mouse_x,
         mouse_y,
@@ -325,15 +358,12 @@ pub fn screen_to_tile_in_state(
     let world_y = (viewport_height * 0.5 - mouse_y as f32) / zoom + game_state.camera_y;
     let mut best = None::<(f32, i32, TileXY)>;
 
-    for y in 0..GRID_ROWS {
-        for x in 0..GRID_COLS {
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    for y in 0..rows {
+        for x in 0..cols {
             let tile = TileXY::new(x as i16, y as i16);
             let elevation = sim.tile_elevations.get(&tile).copied().unwrap_or(0);
-            let center_x = (x as f32 - y as f32) * TILE_W * 0.5;
-            let center_y = (x as f32 + y as f32) * TILE_H * 0.5
-                + elevation as f32 * pb_render::tiles::ELEVATION_SCREEN_STEP;
-            let distance = (world_x - center_x).abs() / (TILE_W * 0.5)
-                + (world_y - center_y).abs() / (TILE_H * 0.5);
+            let distance = tiles::tile_diamond_distance(world_x, world_y, tile, elevation);
             if distance > 1.001 {
                 continue;
             }
@@ -840,6 +870,8 @@ pub fn init_combat(game_state: &mut GameState, content_root: &Path) -> Result<()
 #[allow(missing_debug_implementations)]
 pub struct CombatRenderer {
     scenario_id: u32,
+    cols: u32,
+    rows: u32,
     surface_format: wgpu::TextureFormat,
     camera_bytes: [u8; 64],
     smoke_tiles: Vec<SmokeTile>,
@@ -869,18 +901,19 @@ impl CombatRenderer {
             .map(prop_instances_from_state)
             .unwrap_or_default();
         let sprites = build_sprite_instances(game_state);
+        let (cols, rows) = battle_grid_dimensions(game_state);
         let tile_system = TileSystem::new_with_format(
             render_device,
-            GRID_COLS,
-            GRID_ROWS,
+            cols,
+            rows,
             &tiles,
             camera_bytes,
             surface_format,
         );
         let smoke_system = SmokeSystem::new_with_format(
             render_device,
-            GRID_COLS,
-            GRID_ROWS,
+            cols,
+            rows,
             &smoke_tiles,
             camera_bytes,
             surface_format,
@@ -900,6 +933,8 @@ impl CombatRenderer {
                 .sim
                 .as_ref()
                 .map_or(u32::MAX, |state| state.scenario_id),
+            cols,
+            rows,
             surface_format,
             camera_bytes: *camera_bytes,
             smoke_tiles,
@@ -921,6 +956,7 @@ impl CombatRenderer {
         camera_bytes: &[u8; 64],
     ) {
         let camera_changed = self.camera_bytes != *camera_bytes;
+        let (cols, rows) = battle_grid_dimensions(game_state);
         let smoke_tiles = build_smoke_grid(game_state);
         let overlay_tiles = build_overlay_tiles(game_state);
         let props = game_state
@@ -930,15 +966,12 @@ impl CombatRenderer {
             .unwrap_or_default();
         let sprites = build_sprite_instances(game_state);
 
-        if smoke_tiles != self.smoke_tiles {
-            self.smoke_system.update(
-                render_device,
-                GRID_COLS,
-                GRID_ROWS,
-                &smoke_tiles,
-                camera_bytes,
-            );
+        if smoke_tiles != self.smoke_tiles || (cols, rows) != (self.cols, self.rows) {
+            self.smoke_system
+                .update(render_device, cols, rows, &smoke_tiles, camera_bytes);
             self.smoke_tiles = smoke_tiles;
+            self.cols = cols;
+            self.rows = rows;
         }
         if overlay_tiles != self.overlay_tiles {
             self.overlay_system
@@ -978,15 +1011,18 @@ pub fn render_combat_frame(
     viewport_height: u32,
 ) {
     let _timer = Instant::now();
+    let (cols, rows) = battle_grid_dimensions(game_state);
 
     // ── Camera ──────────────────────────────────────────────────────────
     let camera = IsoCamera {
         center_x: game_state.camera_x,
         center_y: game_state.camera_y,
-        zoom: fitted_battle_zoom(
+        zoom: fitted_battle_zoom_for_grid(
             game_state.camera_zoom,
             viewport_width as f32,
             viewport_height as f32,
+            cols,
+            rows,
         ),
         viewport_width: viewport_width as f32,
         viewport_height: viewport_height as f32,
@@ -1000,7 +1036,9 @@ pub fn render_combat_frame(
         .as_ref()
         .map_or(u32::MAX, |state| state.scenario_id);
     let rebuild = renderer.as_ref().is_none_or(|cached| {
-        cached.scenario_id != scenario_id || cached.surface_format != surface_format
+        cached.scenario_id != scenario_id
+            || (cached.cols, cached.rows) != (cols, rows)
+            || cached.surface_format != surface_format
     });
     if rebuild {
         *renderer = Some(CombatRenderer::new(
@@ -1087,6 +1125,15 @@ pub enum BattleHudAction {
     Hold,
 }
 
+type ImmediateActionResult = (Vec<Event>, i16, i16, String, Stance, Stance, TileXY, u64);
+
+#[derive(Clone, Copy)]
+struct ActionAp {
+    actor_before: i16,
+    actor_after: i16,
+    scope: Option<(&'static str, i16, i16)>,
+}
+
 /// Stable screen-space layout shared by rendering and pointer hit-testing.
 pub fn battle_action_layout(
     viewport_width: u32,
@@ -1115,6 +1162,64 @@ pub fn battle_action_layout(
             )
         })
         .collect()
+}
+
+fn battle_action_actor(game_state: &GameState) -> Option<ActorId> {
+    let sim = game_state.sim.as_ref()?;
+    if let Some(id) = match game_state.phase {
+        InteractionPhase::SelectedActor(id) | InteractionPhase::Targeting { actor: id, .. } => {
+            Some(id)
+        }
+        _ => None,
+    }
+    .filter(|id| sim.active_actor == Some(*id))
+    {
+        return Some(id);
+    }
+    sim.active_actor.filter(|id| {
+        sim.actors
+            .get(id)
+            .is_some_and(|actor| actor.alive && is_ally(actor))
+    })
+}
+
+/// Return the simulation-authoritative AP cost for a tactical HUD button.
+/// Target IDs are placeholders because these actions resolve their target
+/// later; `effective_action_cost` only reads the selected actor for cost math.
+pub fn battle_action_ap_cost(game_state: &GameState, action: BattleHudAction) -> Option<i16> {
+    let actor_id = battle_action_actor(game_state)?;
+    let sim = game_state.sim.as_ref()?;
+    let sim_action = match action {
+        BattleHudAction::Fire => Action::SnapShot(ActorId(0)),
+        BattleHudAction::Aim => Action::AimedShot(ActorId(0)),
+        BattleHudAction::Reload => Action::Reload,
+        BattleHudAction::Crouch => {
+            let actor = sim.actors.get(&actor_id)?;
+            if actor.stance == Stance::Crouched {
+                Action::RiseFromProne
+            } else {
+                Action::StanceCrouch
+            }
+        }
+        BattleHudAction::Hold => return None,
+    };
+    effective_action_cost(sim, actor_id, &sim_action)
+        .ok()
+        .map(|cost| cost.0)
+}
+
+/// Render a tactical button with the exact AP price currently used by the
+/// simulation. End Turn is explicit because it consumes all remaining AP.
+pub fn battle_action_button_label(game_state: &GameState, action: BattleHudAction) -> String {
+    let base = match action {
+        BattleHudAction::Fire => "FIRE",
+        BattleHudAction::Aim => "AIM",
+        BattleHudAction::Reload => "RELOAD",
+        BattleHudAction::Crouch => "CROUCH / STAND",
+        BattleHudAction::Hold => return "END TURN [ALL AP]".to_string(),
+    };
+    battle_action_ap_cost(game_state, action)
+        .map_or_else(|| base.to_string(), |cost| format!("{base} [{cost} AP]"))
 }
 
 /// Return the tactical HUD command under the pointer.
@@ -1221,10 +1326,13 @@ fn actor_at_pointer(
     viewport_height: u32,
 ) -> Option<ActorId> {
     let sim = game_state.sim.as_ref()?;
-    let zoom = fitted_battle_zoom(
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    let zoom = fitted_battle_zoom_for_grid(
         game_state.camera_zoom,
         viewport_width as f32,
         viewport_height as f32,
+        cols,
+        rows,
     );
     let pointer_x = game_state.mouse_x as f32;
     let pointer_y = game_state.mouse_y as f32;
@@ -1233,24 +1341,29 @@ fn actor_at_pointer(
         .iter()
         .filter(|(_, actor)| actor.alive)
         .filter_map(|(id, actor)| {
-            let half_w = TILE_W * 0.5;
-            let half_h = TILE_H * 0.5;
-            let world_x = (actor.position.x as f32 - actor.position.y as f32) * half_w;
-            let mut world_y = (actor.position.x as f32 + actor.position.y as f32) * half_h - 24.0;
+            let [world_x, tile_world_y] = tiles::tile_center_with_elevation(
+                actor.position,
+                sim.tile_elevations
+                    .get(&actor.position)
+                    .copied()
+                    .unwrap_or(0),
+            );
             let mut sprite_width = 58.0;
             let mut sprite_height = 82.0;
             match actor.stance {
                 Stance::Standing => {}
                 Stance::Crouched => {
                     sprite_height *= 0.82;
-                    world_y -= 5.0;
                 }
                 Stance::Prone => {
                     sprite_height *= 0.58;
                     sprite_width *= 1.18;
-                    world_y -= 12.0;
                 }
             }
+            // The renderer uses a bottom pivot, so the hitbox is centered on
+            // the same planted sprite geometry rather than the old ad-hoc
+            // offset that made an actor appear to occupy four intersections.
+            let world_y = tile_world_y + sprite_height * 0.5;
 
             let screen_x = (world_x - game_state.camera_x) * zoom + viewport_width as f32 * 0.5;
             let screen_y = viewport_height as f32 * 0.5 - (world_y - game_state.camera_y) * zoom;
@@ -1387,7 +1500,13 @@ pub fn handle_combat_click(
                     .map(|actor| actor.position.chebyshev_distance(hovered))
                     .unwrap_or(0);
                 if matches!(distance, 1 | 2) {
-                    execute_move_to(game_state, selected_id, hovered, distance == 2)?;
+                    if let Err(error) =
+                        execute_move_to(game_state, selected_id, hovered, distance == 2)
+                    {
+                        game_state.phase = InteractionPhase::SelectedActor(selected_id);
+                        game_state.message = error;
+                        return Ok(());
+                    }
                     check_victory_conditions(game_state);
                     if game_state.screen != crate::state::GameScreen::Battle {
                         return Ok(());
@@ -1412,7 +1531,7 @@ pub fn handle_combat_click(
             actor: selected_id,
             action: player_action,
         } => {
-            game_state.message = format!("Executing {player_action:?}");
+            game_state.message = format!("Executing {}", player_action_label(player_action));
             if let Err(error) = execute_player_action(game_state) {
                 game_state.phase = InteractionPhase::SelectedActor(selected_id);
                 game_state.message = error;
@@ -1451,52 +1570,8 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
         _ => return Err("not in targeting phase".to_string()),
     };
 
-    let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
-
     let hovered = TileXY::new(gs.hovered_tile_x, gs.hovered_tile_y);
-
-    let actor_at_tile = sim
-        .actors
-        .iter()
-        .find(|(_, actor)| actor.position == hovered)
-        .map(|(id, actor)| (*id, actor.alive, is_ally(actor)));
-    let enemy = || {
-        actor_at_tile
-            .filter(|(_, alive, ally)| *alive && !*ally)
-            .map(|(id, _, _)| id)
-            .ok_or_else(|| "No living enemy at the selected tile".to_string())
-    };
-    let ally = || {
-        actor_at_tile
-            .filter(|(_, alive, ally)| *alive && *ally)
-            .map(|(id, _, _)| id)
-            .ok_or_else(|| "No living ally at the selected tile".to_string())
-    };
-    let any_actor = || {
-        actor_at_tile
-            .map(|(id, _, _)| id)
-            .ok_or_else(|| "No actor at the selected tile".to_string())
-    };
-
-    let action = match player_action {
-        PlayerAction::SnapShot => Action::SnapShot(enemy()?),
-        PlayerAction::AimedShot => Action::AimedShot(enemy()?),
-        PlayerAction::CalledShot(loc) => Action::CalledShot(enemy()?, loc),
-        PlayerAction::FanHammer => Action::FanHammer(enemy()?),
-        PlayerAction::Volley => Action::Volley(enemy()?),
-        PlayerAction::LeftHandDraw => Action::LeftHandDraw(enemy()?),
-        PlayerAction::Melee => Action::Melee(enemy()?),
-        PlayerAction::Bandage => Action::Bandage(ally()?),
-        PlayerAction::Rally => Action::Rally(ally()?),
-        PlayerAction::Loot => Action::Loot(any_actor()?),
-        PlayerAction::ThrowDynamite => Action::ThrowDynamite(hovered),
-        PlayerAction::CatchDynamite => Action::CatchDynamite(hovered),
-        PlayerAction::RethrowDynamite => Action::RethrowDynamite(hovered),
-        _ => return Err("action does not use a tile target".to_string()),
-    };
-
-    let cmd = Command { actor_id, action };
-
+    let action_label = player_action_label(player_action);
     let is_shot = matches!(
         player_action,
         PlayerAction::SnapShot
@@ -1506,10 +1581,72 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
             | PlayerAction::Volley
             | PlayerAction::LeftHandDraw
     );
-    // Execute via sim step
-    let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
-    let events = step(sim, cmd).map_err(|e| format!("action failed: {e:?}"))?;
-    let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+    let before_ap = gs
+        .sim
+        .as_ref()
+        .and_then(|sim| sim.actors.get(&actor_id))
+        .map_or(0, |actor| actor.ap.0);
+    let ap_pool_before = gs.sim.as_ref().map(player_ap_pool).unwrap_or(0);
+    let result: Result<(Vec<Event>, i16, u64), String> = (|| {
+        let sim = gs
+            .sim
+            .as_mut()
+            .ok_or_else(|| "no simulation loaded".to_string())?;
+        let actor_at_tile = sim
+            .actors
+            .iter()
+            .find(|(_, actor)| actor.position == hovered)
+            .map(|(id, actor)| (*id, actor.alive, is_ally(actor)));
+        let enemy = || {
+            actor_at_tile
+                .filter(|(_, alive, ally)| *alive && !*ally)
+                .map(|(id, _, _)| id)
+                .ok_or_else(|| "No living enemy at the selected tile".to_string())
+        };
+        let ally = || {
+            actor_at_tile
+                .filter(|(_, alive, ally)| *alive && *ally)
+                .map(|(id, _, _)| id)
+                .ok_or_else(|| "No living ally at the selected tile".to_string())
+        };
+        let any_actor = || {
+            actor_at_tile
+                .map(|(id, _, _)| id)
+                .ok_or_else(|| "No actor at the selected tile".to_string())
+        };
+        let action = match player_action {
+            PlayerAction::SnapShot => Action::SnapShot(enemy()?),
+            PlayerAction::AimedShot => Action::AimedShot(enemy()?),
+            PlayerAction::CalledShot(loc) => Action::CalledShot(enemy()?, loc),
+            PlayerAction::FanHammer => Action::FanHammer(enemy()?),
+            PlayerAction::Volley => Action::Volley(enemy()?),
+            PlayerAction::LeftHandDraw => Action::LeftHandDraw(enemy()?),
+            PlayerAction::Melee => Action::Melee(enemy()?),
+            PlayerAction::Bandage => Action::Bandage(ally()?),
+            PlayerAction::Rally => Action::Rally(ally()?),
+            PlayerAction::Loot => Action::Loot(any_actor()?),
+            PlayerAction::ThrowDynamite => Action::ThrowDynamite(hovered),
+            PlayerAction::CatchDynamite => Action::CatchDynamite(hovered),
+            PlayerAction::RethrowDynamite => Action::RethrowDynamite(hovered),
+            _ => return Err("action does not use a tile target".to_string()),
+        };
+        let events =
+            step(sim, Command { actor_id, action }).map_err(|error| sim_error_message(&error))?;
+        let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+        Ok((events, after_ap, sim.tick.0))
+    })();
+    let (events, after_ap, tick) = match result {
+        Ok(result) => result,
+        Err(reason) => {
+            let message = record_action_failure(gs, actor_id, &action_label, before_ap, &reason);
+            return Err(message);
+        }
+    };
+    let ap_pool_after = gs
+        .sim
+        .as_ref()
+        .map(player_ap_pool)
+        .unwrap_or(ap_pool_before);
     gs.battle_events.extend(events.iter().cloned());
     if is_shot {
         if let Some(ref audio) = gs.audio {
@@ -1525,40 +1662,26 @@ pub fn execute_player_action(gs: &mut GameState) -> Result<(), String> {
         println!("{}", ev);
     }
 
-    // Build a summary message from events
-    let summary = events
-        .iter()
-        .map(|e| format!("{}", e))
-        .collect::<Vec<_>>()
-        .join("; ");
-    gs.message = if summary.is_empty() {
-        format!(
-            "Action executed — AP {before_ap} - {} = {after_ap}",
-            before_ap.saturating_sub(after_ap)
-        )
-    } else {
-        format!(
-            "AP {before_ap} - {} = {after_ap} — {summary}",
-            before_ap.saturating_sub(after_ap)
-        )
-    };
+    set_action_feedback(
+        gs,
+        actor_id,
+        &action_label,
+        &events,
+        ActionAp {
+            actor_before: before_ap,
+            actor_after: after_ap,
+            scope: (player_action == PlayerAction::Volley).then_some((
+                "SQUAD AP",
+                ap_pool_before,
+                ap_pool_after,
+            )),
+        },
+        player_action == PlayerAction::Melee,
+    );
+    queue_event_animations(gs, &events, actor_id, player_action == PlayerAction::Melee);
 
     gs.phase = InteractionPhase::Executing;
-    gs.tick = sim.tick.0;
-    if is_shot {
-        if let Some(actor) = sim.actors.get(&actor_id) {
-            gs.battle_animations
-                .retain(|animation| animation.actor != actor_id);
-            gs.battle_animations.push(BattleAnimation {
-                actor: actor_id,
-                from: actor.position,
-                to: hovered,
-                started: Instant::now(),
-                duration_ms: 720,
-                kind: BattleAnimationKind::Recoil,
-            });
-        }
-    }
+    gs.tick = tick;
 
     Ok(())
 }
@@ -1569,38 +1692,52 @@ fn execute_move_to(
     target: TileXY,
     sprint: bool,
 ) -> Result<(), String> {
-    let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
-    let from = sim
-        .actors
-        .get(&actor_id)
-        .map_or(target, |actor| actor.position);
-    let action = if sprint {
-        Action::Sprint(target)
-    } else {
-        Action::Move(target)
+    let action_label = if sprint { "SPRINT" } else { "MOVE" };
+    let before_ap = gs
+        .sim
+        .as_ref()
+        .and_then(|sim| sim.actors.get(&actor_id))
+        .map_or(0, |actor| actor.ap.0);
+    let result: Result<(Vec<Event>, i16, u64), String> = (|| {
+        let sim = gs
+            .sim
+            .as_mut()
+            .ok_or_else(|| "no simulation loaded".to_string())?;
+        let action = if sprint {
+            Action::Sprint(target)
+        } else {
+            Action::Move(target)
+        };
+        let events =
+            step(sim, Command { actor_id, action }).map_err(|error| sim_error_message(&error))?;
+        let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+        Ok((events, after_ap, sim.tick.0))
+    })();
+    let (events, after_ap, tick) = match result {
+        Ok((events, after_ap, tick)) => (events, after_ap, tick),
+        Err(reason) => {
+            let message = record_action_failure(gs, actor_id, action_label, before_ap, &reason);
+            return Err(message);
+        }
     };
-    let events = step(sim, Command { actor_id, action })
-        .map_err(|error| format!("Move failed: {error:?}"))?;
     gs.battle_events.extend(events.iter().cloned());
     if let Some(audio) = &gs.audio {
         audio.play(pb_audio::Sfx::Move);
     }
-    gs.message = events
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("; ");
-    gs.tick = sim.tick.0;
-    gs.battle_animations
-        .retain(|animation| animation.actor != actor_id);
-    gs.battle_animations.push(BattleAnimation {
-        actor: actor_id,
-        from,
-        to: target,
-        started: Instant::now(),
-        duration_ms: movement_duration_ms(from, target, sprint),
-        kind: BattleAnimationKind::Move,
-    });
+    set_action_feedback(
+        gs,
+        actor_id,
+        action_label,
+        &events,
+        ActionAp {
+            actor_before: before_ap,
+            actor_after: after_ap,
+            scope: None,
+        },
+        false,
+    );
+    queue_event_animations(gs, &events, actor_id, false);
+    gs.tick = tick;
     Ok(())
 }
 
@@ -1612,61 +1749,112 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         _ => return Err("no actor selected".to_string()),
     };
 
-    let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
+    let action_label = player_action_label(action);
+    let before_ap = gs
+        .sim
+        .as_ref()
+        .and_then(|sim| sim.actors.get(&actor_id))
+        .map_or(0, |actor| actor.ap.0);
+    let result: Result<ImmediateActionResult, String> = (|| {
+        let (events, before_ap, after_ap, actor_name, before_stance, after_stance, position, tick) = {
+            let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
+            let sim_action = match action {
+                PlayerAction::Hold => Action::Hold,
+                PlayerAction::Reload => Action::Reload,
+                PlayerAction::Crouch => {
+                    let actor = sim
+                        .actors
+                        .get(&actor_id)
+                        .ok_or_else(|| "selected actor is missing".to_string())?;
+                    if actor.stance == Stance::Crouched {
+                        Action::RiseFromProne
+                    } else {
+                        Action::StanceCrouch
+                    }
+                }
+                PlayerAction::Prone => {
+                    if sim
+                        .actors
+                        .get(&actor_id)
+                        .is_some_and(|actor| actor.stance == pb_sim::state::Stance::Prone)
+                    {
+                        Action::RiseFromProne
+                    } else {
+                        Action::StanceProne
+                    }
+                }
+                PlayerAction::DrawBead => Action::DrawBead(actor_id),
+                PlayerAction::UseItem => Action::UseItem,
+                PlayerAction::CapAndBallReload => Action::CapAndBallReload,
+                PlayerAction::ClearJam => Action::ClearJam,
+                _ => return Err("not an immediate action".to_string()),
+            };
 
-    let sim_action = match action {
-        PlayerAction::Hold => Action::Hold,
-        PlayerAction::Reload => Action::Reload,
-        PlayerAction::Crouch => {
-            let actor = sim
+            let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+            let actor_name = sim
                 .actors
                 .get(&actor_id)
-                .ok_or_else(|| "selected actor is missing".to_string())?;
-            if actor.stance == Stance::Crouched {
-                Action::RiseFromProne
-            } else {
-                Action::StanceCrouch
-            }
-        }
-        PlayerAction::Prone => {
-            if sim
+                .map_or_else(|| "The active unit".to_string(), |actor| actor.name.clone());
+            let before_stance = sim
                 .actors
                 .get(&actor_id)
-                .is_some_and(|actor| actor.stance == pb_sim::state::Stance::Prone)
-            {
-                Action::RiseFromProne
-            } else {
-                Action::StanceProne
+                .map_or(Stance::Standing, |actor| actor.stance);
+            let events = step(
+                sim,
+                Command {
+                    actor_id,
+                    action: sim_action,
+                },
+            )
+            .map_err(|error| match error {
+                SimError::InsufficientAp { have, need, .. } if action == PlayerAction::Crouch => {
+                    format!(
+                        "Crouch needs {} AP; only {} AP remaining — 0 AP spent",
+                        need.0, have.0
+                    )
+                }
+                _ => sim_error_message(&error),
+            })?;
+            let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
+            let after_stance = sim
+                .actors
+                .get(&actor_id)
+                .map_or(before_stance, |actor| actor.stance);
+            let position = sim
+                .actors
+                .get(&actor_id)
+                .map_or(TileXY::new(0, 0), |actor| actor.position);
+            (
+                events,
+                before_ap,
+                after_ap,
+                actor_name,
+                before_stance,
+                after_stance,
+                position,
+                sim.tick.0,
+            )
+        };
+        Ok((
+            events,
+            before_ap,
+            after_ap,
+            actor_name,
+            before_stance,
+            after_stance,
+            position,
+            tick,
+        ))
+    })();
+    let (events, before_ap, after_ap, actor_name, before_stance, after_stance, position, tick) =
+        match result {
+            Ok(result) => result,
+            Err(reason) => {
+                let message =
+                    record_action_failure(gs, actor_id, &action_label, before_ap, &reason);
+                return Err(message);
             }
-        }
-        PlayerAction::DrawBead => Action::DrawBead(actor_id),
-        PlayerAction::UseItem => Action::UseItem,
-        PlayerAction::CapAndBallReload => Action::CapAndBallReload,
-        PlayerAction::ClearJam => Action::ClearJam,
-        _ => return Err("not an immediate action".to_string()),
-    };
-
-    let cmd = Command {
-        actor_id,
-        action: sim_action,
-    };
-
-    let before_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
-    let actor_name = sim
-        .actors
-        .get(&actor_id)
-        .map_or_else(|| "The active unit".to_string(), |actor| actor.name.clone());
-    let before_stance = sim
-        .actors
-        .get(&actor_id)
-        .map_or(Stance::Standing, |actor| actor.stance);
-    let events = step(sim, cmd).map_err(|error| match error {
-        SimError::InsufficientAp { have, need, .. } if action == PlayerAction::Crouch => format!(
-            "Crouch needs {} AP; only {} AP remaining — 0 AP spent",
-            need.0, have.0
-        ),
-        _ => format!("action failed: {error:?}"),
-    })?;
+        };
     let ended_by_routing = events
         .iter()
         .any(|event| matches!(event, Event::Routed { actor } if *actor == actor_id));
@@ -1676,16 +1864,7 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
         }
     }
     gs.battle_events.extend(events.iter().cloned());
-    let after_ap = sim.actors.get(&actor_id).map_or(0, |actor| actor.ap.0);
-    let after_stance = sim
-        .actors
-        .get(&actor_id)
-        .map_or(before_stance, |actor| actor.stance);
     if before_stance != after_stance {
-        let position = sim
-            .actors
-            .get(&actor_id)
-            .map_or(TileXY::new(0, 0), |actor| actor.position);
         gs.battle_animations
             .retain(|animation| animation.actor != actor_id);
         gs.battle_animations.push(BattleAnimation {
@@ -1693,6 +1872,7 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
             from: position,
             to: position,
             started: Instant::now(),
+            delay_ms: 0,
             duration_ms: 520,
             kind: BattleAnimationKind::StanceShift {
                 from: before_stance,
@@ -1700,33 +1880,20 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
             },
         });
     }
-
-    let summary = events
-        .iter()
-        .map(|e| format!("{}", e))
-        .collect::<Vec<_>>()
-        .join("; ");
-    gs.message = if action == PlayerAction::Crouch {
-        let stance_name = match after_stance {
-            Stance::Standing => "Standing",
-            Stance::Crouched => "Crouched",
-            Stance::Prone => "Prone",
-        };
-        format!(
-            "{stance_name} — AP {before_ap} - {} = {after_ap}",
-            before_ap.saturating_sub(after_ap)
-        )
-    } else {
-        format!(
-            "{:?} done. {}",
-            action,
-            if summary.is_empty() {
-                format!("AP remaining: {after_ap}")
-            } else {
-                summary
-            }
-        )
-    };
+    set_action_feedback(
+        gs,
+        actor_id,
+        &action_label,
+        &events,
+        ActionAp {
+            actor_before: before_ap,
+            actor_after: after_ap,
+            scope: None,
+        },
+        false,
+    );
+    queue_event_animations(gs, &events, actor_id, false);
+    gs.tick = tick;
 
     check_victory_conditions(gs);
     if gs.screen != crate::state::GameScreen::Battle {
@@ -1764,13 +1931,587 @@ pub fn execute_immediate_action(gs: &mut GameState, action: PlayerAction) -> Res
 fn play_sfx_from_events(audio: &mut Option<pb_audio::AudioSystem>, events: &[Event]) {
     let Some(ref audio) = *audio else { return };
     for ev in events {
-        match ev {
-            Event::ShotHit { hit: true, .. } => audio.play(pb_audio::Sfx::Hit),
-            Event::ShotHit { hit: false, .. } => audio.play(pb_audio::Sfx::Miss),
-            Event::ActorKilled { .. } => audio.play(pb_audio::Sfx::Death),
+        if let Some(sfx) = sfx_for_event(ev) {
+            audio.play(sfx);
+        }
+    }
+}
+
+fn sfx_for_event(event: &Event) -> Option<pb_audio::Sfx> {
+    match event {
+        Event::ShotHit { hit: true, .. } => Some(pb_audio::Sfx::Hit),
+        Event::ShotHit { hit: false, .. } => Some(pb_audio::Sfx::Miss),
+        Event::DamageApplied { actor, damage } if *damage > 0 => Some(damage_sfx_for_actor(*actor)),
+        Event::ActorKilled { actor } => Some(death_sfx_for_actor(*actor)),
+        _ => None,
+    }
+}
+
+fn damage_sfx_for_actor(actor: ActorId) -> pb_audio::Sfx {
+    match pb_render::sprites::character_gender(actor.0) {
+        pb_render::sprites::AvatarGender::Male => pb_audio::Sfx::DamageMale,
+        pb_render::sprites::AvatarGender::Female => pb_audio::Sfx::DamageFemale,
+    }
+}
+
+fn death_sfx_for_actor(actor: ActorId) -> pb_audio::Sfx {
+    match pb_render::sprites::character_gender(actor.0) {
+        pb_render::sprites::AvatarGender::Male => pb_audio::Sfx::DeathMale,
+        pb_render::sprites::AvatarGender::Female => pb_audio::Sfx::DeathFemale,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShotOutcome {
+    actor: ActorId,
+    target: ActorId,
+    hit: Option<bool>,
+    missed: bool,
+    damage: Option<i32>,
+    location: Option<HitLocationType>,
+    wound: Option<WoundType>,
+    critical: bool,
+    killed: bool,
+    misfire: bool,
+    jammed: bool,
+    reaction: bool,
+}
+
+fn last_shot_mut(
+    shots: &mut [ShotOutcome],
+    actor: ActorId,
+    target: Option<ActorId>,
+) -> Option<&mut ShotOutcome> {
+    shots.iter_mut().rev().find(|shot| {
+        shot.actor == actor && target.is_none_or(|target| shot.target == target) && !shot.killed
+    })
+}
+
+fn collect_shot_outcomes(events: &[Event]) -> Vec<ShotOutcome> {
+    let mut shots = Vec::new();
+    let mut reactions = Vec::new();
+    for event in events {
+        match event {
+            Event::ReactionShot { actor, target } => reactions.push((*actor, *target)),
+            Event::Fired { actor, target } => shots.push(ShotOutcome {
+                actor: *actor,
+                target: *target,
+                hit: None,
+                missed: false,
+                damage: None,
+                location: None,
+                wound: None,
+                critical: false,
+                killed: false,
+                misfire: false,
+                jammed: false,
+                reaction: reactions.iter().any(|pair| pair == &(*actor, *target)),
+            }),
+            Event::ShotHit { actor, target, hit } => {
+                if let Some(shot) = last_shot_mut(&mut shots, *actor, Some(*target)) {
+                    shot.hit = Some(*hit);
+                }
+            }
+            Event::Missed { actor, target } => {
+                if let Some(shot) = last_shot_mut(&mut shots, *actor, Some(*target)) {
+                    shot.missed = true;
+                    shot.hit = Some(false);
+                }
+            }
+            Event::HitLocation { actor, location } => {
+                if let Some(shot) = shots
+                    .iter_mut()
+                    .rev()
+                    .find(|shot| shot.target == *actor && shot.hit != Some(false) && !shot.killed)
+                {
+                    shot.location = Some(*location);
+                }
+            }
+            Event::DamageApplied { actor, damage } => {
+                if let Some(shot) = shots
+                    .iter_mut()
+                    .rev()
+                    .find(|shot| shot.target == *actor && shot.hit == Some(true) && !shot.killed)
+                {
+                    shot.damage = Some(*damage);
+                }
+            }
+            Event::WoundApplied { actor, wound } => {
+                if let Some(shot) = shots
+                    .iter_mut()
+                    .rev()
+                    .find(|shot| shot.target == *actor && shot.hit == Some(true) && !shot.killed)
+                {
+                    shot.wound = Some(*wound);
+                }
+            }
+            Event::Critical { actor, .. } => {
+                if let Some(shot) = shots
+                    .iter_mut()
+                    .rev()
+                    .find(|shot| shot.target == *actor && shot.hit == Some(true) && !shot.killed)
+                {
+                    shot.critical = true;
+                }
+            }
+            Event::ActorKilled { actor } => {
+                if let Some(shot) = shots.iter_mut().rev().find(|shot| shot.target == *actor) {
+                    shot.killed = true;
+                }
+            }
+            Event::Misfire { actor } => {
+                if let Some(shot) = last_shot_mut(&mut shots, *actor, None) {
+                    shot.misfire = true;
+                }
+            }
+            Event::Jammed { actor } => {
+                if let Some(shot) = last_shot_mut(&mut shots, *actor, None) {
+                    shot.jammed = true;
+                }
+            }
             _ => {}
         }
     }
+    shots
+}
+
+fn actor_name(sim: &SimState, actor: ActorId) -> String {
+    sim.actors
+        .get(&actor)
+        .map(|state| state.name.clone())
+        .unwrap_or_else(|| format!("Actor {}", actor.0))
+}
+
+fn compact_actor_name(sim: &SimState, actor: ActorId) -> String {
+    actor_name(sim, actor).chars().take(14).collect()
+}
+
+fn hit_location_label(location: HitLocationType) -> &'static str {
+    match location {
+        HitLocationType::Head => "HEAD",
+        HitLocationType::Eyes => "EYES",
+        HitLocationType::Torso => "TORSO",
+        HitLocationType::Vitals => "VITALS",
+        HitLocationType::GunArm => "GUN ARM",
+        HitLocationType::OffArm => "OFF ARM",
+        HitLocationType::Legs => "LEGS",
+    }
+}
+
+fn combat_shot_entry(sim: &SimState, shot: ShotOutcome) -> crate::state::CombatLogEntry {
+    use crate::state::{CombatLogEntry, CombatLogTone};
+
+    let shooter = compact_actor_name(sim, shot.actor);
+    let shooter = if shot.reaction {
+        format!("REACTION {shooter}")
+    } else {
+        shooter
+    };
+    let target = compact_actor_name(sim, shot.target);
+    if shot.misfire {
+        return CombatLogEntry {
+            text: format!(
+                "{}: MISFIRE{}",
+                shooter,
+                if shot.jammed { " / JAMMED" } else { "" }
+            ),
+            tone: CombatLogTone::Warning,
+        };
+    }
+    if shot.missed || shot.hit == Some(false) {
+        return CombatLogEntry {
+            text: format!("{} > {}: MISS", shooter, target),
+            tone: CombatLogTone::Miss,
+        };
+    }
+    if shot.hit != Some(true) {
+        return CombatLogEntry {
+            text: format!("{} > {}: FIRED", shooter, target),
+            tone: CombatLogTone::Neutral,
+        };
+    }
+
+    let mut text = format!(
+        "{}{} > {}: -{} HP",
+        if shot.critical { "CRIT " } else { "" },
+        shooter,
+        target,
+        shot.damage.unwrap_or(0)
+    );
+    if let Some(location) = shot.location {
+        text.push(' ');
+        text.push_str(hit_location_label(location));
+    }
+    if let Some(wound) = shot.wound {
+        text.push_str(" +");
+        text.push_str(&wound.to_string().to_uppercase());
+    }
+    if shot.killed {
+        text.push_str(" DOWN");
+    }
+    CombatLogEntry {
+        text,
+        tone: if shot.critical {
+            CombatLogTone::Critical
+        } else if shot.killed {
+            CombatLogTone::Defeat
+        } else {
+            CombatLogTone::Success
+        },
+    }
+}
+
+fn player_action_label(action: PlayerAction) -> String {
+    match action {
+        PlayerAction::SnapShot => "SNAPSHOT".to_string(),
+        PlayerAction::AimedShot => "AIMED SHOT".to_string(),
+        PlayerAction::CalledShot(location) => {
+            format!("CALLED SHOT {}", hit_location_label(location))
+        }
+        PlayerAction::Move => "MOVE".to_string(),
+        PlayerAction::Reload => "RELOAD".to_string(),
+        PlayerAction::Hold => "END TURN".to_string(),
+        PlayerAction::Crouch => "CROUCH / STAND".to_string(),
+        PlayerAction::Prone => "PRONE / STAND".to_string(),
+        PlayerAction::DrawBead => "OVERWATCH".to_string(),
+        PlayerAction::FanHammer => "FAN THE HAMMER".to_string(),
+        PlayerAction::Volley => "VOLLEY".to_string(),
+        PlayerAction::LeftHandDraw => "LEFT-HAND DRAW".to_string(),
+        PlayerAction::Melee => "MELEE".to_string(),
+        PlayerAction::Bandage => "BANDAGE".to_string(),
+        PlayerAction::Rally => "RALLY".to_string(),
+        PlayerAction::Loot => "LOOT".to_string(),
+        PlayerAction::ThrowDynamite => "THROW DYNAMITE".to_string(),
+        PlayerAction::CatchDynamite => "CATCH DYNAMITE".to_string(),
+        PlayerAction::RethrowDynamite => "RETHROW DYNAMITE".to_string(),
+        PlayerAction::UseItem => "USE ITEM".to_string(),
+        PlayerAction::CapAndBallReload => "CAP-AND-BALL RELOAD".to_string(),
+        PlayerAction::ClearJam => "CLEAR JAM".to_string(),
+    }
+}
+
+fn sim_action_label(action: &Action) -> String {
+    match action {
+        Action::Move(_) | Action::Sprint(_) => "MOVE".to_string(),
+        Action::Face(_) => "FACE".to_string(),
+        Action::SnapShot(_) => "SNAPSHOT".to_string(),
+        Action::AimedShot(_) => "AIMED SHOT".to_string(),
+        Action::CalledShot(_, location) => {
+            format!("CALLED SHOT {}", hit_location_label(*location))
+        }
+        Action::Reload => "RELOAD".to_string(),
+        Action::Hold => "END TURN".to_string(),
+        Action::Bandage(_) => "BANDAGE".to_string(),
+        Action::ThrowDynamite(_) => "THROW DYNAMITE".to_string(),
+        Action::CatchDynamite(_) => "CATCH DYNAMITE".to_string(),
+        Action::RethrowDynamite(_) => "RETHROW DYNAMITE".to_string(),
+        Action::Melee(_) => "MELEE".to_string(),
+        Action::UseItem => "USE ITEM".to_string(),
+        Action::StanceCrouch | Action::StanceProne | Action::RiseFromProne => "STANCE".to_string(),
+        Action::FanHammer(_) => "FAN THE HAMMER".to_string(),
+        Action::Volley(_) => "VOLLEY".to_string(),
+        Action::LeftHandDraw(_) => "LEFT-HAND DRAW".to_string(),
+        Action::CapAndBallReload => "CAP-AND-BALL RELOAD".to_string(),
+        Action::ClearJam => "CLEAR JAM".to_string(),
+        Action::DrawBead(_) => "OVERWATCH".to_string(),
+        Action::Rally(_) => "RALLY".to_string(),
+        Action::Loot(_) => "LOOT".to_string(),
+    }
+}
+
+fn combat_log_entries(
+    sim: &SimState,
+    actor_id: ActorId,
+    action_label: Option<&str>,
+    events: &[Event],
+) -> Vec<crate::state::CombatLogEntry> {
+    use crate::state::{CombatLogEntry, CombatLogTone};
+
+    let shots = collect_shot_outcomes(events);
+    if !shots.is_empty() {
+        return shots
+            .into_iter()
+            .map(|shot| combat_shot_entry(sim, shot))
+            .collect();
+    }
+
+    let damage: Vec<(ActorId, i32)> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::DamageApplied { actor, damage } => Some((*actor, *damage)),
+            _ => None,
+        })
+        .collect();
+    if !damage.is_empty() {
+        let melee = action_label == Some("MELEE");
+        let blast = events
+            .iter()
+            .any(|event| matches!(event, Event::DynamiteExploded { .. }));
+        return damage
+            .into_iter()
+            .map(|(target, amount)| {
+                let prefix = if melee {
+                    format!(
+                        "{} > {}",
+                        compact_actor_name(sim, actor_id),
+                        compact_actor_name(sim, target)
+                    )
+                } else {
+                    compact_actor_name(sim, target)
+                };
+                let critical = events.iter().any(
+                    |event| matches!(event, Event::Critical { actor, .. } if *actor == target),
+                );
+                let killed = events
+                    .iter()
+                    .any(|event| matches!(event, Event::ActorKilled { actor } if *actor == target));
+                let wound = events.iter().find_map(|event| match event {
+                    Event::WoundApplied { actor, wound } if *actor == target => Some(*wound),
+                    _ => None,
+                });
+                let mut suffix = if melee {
+                    "MELEE".to_string()
+                } else if blast {
+                    "BLAST".to_string()
+                } else {
+                    "DAMAGE".to_string()
+                };
+                if critical {
+                    suffix.push_str(" CRIT");
+                }
+                if let Some(wound) = wound {
+                    suffix.push_str(" +");
+                    suffix.push_str(&wound.to_string().to_uppercase());
+                }
+                if killed {
+                    suffix.push_str(" DOWN");
+                }
+                CombatLogEntry {
+                    text: format!("{}: -{} HP {}", prefix, amount, suffix),
+                    tone: if critical {
+                        CombatLogTone::Critical
+                    } else if killed {
+                        CombatLogTone::Defeat
+                    } else if melee {
+                        CombatLogTone::Success
+                    } else {
+                        CombatLogTone::Warning
+                    },
+                }
+            })
+            .collect();
+    }
+
+    if let Some(event) = events.iter().find(|event| {
+        matches!(
+            event,
+            Event::Moved { .. }
+                | Event::StanceChanged { .. }
+                | Event::FacingChanged { .. }
+                | Event::OverwatchSet { .. }
+        )
+    }) {
+        let text = match event {
+            Event::Moved { actor, to, .. } => {
+                format!(
+                    "{}: MOVED to {},{}",
+                    compact_actor_name(sim, *actor),
+                    to.x,
+                    to.y
+                )
+            }
+            Event::StanceChanged { actor, stance } => {
+                format!(
+                    "{}: {}",
+                    compact_actor_name(sim, *actor),
+                    stance.to_uppercase()
+                )
+            }
+            Event::FacingChanged { actor, facing } => {
+                format!(
+                    "{}: FACING {}",
+                    compact_actor_name(sim, *actor),
+                    facing.to_uppercase()
+                )
+            }
+            Event::OverwatchSet {
+                actor,
+                reaction_points,
+            } => format!(
+                "{}: OVERWATCH ({} RP)",
+                compact_actor_name(sim, *actor),
+                reaction_points
+            ),
+            _ => unreachable!("event was filtered above"),
+        };
+        return vec![CombatLogEntry {
+            text,
+            tone: CombatLogTone::Neutral,
+        }];
+    }
+
+    if let Some(event) = events.iter().find(|event| {
+        matches!(
+            event,
+            Event::ActorKilled { .. } | Event::Routed { .. } | Event::WoundApplied { .. }
+        )
+    }) {
+        let (text, tone) = match event {
+            Event::ActorKilled { actor } => (
+                format!("{}: DOWN", compact_actor_name(sim, *actor)),
+                CombatLogTone::Defeat,
+            ),
+            Event::Routed { actor } => (
+                format!("{}: ROUTED", compact_actor_name(sim, *actor)),
+                CombatLogTone::Warning,
+            ),
+            Event::WoundApplied { actor, wound } => (
+                format!(
+                    "{}: +{}",
+                    compact_actor_name(sim, *actor),
+                    wound.to_string().to_uppercase()
+                ),
+                CombatLogTone::Warning,
+            ),
+            _ => unreachable!("event was filtered above"),
+        };
+        return vec![CombatLogEntry { text, tone }];
+    }
+
+    action_label.map_or_else(Vec::new, |label| {
+        vec![CombatLogEntry {
+            text: format!("{}: {}", compact_actor_name(sim, actor_id), label),
+            tone: CombatLogTone::Neutral,
+        }]
+    })
+}
+
+fn append_combat_log(
+    game_state: &mut GameState,
+    entries: impl IntoIterator<Item = crate::state::CombatLogEntry>,
+) {
+    const MAX_COMBAT_LOG_ENTRIES: usize = 6;
+    game_state.combat_log.extend(entries);
+    if game_state.combat_log.len() > MAX_COMBAT_LOG_ENTRIES {
+        let excess = game_state.combat_log.len() - MAX_COMBAT_LOG_ENTRIES;
+        game_state.combat_log.drain(0..excess);
+    }
+}
+
+/// Convert kernel errors into short player-facing reasons. Debug formatting
+/// is intentionally kept out of the HUD: the action bar needs to explain why
+/// a click was rejected in terms a player can act on.
+fn sim_error_message(error: &SimError) -> String {
+    match error {
+        SimError::InsufficientAp { have, need, .. } => {
+            format!("need {} AP; only {} AP available", need.0, have.0)
+        }
+        SimError::ActorDead(_) => "actor is down".to_string(),
+        SimError::OutOfTurn { active, .. } => {
+            format!("another actor has the turn (actor {})", active.0)
+        }
+        SimError::ActorNotFound(actor) => format!("actor {} was not found", actor.0),
+        SimError::TargetNotFound(target) => format!("target {} was not found", target.0),
+        SimError::OutOfRange(_) => "target is out of range".to_string(),
+        SimError::NoLineOfSight(_, _) => "no line of sight".to_string(),
+        SimError::WeaponNotLoaded(_) => "weapon is empty; reload first".to_string(),
+        SimError::WeaponJammed(_) => "weapon is jammed; clear the jam first".to_string(),
+        SimError::InvalidMoveDistance { distance, .. } => {
+            format!("movement must be exactly 1 tile (or 2 for Sprint), not {distance}")
+        }
+        SimError::CannotSprint(_) => "Sprint requires Standing stance and intact legs".to_string(),
+        SimError::AlreadyInStance(_, stance) => format!("already {:?}", stance),
+        SimError::CannotUseWeapon(_) => "wounds prevent using this weapon".to_string(),
+        SimError::MustRetreat(_) => "must retreat from the nearest enemy first".to_string(),
+        SimError::NotAdjacent(_, _) => "target must be adjacent".to_string(),
+        SimError::ExplosiveNotFound(_) => "no live explosive is at that tile".to_string(),
+        SimError::CannotCatchDynamite(_) => "cannot catch that dynamite".to_string(),
+        SimError::BattleEffectSpent(_) => "this battle effect was already used".to_string(),
+        SimError::TileOccupied(_) => "that tile is occupied".to_string(),
+        SimError::OutOfBounds(_) => "that tile is outside the battlefield".to_string(),
+        SimError::InvalidWeaponAction(_) => "this weapon cannot perform that action".to_string(),
+        SimError::NoEligibleVolley(_) => {
+            "no squad shooter has 3 AP, ammunition, and a usable weapon".to_string()
+        }
+    }
+}
+
+fn player_ap_pool(sim: &SimState) -> i16 {
+    sim.actors
+        .values()
+        .filter(|actor| is_ally(actor))
+        .fold(0, |total, actor| total.saturating_add(actor.ap.0))
+}
+
+/// Publish a rejected command as a red, explicit AP equation. `step` is
+/// transactional, so an action that cannot happen must always report zero AP
+/// spent and leave the actor's AP unchanged.
+fn record_action_failure(
+    game_state: &mut GameState,
+    actor_id: ActorId,
+    action_label: &str,
+    before_ap: i16,
+    reason: &str,
+) -> String {
+    let after_ap = game_state
+        .sim
+        .as_ref()
+        .and_then(|sim| sim.actors.get(&actor_id))
+        .map_or(before_ap, |actor| actor.ap.0);
+    let spent = before_ap.saturating_sub(after_ap).max(0);
+    let actor_name = game_state
+        .sim
+        .as_ref()
+        .and_then(|sim| sim.actors.get(&actor_id))
+        .map_or_else(
+            || format!("ACTOR {}", actor_id.0),
+            |actor| actor.name.clone(),
+        );
+    let message = format!(
+        "ACTION FAILED: {action_label} | AP {before_ap} - {spent} = {after_ap} | {spent} AP spent | {reason}"
+    );
+    append_combat_log(
+        game_state,
+        [crate::state::CombatLogEntry {
+            text: format!("{actor_name}: {action_label} FAILED | {spent} AP SPENT"),
+            tone: crate::state::CombatLogTone::Failure,
+        }],
+    );
+    game_state.message = message.clone();
+    message
+}
+
+fn set_action_feedback(
+    game_state: &mut GameState,
+    actor_id: ActorId,
+    action_label: &str,
+    events: &[Event],
+    ap: ActionAp,
+    is_melee: bool,
+) {
+    let entries = game_state
+        .sim
+        .as_ref()
+        .map(|sim| combat_log_entries(sim, actor_id, Some(action_label), events))
+        .unwrap_or_default();
+    append_combat_log(game_state, entries.iter().cloned());
+    let headline = entries
+        .last()
+        .map(|entry| entry.text.clone())
+        .unwrap_or_else(|| format!("{} complete", action_label));
+    let (scope, scope_before, scope_after) =
+        ap.scope.unwrap_or(("AP", ap.actor_before, ap.actor_after));
+    let spent = scope_before.saturating_sub(scope_after).max(0);
+    game_state.message = format!(
+        "{}  |  {} {} - {} = {} (-{} spent){}",
+        headline,
+        scope,
+        scope_before,
+        spent,
+        scope_after,
+        spent,
+        if is_melee { "  |  MELEE" } else { "" }
+    );
 }
 
 /// Run AI for all alive enemies in the sim.
@@ -1834,14 +2575,16 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
             pb_ai::utility::decide_action(actor_id, &actor, &enemy_side, &player_only)
         };
         command.action = resolve_ai_target_id(command.action, &player_states);
-        let is_fire = matches!(
-            command.action,
-            Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(..)
-        );
 
         let events = {
             let sim = gs.sim.as_mut().ok_or("no simulation loaded")?;
-            match step(sim, command) {
+            match step(
+                sim,
+                Command {
+                    actor_id,
+                    action: command.action.clone(),
+                },
+            ) {
                 Ok(events) => events,
                 Err(error) => {
                     println!(
@@ -1855,6 +2598,7 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
                     } else {
                         Action::Hold
                     };
+                    command.action = fallback.clone();
                     step(
                         sim,
                         Command {
@@ -1871,25 +2615,32 @@ pub fn run_enemy_ai(gs: &mut GameState) -> Result<(), String> {
                 }
             }
         };
-        queue_event_animations(gs, &events);
+        // Resolve labels after the fallback path so the feed and sound cue
+        // describe the action that actually reached the kernel.
+        let action_label = sim_action_label(&command.action);
+        let is_melee = matches!(&command.action, Action::Melee(_));
+        let is_fire = matches!(
+            &command.action,
+            Action::SnapShot(_) | Action::AimedShot(_) | Action::CalledShot(..)
+        );
+        queue_event_animations(gs, &events, actor_id, is_melee);
+        let entries = gs
+            .sim
+            .as_ref()
+            .map(|sim| combat_log_entries(sim, actor_id, Some(action_label.as_str()), &events))
+            .unwrap_or_default();
+        append_combat_log(gs, entries);
         gs.battle_events.extend(events.iter().cloned());
 
         for event in &events {
             println!("[AI {}] {}", actor.name, event);
         }
-        if let Some(ref audio) = gs.audio {
-            if is_fire {
+        if is_fire {
+            if let Some(ref audio) = gs.audio {
                 audio.play(pb_audio::Sfx::RifleShot);
             }
-            for event in &events {
-                match event {
-                    Event::ShotHit { hit: true, .. } => audio.play(pb_audio::Sfx::Hit),
-                    Event::ShotHit { hit: false, .. } => audio.play(pb_audio::Sfx::Miss),
-                    Event::ActorKilled { .. } => audio.play(pb_audio::Sfx::Death),
-                    _ => {}
-                }
-            }
         }
+        play_sfx_from_events(&mut gs.audio, &events);
 
         if player_states.is_empty() {
             break;
@@ -2024,29 +2775,16 @@ pub fn compute_hit_chance_for_hover(game_state: &GameState) -> Option<HitChanceB
 
 /// Build per-tile visuals from the simulation state.
 fn build_tile_visuals(game_state: &GameState) -> Vec<TileVisual> {
-    let mut tiles = Vec::with_capacity((GRID_COLS * GRID_ROWS) as usize);
-
-    for y in 0..GRID_ROWS {
-        for x in 0..GRID_COLS {
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    let mut tiles = Vec::with_capacity((cols * rows) as usize);
+    for y in 0..rows {
+        for x in 0..cols {
             let tile_position = TileXY::new(x as i16, y as i16);
-            let elevation = game_state
-                .sim
-                .as_ref()
-                .and_then(|sim| sim.tile_elevations.get(&tile_position).copied())
-                .unwrap_or(0);
-            let material = game_state
-                .sim
-                .as_ref()
-                .and_then(|sim| sim.terrain_tiles.get(&tile_position))
-                .map_or(0, |terrain| pb_render::tiles::material_for_terrain(terrain));
-
-            // Actor state belongs to sprites and health meters, not terrain.
-            // Keeping this color occupancy-independent prevents unexplained
-            // green/red tiles from appearing as actors move or die.
-            let shade = 0.92 + ((x + y) % 3) as f32 * 0.025;
-            let (r, g, b) = (shade, shade, shade);
-
-            tiles.push(TileVisual::new(r, g, b, elevation).with_material(material));
+            let tile = game_state.sim.as_ref().map_or_else(
+                || TileVisual::new(0.92, 0.92, 0.92, 0),
+                |sim| pb_render::tiles::visual_tile_for_state(sim, tile_position),
+            );
+            tiles.push(tile);
         }
     }
 
@@ -2058,9 +2796,10 @@ fn build_smoke_grid(game_state: &GameState) -> Vec<SmokeTile> {
     let Some(ref sim) = game_state.sim else {
         return vec![SmokeTile::new(0); (GRID_COLS * GRID_ROWS) as usize];
     };
-    let mut tiles = Vec::with_capacity((GRID_COLS * GRID_ROWS) as usize);
-    for y in 0..GRID_ROWS {
-        for x in 0..GRID_COLS {
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    let mut tiles = Vec::with_capacity((cols * rows) as usize);
+    for y in 0..rows {
+        for x in 0..cols {
             let idx = y as usize * sim.smoke_cols as usize + x as usize;
             let density = sim.smoke_grid.get(idx).copied().unwrap_or(0);
             tiles.push(SmokeTile::new(density));
@@ -2094,8 +2833,15 @@ fn build_overlay_tiles(game_state: &GameState) -> Vec<OverlayTile> {
         })
         .collect::<Vec<_>>();
 
-    let hx = game_state.hovered_tile_x.max(0).min(GRID_COLS as i16 - 1) as u32;
-    let hy = game_state.hovered_tile_y.max(0).min(GRID_ROWS as i16 - 1) as u32;
+    let (cols, rows) = battle_grid_dimensions(game_state);
+    let hx = game_state
+        .hovered_tile_x
+        .max(0)
+        .min(cols.saturating_sub(1) as i16) as u32;
+    let hy = game_state
+        .hovered_tile_y
+        .max(0)
+        .min(rows.saturating_sub(1) as i16) as u32;
     let hovered_kind = if let Some(preview) = movement_preview(game_state) {
         if preview.crosses_overwatch {
             Some(OverlayTileKind::Overwatch {
@@ -2134,46 +2880,131 @@ fn movement_duration_ms(from: TileXY, to: TileXY, sprint: bool) -> u64 {
         .clamp(280, 900)
 }
 
-fn queue_event_animations(game_state: &mut GameState, events: &[Event]) {
+fn queue_event_animations(
+    game_state: &mut GameState,
+    events: &[Event],
+    actor_id: ActorId,
+    is_melee: bool,
+) {
     let started = Instant::now();
     let mut queued = Vec::new();
     for event in events {
-        match *event {
-            Event::Moved { actor, from, to } => queued.push(BattleAnimation {
+        if let Event::Moved { actor, from, to } = *event {
+            queued.push(BattleAnimation {
                 actor,
                 from,
                 to,
                 started,
+                delay_ms: 0,
                 duration_ms: movement_duration_ms(from, to, false),
                 kind: BattleAnimationKind::Move,
-            }),
-            Event::Fired { actor, target } => {
-                let positions = game_state.sim.as_ref().and_then(|sim| {
-                    Some((
-                        sim.actors.get(&actor)?.position,
-                        sim.actors.get(&target)?.position,
-                    ))
-                });
-                if let Some((from, to)) = positions {
-                    queued.push(BattleAnimation {
-                        actor,
-                        from,
-                        to,
-                        started,
-                        duration_ms: 720,
-                        kind: BattleAnimationKind::Recoil,
-                    });
-                }
-            }
-            _ => {}
+            });
         }
     }
-    for animation in queued {
-        game_state
-            .battle_animations
-            .retain(|active| active.actor != animation.actor);
-        game_state.battle_animations.push(animation);
+
+    let shots = collect_shot_outcomes(events);
+    for (index, shot) in shots.into_iter().enumerate() {
+        let Some((from, to)) = game_state.sim.as_ref().and_then(|sim| {
+            Some((
+                sim.actors.get(&shot.actor)?.position,
+                sim.actors.get(&shot.target)?.position,
+            ))
+        }) else {
+            continue;
+        };
+        let delay_ms = index as u64 * 180;
+        queued.push(BattleAnimation {
+            actor: shot.actor,
+            from,
+            to,
+            started,
+            delay_ms,
+            duration_ms: 760,
+            kind: BattleAnimationKind::Recoil {
+                hit: shot.hit == Some(true),
+            },
+        });
+        if shot.hit == Some(true) {
+            queued.push(BattleAnimation {
+                actor: shot.target,
+                from: to,
+                to,
+                started,
+                delay_ms: delay_ms + 260,
+                duration_ms: 620,
+                kind: BattleAnimationKind::HitReact {
+                    damage: shot.damage.unwrap_or(0),
+                    critical: shot.critical,
+                    killed: shot.killed,
+                },
+            });
+        } else if shot.hit == Some(false) {
+            queued.push(BattleAnimation {
+                actor: shot.target,
+                from: to,
+                to,
+                started,
+                delay_ms: delay_ms + 230,
+                duration_ms: 460,
+                kind: BattleAnimationKind::NearMiss,
+            });
+        }
     }
+
+    if is_melee {
+        let target = events.iter().find_map(|event| match event {
+            Event::DamageApplied { actor, .. } => Some(*actor),
+            _ => None,
+        });
+        if let Some(target) = target {
+            let positions = game_state.sim.as_ref().and_then(|sim| {
+                Some((
+                    sim.actors.get(&actor_id)?.position,
+                    sim.actors.get(&target)?.position,
+                ))
+            });
+            if let Some((from, to)) = positions {
+                let damage = events.iter().find_map(|event| match event {
+                    Event::DamageApplied {
+                        actor: target_id,
+                        damage,
+                    } if *target_id == target => Some(*damage),
+                    _ => None,
+                });
+                let killed = events.iter().any(
+                    |event| matches!(event, Event::ActorKilled { actor: id } if *id == target),
+                );
+                queued.push(BattleAnimation {
+                    actor: actor_id,
+                    from,
+                    to,
+                    started,
+                    delay_ms: 0,
+                    duration_ms: 520,
+                    kind: BattleAnimationKind::MeleeStrike,
+                });
+                queued.push(BattleAnimation {
+                    actor: target,
+                    from: to,
+                    to,
+                    started,
+                    delay_ms: 220,
+                    duration_ms: 560,
+                    kind: BattleAnimationKind::HitReact {
+                        damage: damage.unwrap_or(0),
+                        critical: false,
+                        killed,
+                    },
+                });
+            }
+        }
+    }
+
+    let affected: Vec<ActorId> = queued.iter().map(|animation| animation.actor).collect();
+    game_state
+        .battle_animations
+        .retain(|active| !affected.contains(&active.actor));
+    game_state.battle_animations.extend(queued);
 }
 
 fn health_meter_sprites(
@@ -2241,6 +3072,10 @@ struct BodyMotion {
     scale_y: f32,
     top_sway: f32,
     top_scale_x: f32,
+    leg_sway: f32,
+    leg_lift: f32,
+    hip_rotation: f32,
+    arm_swing: f32,
 }
 
 impl Default for BodyMotion {
@@ -2253,8 +3088,51 @@ impl Default for BodyMotion {
             scale_y: 1.0,
             top_sway: 0.0,
             top_scale_x: 1.0,
+            leg_sway: 0.0,
+            leg_lift: 0.0,
+            hip_rotation: 0.0,
+            arm_swing: 0.0,
         }
     }
+}
+
+/// Build a bounded walk cycle for the presentation layer.
+///
+/// The phase is identity-offset so a squad does not march in lockstep. The
+/// envelope fades the gait in and out at the tile boundaries, keeping the
+/// planted feet continuous with the standing pose.
+fn walk_cycle_motion(actor_id: ActorId, progress: f32, distance: f32) -> BodyMotion {
+    let progress = progress.clamp(0.0, 1.0);
+    let phase_offset = actor_id.0 as f32 * 0.731;
+    let phase = progress * distance.max(1.0) * std::f32::consts::TAU * 1.4 + phase_offset;
+    let fade_in = smoothstep01(progress / 0.12);
+    let fade_out = smoothstep01((1.0 - progress) / 0.12);
+    let envelope = fade_in * fade_out;
+    let stride = phase.sin() * envelope;
+    let step_lift = phase.sin().abs() * envelope;
+
+    BodyMotion {
+        // Keep the whole-body motion restrained; the subdivided sprite carries
+        // the readable lower/upper gait while the tile anchor stays stable.
+        lift: step_lift * 1.15,
+        sway: stride * 0.55,
+        rotation: stride * 0.012,
+        scale_x: 1.0 - stride.abs() * 0.008,
+        scale_y: 1.0 + stride.abs() * 0.012,
+        top_sway: -stride * 1.8,
+        top_scale_x: 1.0 - stride.abs() * 0.006,
+        leg_sway: stride * 2.4,
+        leg_lift: step_lift * 1.6,
+        hip_rotation: stride * 0.16,
+        // Arms counter-swing with the hips, which makes the gait readable even
+        // when the actor is moving only one tile.
+        arm_swing: -stride * 0.11,
+    }
+}
+
+fn smoothstep01(value: f32) -> f32 {
+    let t = value.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Continuous presentation-only motion for a living actor.
@@ -2288,6 +3166,10 @@ fn idle_body_motion(
             scale_y: 1.0 + breath * 0.007,
             top_sway: (weight * 1.25 + settle * 0.45) * steadiness,
             top_scale_x: 1.0 + breath * 0.004,
+            leg_sway: 0.0,
+            leg_lift: 0.0,
+            hip_rotation: 0.0,
+            arm_swing: 0.0,
         },
         Stance::Crouched => BodyMotion {
             lift: breath * 0.34 + settle.abs() * 0.14,
@@ -2297,6 +3179,10 @@ fn idle_body_motion(
             scale_y: 1.0 + breath * 0.009,
             top_sway: (weight * 1.7 + settle * 0.62) * steadiness,
             top_scale_x: 1.0 + breath * 0.006,
+            leg_sway: 0.0,
+            leg_lift: 0.0,
+            hip_rotation: 0.0,
+            arm_swing: 0.0,
         },
         Stance::Prone => BodyMotion {
             lift: breath * 0.18,
@@ -2306,16 +3192,30 @@ fn idle_body_motion(
             scale_y: 1.0 + breath * 0.012,
             top_sway: (weight * 0.5 + settle * 0.28) * steadiness,
             top_scale_x: 1.0 + breath * 0.005,
+            leg_sway: 0.0,
+            leg_lift: 0.0,
+            hip_rotation: 0.0,
+            arm_swing: 0.0,
         },
     }
 }
 
-fn stance_sprite_shape(stance: Stance) -> (f32, f32, f32) {
+fn stance_sprite_shape(stance: Stance) -> (f32, f32) {
     match stance {
-        Stance::Standing => (1.0, 1.0, 0.0),
-        Stance::Crouched => (0.82, 1.0, -5.0),
-        Stance::Prone => (0.58, 1.18, -12.0),
+        Stance::Standing => (1.0, 1.0),
+        Stance::Crouched => (0.82, 1.0),
+        Stance::Prone => (0.58, 1.18),
     }
+}
+
+fn animation_progress(animation: &BattleAnimation) -> Option<f32> {
+    let elapsed_ms = animation.started.elapsed().as_millis();
+    let delay_ms = u128::from(animation.delay_ms);
+    if elapsed_ms < delay_ms {
+        return None;
+    }
+    let active_ms = elapsed_ms.saturating_sub(delay_ms);
+    Some((active_ms as f32 / animation.duration_ms.max(1) as f32).clamp(0.0, 1.0))
 }
 
 /// Build sprite instances from all actors in the simulation.
@@ -2334,8 +3234,6 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
     let mut unit_meters = Vec::with_capacity(sim.actors.len() * 3);
 
     for (id, actor) in &sim.actors {
-        let half_w = TILE_W * 0.5;
-        let half_h = TILE_H * 0.5;
         let mut display_x = actor.position.x as f32;
         let mut display_y = actor.position.y as f32;
         let mut display_elevation = sim
@@ -2350,16 +3248,18 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
             Some(*id) == selected_id,
             actor.alive,
         );
-        let mut firing_effect = None;
+        let mut firing_effects = Vec::new();
+        let mut impact_effects = Vec::new();
+        let mut near_miss_effects = Vec::new();
         let mut stance_transition = None;
-        if let Some(animation) = game_state
+        for animation in game_state
             .battle_animations
             .iter()
-            .rev()
-            .find(|animation| animation.actor == *id)
+            .filter(|animation| animation.actor == *id)
         {
-            let elapsed_ms = animation.started.elapsed().as_secs_f32() * 1_000.0;
-            let progress = (elapsed_ms / animation.duration_ms.max(1) as f32).clamp(0.0, 1.0);
+            let Some(progress) = animation_progress(animation) else {
+                continue;
+            };
             match animation.kind {
                 BattleAnimationKind::Move if progress < 1.0 => {
                     let eased = 1.0 - (1.0 - progress).powi(3);
@@ -2377,16 +3277,20 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                     display_elevation = from_elevation + (to_elevation - from_elevation) * eased;
                     let distance = f32::from(animation.from.x.abs_diff(animation.to.x))
                         + f32::from(animation.from.y.abs_diff(animation.to.y));
-                    let stride = (progress * distance.max(1.0) * std::f32::consts::TAU * 1.4).sin();
-                    motion.lift += stride.abs() * 4.5;
-                    motion.sway += stride * 2.4;
-                    motion.rotation += stride * 0.035;
-                    motion.scale_x *= 1.0 - stride.abs() * 0.025;
-                    motion.scale_y *= 1.0 + stride.abs() * 0.035;
-                    motion.top_sway += stride * 2.8;
-                    motion.top_scale_x *= 1.0 - stride.abs() * 0.012;
+                    let gait = walk_cycle_motion(*id, progress, distance);
+                    motion.lift += gait.lift;
+                    motion.sway += gait.sway;
+                    motion.rotation += gait.rotation;
+                    motion.scale_x *= gait.scale_x;
+                    motion.scale_y *= gait.scale_y;
+                    motion.top_sway += gait.top_sway;
+                    motion.top_scale_x *= gait.top_scale_x;
+                    motion.leg_sway += gait.leg_sway;
+                    motion.leg_lift += gait.leg_lift;
+                    motion.hip_rotation += gait.hip_rotation;
+                    motion.arm_swing += gait.arm_swing;
                 }
-                BattleAnimationKind::Recoil if progress < 1.0 => {
+                BattleAnimationKind::Recoil { hit } if progress < 1.0 => {
                     let kick = if progress < 0.16 {
                         (progress / 0.16 * std::f32::consts::FRAC_PI_2).sin()
                     } else {
@@ -2401,8 +3305,51 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                     motion.top_sway -= kick * 7.5;
                     motion.top_scale_x *= 1.0 + kick * 0.025;
                     if progress < 0.32 {
-                        firing_effect = Some((animation.from, animation.to, 1.0 - progress / 0.32));
+                        firing_effects.push((
+                            animation.from,
+                            animation.to,
+                            1.0 - progress / 0.32,
+                            progress / 0.32,
+                            hit,
+                        ));
                     }
+                }
+                BattleAnimationKind::HitReact {
+                    damage,
+                    critical,
+                    killed,
+                } if progress < 1.0 => {
+                    let decay = 1.0 - progress;
+                    let shake = (progress * std::f32::consts::TAU * 3.2).sin() * decay;
+                    motion.sway += shake * if critical { 7.0 } else { 4.5 };
+                    motion.rotation += shake * if critical { 0.08 } else { 0.05 };
+                    motion.scale_x *= 1.0 + decay * if critical { 0.10 } else { 0.05 };
+                    motion.scale_y *= 1.0 - decay * if killed { 0.08 } else { 0.025 };
+                    impact_effects.push((decay, critical, killed, damage));
+                }
+                BattleAnimationKind::NearMiss if progress < 1.0 => {
+                    let decay = 1.0 - progress;
+                    motion.sway += (progress * std::f32::consts::TAU * 2.0).sin() * decay * 1.5;
+                    near_miss_effects.push(decay);
+                }
+                BattleAnimationKind::MeleeStrike if progress < 1.0 => {
+                    let eased = (progress * std::f32::consts::PI).sin();
+                    display_x = animation.from.x as f32
+                        + (animation.to.x - animation.from.x) as f32 * eased * 0.42;
+                    display_y = animation.from.y as f32
+                        + (animation.to.y - animation.from.y) as f32 * eased * 0.42;
+                    let from_elevation = sim
+                        .tile_elevations
+                        .get(&animation.from)
+                        .copied()
+                        .unwrap_or(0) as f32;
+                    let to_elevation =
+                        sim.tile_elevations.get(&animation.to).copied().unwrap_or(0) as f32;
+                    display_elevation =
+                        from_elevation + (to_elevation - from_elevation) * eased * 0.42;
+                    motion.sway += (animation.to.x - animation.from.x) as f32 * eased * 3.0;
+                    motion.lift += eased * 2.0;
+                    motion.rotation += eased * 0.04;
                 }
                 BattleAnimationKind::StanceShift { from, to } if progress < 1.0 => {
                     let eased = progress * progress * (3.0 - 2.0 * progress);
@@ -2414,19 +3361,23 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                 _ => {}
             }
         }
-        let wx = (display_x - display_y) * half_w + motion.sway;
-        let wy = (display_x + display_y) * half_h
-            + motion.lift
-            + display_elevation * pb_render::tiles::ELEVATION_SCREEN_STEP;
+        let [base_wx, base_wy] =
+            tiles::iso_world_center_with_elevation(display_x, display_y, display_elevation);
+        let wx = base_wx + motion.sway;
+        let wy = base_wy + motion.lift;
         let z = if actor.alive { 2.0 } else { 0.5 };
 
         let mut sprite = SpriteInstance::new(wx, wy, z);
         sprite.width = 58.0 * motion.scale_x;
         sprite.height = 82.0 * motion.scale_y;
         sprite.rotation = motion.rotation;
+        sprite.anchor_bottom = true;
         sprite.top_sway = motion.top_sway;
         sprite.top_scale_x = motion.top_scale_x;
-        sprite.y -= 24.0;
+        sprite.leg_sway = motion.leg_sway;
+        sprite.leg_lift = motion.leg_lift;
+        sprite.hip_rotation = motion.hip_rotation;
+        sprite.arm_swing = motion.arm_swing;
         sprite.set_character(id.0);
 
         if !actor.alive {
@@ -2435,7 +3386,7 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
             sprite.b = 0.2;
             sprite.a = 0.48;
         } else {
-            let (height_scale, width_scale, vertical_offset) = stance_transition.map_or_else(
+            let (height_scale, width_scale) = stance_transition.map_or_else(
                 || stance_sprite_shape(actor.stance),
                 |(from, to, progress)| {
                     let from = stance_sprite_shape(from);
@@ -2443,13 +3394,11 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                     (
                         from.0 + (to.0 - from.0) * progress,
                         from.1 + (to.1 - from.1) * progress,
-                        from.2 + (to.2 - from.2) * progress,
                     )
                 },
             );
             sprite.height *= height_scale;
             sprite.width *= width_scale;
-            sprite.y += vertical_offset;
             if Some(*id) == selected_id {
                 sprite.r = 1.0;
                 sprite.g = 1.0;
@@ -2469,7 +3418,7 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
         }
 
         if actor.alive {
-            let meter_y = sprite.y + sprite.height * 0.5 + 10.0;
+            let meter_y = sprite.y + sprite.height + 10.0;
             unit_meters.extend(health_meter_sprites(
                 sprite.x,
                 meter_y,
@@ -2481,15 +3430,15 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
         }
         sprites.push(sprite);
 
-        if let Some((from, to, alpha)) = firing_effect {
-            let from_wx = f32::from(from.x - from.y) * half_w;
-            let from_wy = f32::from(from.x + from.y) * half_h
-                + sim.tile_elevations.get(&from).copied().unwrap_or(0) as f32
-                    * pb_render::tiles::ELEVATION_SCREEN_STEP;
-            let to_wx = f32::from(to.x - to.y) * half_w;
-            let to_wy = f32::from(to.x + to.y) * half_h
-                + sim.tile_elevations.get(&to).copied().unwrap_or(0) as f32
-                    * pb_render::tiles::ELEVATION_SCREEN_STEP;
+        for (from, to, alpha, travel, hit) in firing_effects {
+            let [from_wx, from_wy] = tiles::tile_center_with_elevation(
+                from,
+                sim.tile_elevations.get(&from).copied().unwrap_or(0),
+            );
+            let [to_wx, to_wy] = tiles::tile_center_with_elevation(
+                to,
+                sim.tile_elevations.get(&to).copied().unwrap_or(0),
+            );
             let delta_x = to_wx - from_wx;
             let delta_y = to_wy - from_wy;
             let length = (delta_x * delta_x + delta_y * delta_y).sqrt().max(1.0);
@@ -2497,7 +3446,27 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
             let direction_y = delta_y / length;
             let angle = direction_y.atan2(direction_x);
             let muzzle_x = wx + direction_x * 34.0;
-            let muzzle_y = wy - 17.0 + direction_y * 24.0;
+            let muzzle_y = sprite.y + sprite.height * 0.68 + direction_y * 24.0;
+
+            let target_x = to_wx;
+            let target_y = to_wy + 41.0;
+            let tip_x = muzzle_x + (target_x - muzzle_x) * travel;
+            let tip_y = muzzle_y + (target_y - muzzle_y) * travel;
+            let tracer_length = 24.0;
+            let mut tracer = SpriteInstance::new(
+                tip_x - direction_x * tracer_length * 0.5,
+                tip_y - direction_y * tracer_length * 0.5,
+                z + 0.22,
+            );
+            tracer.width = tracer_length;
+            tracer.height = if hit { 3.0 } else { 2.0 };
+            tracer.rotation = angle;
+            tracer.r = 1.0;
+            tracer.g = if hit { 0.86 } else { 0.72 };
+            tracer.b = if hit { 0.28 } else { 0.16 };
+            tracer.a = alpha * 0.9;
+            tracer.set_solid_color();
+            sprites.push(tracer);
 
             for (rotation, width, height, opacity) in [
                 (angle, 30.0, 6.0, alpha),
@@ -2516,6 +3485,58 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
                 sprites.push(flash);
             }
         }
+
+        for (alpha, critical, killed, damage) in impact_effects {
+            let size = if critical { 34.0 } else { 26.0 };
+            let impact_y = sprite.y + sprite.height * 0.52;
+            for (rotation, width, height, opacity) in [
+                (0.0, size, 4.0, alpha),
+                (std::f32::consts::FRAC_PI_2, size, 4.0, alpha * 0.82),
+                (std::f32::consts::FRAC_PI_4, size * 0.78, 3.0, alpha * 0.68),
+            ] {
+                let mut burst = SpriteInstance::new(wx, impact_y, z + 0.24);
+                burst.width = width;
+                burst.height = height;
+                burst.rotation = rotation;
+                burst.r = 1.0;
+                burst.g = if killed {
+                    0.34
+                } else if critical {
+                    0.22
+                } else {
+                    0.62
+                };
+                burst.b = if critical { 0.08 } else { 0.18 };
+                burst.a = opacity;
+                burst.set_solid_color();
+                sprites.push(burst);
+            }
+            let mut damage_tick =
+                SpriteInstance::new(wx, sprite.y + sprite.height + 24.0, z + 0.25);
+            damage_tick.width = (8.0 + damage as f32 * 0.35).clamp(10.0, 32.0);
+            damage_tick.height = if critical { 5.0 } else { 3.0 };
+            damage_tick.r = 1.0;
+            damage_tick.g = if critical { 0.3 } else { 0.82 };
+            damage_tick.b = 0.16;
+            damage_tick.a = alpha * 0.8;
+            damage_tick.set_solid_color();
+            sprites.push(damage_tick);
+        }
+
+        for alpha in near_miss_effects {
+            for rotation in [0.0, std::f32::consts::FRAC_PI_2] {
+                let mut marker = SpriteInstance::new(wx, sprite.y + 4.0, z + 0.23);
+                marker.width = 22.0;
+                marker.height = 2.0;
+                marker.rotation = rotation;
+                marker.r = 0.9;
+                marker.g = 0.76;
+                marker.b = 0.28;
+                marker.a = alpha * 0.75;
+                marker.set_solid_color();
+                sprites.push(marker);
+            }
+        }
     }
 
     // Draw unit meters after all character and weapon-effect quads so they
@@ -2529,6 +3550,7 @@ fn build_sprite_instances(game_state: &GameState) -> Vec<SpriteInstance> {
 mod coverage_tests {
     use super::*;
     use crate::state::GameScreen;
+    use pb_sim::clock::build_actor;
     use std::path::PathBuf;
 
     fn content_root() -> PathBuf {
@@ -2608,6 +3630,21 @@ mod coverage_tests {
     }
 
     #[test]
+    fn renderer_uses_authored_map_dimensions_instead_of_default_dimensions() {
+        let root = content_root();
+        let mut state = GameState::new();
+        crate::campaign::start_new(&mut state, &root, 90210).expect("new campaign");
+        state.current_mission = Some("m002_pawnee_fork".to_string());
+        state.screen = GameScreen::Battle;
+        init_combat(&mut state, &root).expect("combat initialized");
+
+        assert_eq!(state.sim.as_ref().expect("simulation").smoke_cols, 24);
+        assert_eq!(state.sim.as_ref().expect("simulation").smoke_rows, 14);
+        assert_eq!(build_tile_visuals(&state).len(), 24 * 14);
+        assert_eq!(build_smoke_grid(&state).len(), 24 * 14);
+    }
+
+    #[test]
     fn terrain_colors_do_not_change_when_actors_move_or_die() {
         let mut state = authored_battle();
         let actor_id = active_ally(&state);
@@ -2662,9 +3699,10 @@ mod coverage_tests {
                     }
                 )
         }));
+        assert!(state.message.contains("CROUCHED"));
         assert!(state
             .message
-            .contains(&format!("AP {before_ap} - 1 = {}", after_first.ap.0)));
+            .contains(&format!("AP {} - 1 = {}", before_ap, after_first.ap.0)));
 
         state.phase = InteractionPhase::SelectedActor(actor_id);
         execute_immediate_action(&mut state, PlayerAction::Crouch).expect("stand again");
@@ -2681,7 +3719,7 @@ mod coverage_tests {
                     }
                 )
         }));
-        assert!(state.message.contains("Standing"));
+        assert!(state.message.contains("STANDING"));
         assert!(state.message.contains(&format!(
             "AP {} - 1 = {}",
             after_first.ap.0, after_second.ap.0
@@ -2703,6 +3741,65 @@ mod coverage_tests {
         assert_eq!(actor.stance, Stance::Standing);
         assert_eq!(actor.ap, pb_core::ids::Ap(0));
         assert!(error.contains("0 AP spent"));
+    }
+
+    #[test]
+    fn rejected_click_reports_zero_ap_and_keeps_selected_actor_turn() {
+        let mut game = GameState::new();
+        let actor_id = ActorId(1);
+        let mut sim = SimState::new(42, 1);
+        let mut actor = build_actor(actor_id, "Player", 5, 100, 20, TileXY::new(2, 2));
+        actor.faction_id = "player".to_string();
+        actor.ap = pb_core::ids::Ap(1);
+        sim.active_actor = Some(actor_id);
+        sim.actors.insert(actor_id, actor);
+        game.sim = Some(sim);
+        game.phase = InteractionPhase::SelectedActor(actor_id);
+        game.hovered_tile_x = 4;
+        game.hovered_tile_y = 2;
+
+        assert!(handle_combat_click(&mut game, CombatPointerButton::Left, 1_000, 800).is_ok());
+        assert_eq!(game.phase, InteractionPhase::SelectedActor(actor_id));
+        assert_eq!(
+            game.sim.as_ref().expect("simulation").actors[&actor_id]
+                .ap
+                .0,
+            1
+        );
+        assert!(game.message.contains("ACTION FAILED: SPRINT"));
+        assert!(game.message.contains("AP 1 - 0 = 1"));
+        assert!(game.message.contains("0 AP spent"));
+        assert_eq!(
+            game.combat_log.last().expect("failure log").tone,
+            crate::state::CombatLogTone::Failure
+        );
+    }
+
+    #[test]
+    fn tactical_buttons_display_authoritative_ap_costs_and_end_turn_semantics() {
+        let mut game = GameState::new();
+        let actor_id = ActorId(1);
+        let mut sim = SimState::new(42, 1);
+        let mut actor = build_actor(actor_id, "Player", 5, 100, 20, TileXY::new(2, 2));
+        actor.faction_id = "player".to_string();
+        actor.ap = pb_core::ids::Ap(6);
+        sim.active_actor = Some(actor_id);
+        sim.actors.insert(actor_id, actor);
+        game.sim = Some(sim);
+        game.phase = InteractionPhase::SelectedActor(actor_id);
+
+        assert_eq!(
+            battle_action_button_label(&game, BattleHudAction::Fire),
+            "FIRE [3 AP]"
+        );
+        assert_eq!(
+            battle_action_button_label(&game, BattleHudAction::Aim),
+            "AIM [4 AP]"
+        );
+        assert_eq!(
+            battle_action_button_label(&game, BattleHudAction::Hold),
+            "END TURN [ALL AP]"
+        );
     }
 
     #[test]
@@ -2936,12 +4033,33 @@ mod turn_tests {
         game.sim = Some(sim);
         game.camera_zoom = 1.0;
         game.mouse_x = 500.0;
-        // Tile (5,5) projects to world (0,160); the 82px sprite is centred
-        // 24px above its feet, at client-space y=264.
-        game.mouse_y = 264.0;
+        // Tile (5,5) projects to world (0,160); the 82px sprite is now
+        // bottom-anchored to that tile, putting its visual center near y=214
+        // at the fitted 1,000x800 battle viewport.
+        game.mouse_y = 214.0;
 
         assert!(handle_combat_click(&mut game, CombatPointerButton::Left, 1_000, 800).is_ok());
         assert_eq!(game.phase, InteractionPhase::SelectedActor(id));
+    }
+
+    #[test]
+    fn every_actor_render_anchor_is_planted_on_one_grid_tile() {
+        let mut game = GameState::new();
+        let mut sim = SimState::new(42, 1);
+        for (id, faction, position) in [
+            (ActorId(1), "player", TileXY::new(5, 5)),
+            (ActorId(2), "enemy", TileXY::new(8, 5)),
+        ] {
+            let mut actor = build_actor(id, "Actor", 5, 100, 20, position);
+            actor.faction_id = faction.to_string();
+            sim.actors.insert(id, actor);
+        }
+        game.sim = Some(sim);
+        let sprites = build_sprite_instances(&game);
+        let mut character_sprites = sprites.iter().filter(|sprite| sprite.u0 >= 0.0);
+
+        assert_eq!(character_sprites.clone().count(), 2);
+        assert!(character_sprites.all(|sprite| sprite.anchor_bottom));
     }
 
     #[test]
@@ -3225,6 +4343,20 @@ mod turn_tests {
     }
 
     #[test]
+    fn walking_cycle_animates_legs_hips_and_counter_swinging_arms() {
+        let first = walk_cycle_motion(ActorId(1), 0.24, 1.0);
+        let second = walk_cycle_motion(ActorId(1), 0.74, 1.0);
+
+        assert!(first.leg_sway.abs() > 0.1);
+        assert!(first.leg_lift > 0.0);
+        assert!(first.hip_rotation.abs() > 0.01);
+        assert!(first.arm_swing.abs() > 0.01);
+        assert!(first.arm_swing.signum() != first.hip_rotation.signum());
+        assert_ne!(first.leg_sway, second.leg_sway);
+        assert_ne!(first.arm_swing, second.arm_swing);
+    }
+
+    #[test]
     fn firing_animation_adds_three_solid_muzzle_flash_layers() {
         let mut game = GameState::new();
         let mut sim = SimState::new(42, 1);
@@ -3244,12 +4376,13 @@ mod turn_tests {
             from: actor_position,
             to: target_position,
             started: Instant::now(),
+            delay_ms: 0,
             duration_ms: 520,
-            kind: BattleAnimationKind::Recoil,
+            kind: BattleAnimationKind::Recoil { hit: true },
         });
 
         let sprites = build_sprite_instances(&game);
-        assert_eq!(sprites.len(), 11);
+        assert_eq!(sprites.len(), 12);
         assert_eq!(
             sprites
                 .iter()
@@ -3264,6 +4397,97 @@ mod turn_tests {
     }
 
     #[test]
+    fn combat_feedback_keeps_damage_location_and_animation_in_sync() {
+        let shooter_id = ActorId(1);
+        let target_id = ActorId(2);
+        let shooter_position = TileXY::new(2, 2);
+        let target_position = TileXY::new(5, 2);
+        let mut sim = SimState::new(42, 1);
+        let mut shooter = build_actor(shooter_id, "Player", 5, 100, 20, shooter_position);
+        shooter.faction_id = "player".to_string();
+        let mut target = build_actor(target_id, "Enemy", 5, 100, 20, target_position);
+        target.faction_id = "enemy".to_string();
+        sim.actors.insert(shooter_id, shooter);
+        sim.actors.insert(target_id, target);
+
+        let events = vec![
+            Event::Fired {
+                actor: shooter_id,
+                target: target_id,
+            },
+            Event::ShotHit {
+                actor: shooter_id,
+                target: target_id,
+                hit: true,
+            },
+            Event::HitLocation {
+                actor: target_id,
+                location: HitLocationType::Head,
+            },
+            Event::DamageApplied {
+                actor: target_id,
+                damage: 12,
+            },
+            Event::WoundApplied {
+                actor: target_id,
+                wound: WoundType::Bleeding,
+            },
+            Event::Critical {
+                actor: target_id,
+                effect: "stagger".to_string(),
+            },
+            Event::ActorKilled { actor: target_id },
+        ];
+
+        let entries = combat_log_entries(&sim, shooter_id, Some("AIMED SHOT"), &events);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].tone, crate::state::CombatLogTone::Critical);
+        assert!(entries[0]
+            .text
+            .contains("CRIT Player > Enemy: -12 HP HEAD +BLEEDING DOWN"));
+
+        let melee_entries = combat_log_entries(
+            &sim,
+            shooter_id,
+            Some("MELEE"),
+            &[
+                Event::DamageApplied {
+                    actor: target_id,
+                    damage: 7,
+                },
+                Event::WoundApplied {
+                    actor: target_id,
+                    wound: WoundType::Bleeding,
+                },
+                Event::ActorKilled { actor: target_id },
+            ],
+        );
+        assert_eq!(melee_entries[0].tone, crate::state::CombatLogTone::Defeat);
+        assert!(melee_entries[0]
+            .text
+            .contains("Player > Enemy: -7 HP MELEE +BLEEDING DOWN"));
+
+        let mut game = GameState::new();
+        game.sim = Some(sim);
+        queue_event_animations(&mut game, &events, shooter_id, false);
+        assert!(game.battle_animations.iter().any(|animation| {
+            animation.actor == shooter_id
+                && matches!(animation.kind, BattleAnimationKind::Recoil { hit: true })
+        }));
+        assert!(game.battle_animations.iter().any(|animation| {
+            animation.actor == target_id
+                && matches!(
+                    animation.kind,
+                    BattleAnimationKind::HitReact {
+                        damage: 12,
+                        critical: true,
+                        killed: true
+                    }
+                )
+        }));
+    }
+
+    #[test]
     fn health_meter_fill_tracks_damage_and_uses_critical_color() {
         let [frame, track, fill] = health_meter_sprites(100.0, 80.0, 3.0, 25, 100, false);
 
@@ -3273,5 +4497,33 @@ mod turn_tests {
         assert_eq!(fill.x, 82.0);
         assert!(fill.r > fill.g, "critical health should be red");
         assert!(fill.visible);
+    }
+
+    #[test]
+    fn damage_and_death_cues_follow_the_visible_avatar_identity() {
+        let male = ActorId(0);
+        let female = ActorId(6);
+        assert_eq!(damage_sfx_for_actor(male), pb_audio::Sfx::DamageMale);
+        assert_eq!(damage_sfx_for_actor(female), pb_audio::Sfx::DamageFemale);
+        assert_eq!(death_sfx_for_actor(male), pb_audio::Sfx::DeathMale);
+        assert_eq!(death_sfx_for_actor(female), pb_audio::Sfx::DeathFemale);
+        assert_eq!(
+            sfx_for_event(&Event::DamageApplied {
+                actor: female,
+                damage: 5,
+            }),
+            Some(pb_audio::Sfx::DamageFemale)
+        );
+        assert_eq!(
+            sfx_for_event(&Event::ActorKilled { actor: male }),
+            Some(pb_audio::Sfx::DeathMale)
+        );
+        assert_eq!(
+            sfx_for_event(&Event::DamageApplied {
+                actor: male,
+                damage: 0,
+            }),
+            None
+        );
     }
 }

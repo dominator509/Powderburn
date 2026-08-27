@@ -42,14 +42,30 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let bright = smoothstep(0.72, 0.92, highest);
     let white_key = neutral * bright;
     let green_dominance = tex_color.g - max(tex_color.r, tex_color.b);
+    // The prop atlas is authored against a saturated green backing. A tight
+    // key plus spill suppression removes the neon fringe that otherwise makes
+    // rocks, trees, and fences look pasted onto the ground. The lower green
+    // threshold preserves the darker green foliage inside the keyed assets.
     let chroma_key =
-        smoothstep(0.01, 0.08, green_dominance) * smoothstep(0.16, 0.45, tex_color.g);
+        smoothstep(0.025, 0.12, green_dominance) * smoothstep(0.28, 0.78, tex_color.g);
     let keyed_alpha = 1.0 - max(white_key, chroma_key);
+
+    // Remove the saturated backing's one-pixel sampling fringe decisively;
+    // foliage below this brightness remains intact.
+    if green_dominance > 0.045 && tex_color.g > 0.52 {
+        discard;
+    }
 
     if keyed_alpha < 0.04 {
         discard;
     }
 
+    let spill = smoothstep(0.02, 0.16, green_dominance) * (1.0 - keyed_alpha);
+    let clean_color = vec3<f32>(
+        tex_color.r,
+        min(tex_color.g, max(tex_color.r, tex_color.b) + 0.08 + spill * 0.04),
+        tex_color.b
+    );
     let tint = mix(vec3<f32>(1.0), input.color.rgb, 0.28);
-    return vec4<f32>(tex_color.rgb * tint, tex_color.a * input.color.a * keyed_alpha);
+    return vec4<f32>(clean_color * tint, tex_color.a * input.color.a * keyed_alpha);
 }

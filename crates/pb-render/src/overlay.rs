@@ -1,14 +1,19 @@
 //! Overlay rendering for the isometric battlefield.
 //!
 //! Draws movement range indicators, AP costs, cover state, and hit chance
-//! breakdowns as semi-transparent overlays on the tile grid.
-//! Uses line rendering for movement paths and colored highlights for ranges.
+//! breakdowns as semi-transparent overlays on the tile grid. Every action
+//! marker is a filled, per-cell footprint; borders and patterns are secondary
+//! cues, never the only visible part of a target.
 
 use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
 use crate::device::RenderDevice;
+use crate::tiles::{
+    iso_tile_center, TILE_HALF_HEIGHT, TILE_HALF_WIDTH, TILE_HIGHLIGHT_GUTTER_X,
+    TILE_HIGHLIGHT_GUTTER_Y,
+};
 
 /// Grid coordinate, authored elevation, and semantic overlay style.
 pub type OverlayTile = (u32, u32, i32, OverlayTileKind);
@@ -98,14 +103,83 @@ impl OverlayTileKind {
     }
 }
 
-const TILE_HALF_WIDTH: f32 = 32.0;
-const TILE_HALF_HEIGHT: f32 = 16.0;
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct OverlayVertex {
+    position: [f32; 3],
+    color: [f32; 4],
+    local: [f32; 2],
+    pattern: f32,
+}
 
-fn iso_tile_center(x: u32, y: u32) -> [f32; 2] {
-    [
-        (x as f32 - y as f32) * TILE_HALF_WIDTH,
-        (x as f32 + y as f32) * TILE_HALF_HEIGHT,
-    ]
+fn overlay_color(kind: OverlayTileKind) -> [f32; 4] {
+    match kind {
+        OverlayTileKind::MovementRange { ap_cost, ends_turn } => {
+            let intensity = (1.0 - (ap_cost as f32) * 0.08).clamp(0.72, 1.0);
+            if ends_turn {
+                [0.86 * intensity, 0.16, 0.10, 0.34]
+            } else {
+                [0.10, 0.42 * intensity, 0.92 * intensity, 0.30]
+            }
+        }
+        OverlayTileKind::Movable { ap_cost } => {
+            let intensity = (1.0 - (ap_cost as f32) * 0.15).clamp(0.70, 1.0);
+            [0.20 * intensity, 0.80 * intensity, 0.20 * intensity, 0.52]
+        }
+        OverlayTileKind::Attackable { hit_chance } => {
+            // Chance is communicated by HUD text. Never let a low chance
+            // erase the target footprint and leave only its border visible.
+            let intensity = (0.45 + hit_chance as f32 / 100.0 * 0.55).clamp(0.45, 1.0);
+            [0.92 * intensity, 0.12 * intensity, 0.08 * intensity, 0.62]
+        }
+        OverlayTileKind::Cover { hard } => {
+            if hard {
+                [0.6, 0.6, 0.2, 0.16]
+            } else {
+                [0.2, 0.6, 0.6, 0.16]
+            }
+        }
+        OverlayTileKind::LeavesCover { ap_cost } => {
+            let intensity = (1.0 - (ap_cost as f32) * 0.12).clamp(0.70, 1.0);
+            [0.95 * intensity, 0.67 * intensity, 0.16, 0.30]
+        }
+        OverlayTileKind::Overwatch { ap_cost } => {
+            let intensity = (1.0 - (ap_cost as f32) * 0.10).clamp(0.70, 1.0);
+            [0.92 * intensity, 0.18, 0.16, 0.34]
+        }
+    }
+}
+
+fn append_overlay_tile(
+    vertices: &mut Vec<OverlayVertex>,
+    indices: &mut Vec<u32>,
+    x: u32,
+    y: u32,
+    elevation: i32,
+    kind: OverlayTileKind,
+) {
+    let [iso_x, base_iso_y] = iso_tile_center(x, y);
+    let iso_y = base_iso_y + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP;
+    let color = overlay_color(kind);
+    let pattern = f32::from(kind.pattern_id());
+    let half_width = TILE_HALF_WIDTH - TILE_HIGHLIGHT_GUTTER_X;
+    let half_height = TILE_HALF_HEIGHT - TILE_HIGHLIGHT_GUTTER_Y;
+    let vtx = |dx: f32, dy: f32, local: [f32; 2]| OverlayVertex {
+        position: [iso_x + dx, iso_y + dy, 5.0 + elevation as f32],
+        color,
+        local,
+        pattern,
+    };
+
+    let base = vertices.len() as u32;
+    // The footprint is deliberately inset by a sub-cell gutter. Each
+    // highlighted destination remains a complete diamond, but neighboring
+    // destinations cannot visually fuse at a shared four-way vertex.
+    vertices.push(vtx(-half_width, 0.0, [0.0, 0.5]));
+    vertices.push(vtx(0.0, -half_height, [0.5, 0.0]));
+    vertices.push(vtx(half_width, 0.0, [1.0, 0.5]));
+    vertices.push(vtx(0.0, half_height, [0.5, 1.0]));
+    indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
 }
 
 /// System for rendering overlay highlights on the battlefield.
@@ -141,71 +215,11 @@ impl OverlaySystem {
         camera_matrix_bytes: &[u8; 64],
         target_format: wgpu::TextureFormat,
     ) -> Self {
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct OverlayVert {
-            position: [f32; 3],
-            color: [f32; 4],
-            local: [f32; 2],
-            pattern: f32,
-        }
-
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
         for &(x, y, elevation, kind) in tiles {
-            let [iso_x, iso_y] = iso_tile_center(x, y);
-            let iso_y = iso_y + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP;
-            let z = 5.0 + elevation as f32; // overlays above terrain, below sprites
-
-            let color = match kind {
-                OverlayTileKind::MovementRange { ap_cost, ends_turn } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.08;
-                    if ends_turn {
-                        [0.86 * intensity, 0.16, 0.10, 0.30]
-                    } else {
-                        [0.10, 0.42 * intensity, 0.92 * intensity, 0.25]
-                    }
-                }
-                OverlayTileKind::Movable { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.15;
-                    [0.2 * intensity, 0.8 * intensity, 0.2 * intensity, 0.44]
-                }
-                OverlayTileKind::Attackable { hit_chance } => {
-                    let intensity = hit_chance as f32 / 100.0;
-                    [0.8 * intensity, 0.2 * intensity, 0.2 * intensity, 0.48]
-                }
-                OverlayTileKind::Cover { hard } => {
-                    if hard {
-                        [0.6, 0.6, 0.2, 0.16]
-                    } else {
-                        [0.2, 0.6, 0.6, 0.16]
-                    }
-                }
-                OverlayTileKind::LeavesCover { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.12;
-                    [0.95 * intensity, 0.67 * intensity, 0.16, 0.30]
-                }
-                OverlayTileKind::Overwatch { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.10;
-                    [0.92 * intensity, 0.18, 0.16, 0.34]
-                }
-            };
-
-            let pattern = f32::from(kind.pattern_id());
-            let vtx = |dx: f32, dy: f32, local: [f32; 2]| OverlayVert {
-                position: [iso_x + dx, iso_y + dy, z],
-                color,
-                local,
-                pattern,
-            };
-
-            let base = vertices.len() as u32;
-            vertices.push(vtx(-TILE_HALF_WIDTH, 0.0, [0.0, 0.5]));
-            vertices.push(vtx(0.0, -TILE_HALF_HEIGHT, [0.5, 0.0]));
-            vertices.push(vtx(TILE_HALF_WIDTH, 0.0, [1.0, 0.5]));
-            vertices.push(vtx(0.0, TILE_HALF_HEIGHT, [0.5, 1.0]));
-            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+            append_overlay_tile(&mut vertices, &mut indices, x, y, elevation, kind);
         }
 
         let num_indices = indices.len() as u32;
@@ -369,66 +383,10 @@ impl OverlaySystem {
         tiles: &[OverlayTile],
         camera_matrix_bytes: &[u8; 64],
     ) {
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct OverlayVert {
-            position: [f32; 3],
-            color: [f32; 4],
-            local: [f32; 2],
-            pattern: f32,
-        }
-
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         for &(x, y, elevation, kind) in tiles {
-            let [iso_x, iso_y] = iso_tile_center(x, y);
-            let iso_y = iso_y + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP;
-            let color = match kind {
-                OverlayTileKind::MovementRange { ap_cost, ends_turn } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.08;
-                    if ends_turn {
-                        [0.86 * intensity, 0.16, 0.10, 0.30]
-                    } else {
-                        [0.10, 0.42 * intensity, 0.92 * intensity, 0.25]
-                    }
-                }
-                OverlayTileKind::Movable { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.15;
-                    [0.2 * intensity, 0.8 * intensity, 0.2 * intensity, 0.44]
-                }
-                OverlayTileKind::Attackable { hit_chance } => {
-                    let intensity = hit_chance as f32 / 100.0;
-                    [0.8 * intensity, 0.2 * intensity, 0.2 * intensity, 0.48]
-                }
-                OverlayTileKind::Cover { hard } => {
-                    if hard {
-                        [0.6, 0.6, 0.2, 0.16]
-                    } else {
-                        [0.2, 0.6, 0.6, 0.16]
-                    }
-                }
-                OverlayTileKind::LeavesCover { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.12;
-                    [0.95 * intensity, 0.67 * intensity, 0.16, 0.30]
-                }
-                OverlayTileKind::Overwatch { ap_cost } => {
-                    let intensity = 1.0 - (ap_cost as f32) * 0.10;
-                    [0.92 * intensity, 0.18, 0.16, 0.34]
-                }
-            };
-            let pattern = f32::from(kind.pattern_id());
-            let vtx = |dx: f32, dy: f32, local: [f32; 2]| OverlayVert {
-                position: [iso_x + dx, iso_y + dy, 5.0 + elevation as f32],
-                color,
-                local,
-                pattern,
-            };
-            let base = vertices.len() as u32;
-            vertices.push(vtx(-TILE_HALF_WIDTH, 0.0, [0.0, 0.5]));
-            vertices.push(vtx(0.0, -TILE_HALF_HEIGHT, [0.5, 0.0]));
-            vertices.push(vtx(TILE_HALF_WIDTH, 0.0, [1.0, 0.5]));
-            vertices.push(vtx(0.0, TILE_HALF_HEIGHT, [0.5, 1.0]));
-            indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+            append_overlay_tile(&mut vertices, &mut indices, x, y, elevation, kind);
         }
         self.num_indices = indices.len() as u32;
         self.vertex_buffer = device
@@ -488,8 +446,9 @@ mod tests {
     fn action_overlay_shader_keeps_a_full_tile_fill() {
         let shader = include_str!("../shaders/overlay.wgsl");
 
-        assert!(shader.contains("input.color.a * mix(0.72, 1.0, ink)"));
-        assert!(shader.contains("input.color.a * mix(0.76, 1.0, ink)"));
+        assert!(shader.contains("input.color.a * mix(0.82, 1.0, ink)"));
+        assert!(shader.contains("input.color.a * mix(0.90, 1.0, ink)"));
+        assert!(shader.contains("target surface into a faint intersection-only line"));
         assert!(OverlayTileKind::Movable { ap_cost: 1 }
             .non_color_cue()
             .contains("filled movement diamond"));
@@ -518,5 +477,15 @@ mod tests {
         }
         .non_color_cue()
         .contains("ends the turn"));
+    }
+
+    #[test]
+    fn attackable_color_keeps_low_chance_targets_visible() {
+        let zero = overlay_color(OverlayTileKind::Attackable { hit_chance: 0 });
+        let certain = overlay_color(OverlayTileKind::Attackable { hit_chance: 100 });
+
+        assert!(zero[3] >= 0.60);
+        assert!(zero[0] > 0.35);
+        assert!(certain[0] > zero[0]);
     }
 }

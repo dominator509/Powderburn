@@ -19,9 +19,12 @@ use pb_render::ui_contract::{
     HUD_INSTRUCTION_TARGETING,
 };
 
-use crate::combat::{battle_action_layout, compute_hit_chance_for_hover, BattleHudAction};
+use crate::combat::{
+    battle_action_ap_cost, battle_action_button_label, battle_action_layout,
+    compute_hit_chance_for_hover, BattleHudAction,
+};
 use crate::menu::{button_layout, MenuButton};
-use crate::state::{GameScreen, GameState, InteractionPhase};
+use crate::state::{CombatLogTone, GameScreen, GameState, InteractionPhase};
 
 // ── Layout constants (all in pixel coords) ─────────────────────────────
 
@@ -392,6 +395,26 @@ impl HudRenderer {
         // ── Wound doll ────────────────────────────────────────────────
         let wound_info = build_wound_doll_text(game_state);
 
+        // Keep a short, color-coded combat feed visible while the action is
+        // still readable on the battlefield. Entries are derived from the
+        // same authoritative event batch that drives the animations, so the
+        // text, damage, and impact cue cannot drift apart.
+        let combat_log_entries = game_state
+            .combat_log
+            .iter()
+            .rev()
+            .take(4)
+            .collect::<Vec<_>>();
+        let combat_log_width = (sw - 2.0 * MARGIN).clamp(1.0, 440.0);
+        let combat_log_x = (sw - MARGIN - combat_log_width).max(MARGIN);
+        let combat_log_y = 76.0;
+        let combat_log_line_height = GLYPH_H as f32 * txt_scale_small + 5.0;
+        let combat_log_height = if combat_log_entries.is_empty() {
+            0.0
+        } else {
+            26.0 + combat_log_line_height * combat_log_entries.len() as f32
+        };
+
         // The production word-wrapper is shared with the accessibility gate.
         let text_width = (sw - 2.0 * MARGIN).max(1.0);
         let action_lines = layout_wrapped_text(action_menu, txt_scale, text_width);
@@ -425,6 +448,43 @@ impl HudRenderer {
             h: 68.0,
             color: palette.background,
         });
+        if combat_log_height > 0.0 {
+            rects.push(HudRect {
+                x: combat_log_x,
+                y: combat_log_y,
+                w: combat_log_width,
+                h: combat_log_height,
+                color: [0.018, 0.022, 0.02, 0.92],
+            });
+        }
+
+        // AP pips make the selected actor's spendable resource readable at a
+        // glance. The number remains in the text row; these are a redundant,
+        // high-contrast visual cue for every click-driven action.
+        if let Some(actor) = game_state.sim.as_ref().and_then(|sim| {
+            let id = match game_state.phase {
+                InteractionPhase::SelectedActor(id)
+                | InteractionPhase::Targeting { actor: id, .. } => Some(id),
+                _ => None,
+            }?;
+            sim.actors.get(&id)
+        }) {
+            let pip_count = actor.ap.0.clamp(10, 20) as usize;
+            let filled = actor.ap.0.max(0) as usize;
+            for index in 0..pip_count {
+                rects.push(HudRect {
+                    x: MARGIN + index as f32 * 11.0,
+                    y: 58.0,
+                    w: 8.0,
+                    h: 6.0,
+                    color: if index < filled {
+                        palette.accent
+                    } else {
+                        [0.12, 0.12, 0.10, 1.0]
+                    },
+                });
+            }
+        }
 
         // Mouse-first tactical command bar.
         let player_can_act = matches!(
@@ -470,7 +530,20 @@ impl HudRenderer {
             } else {
                 0.88
             };
-            let color = if selected || hovered {
+            let ap_unavailable = game_state
+                .sim
+                .as_ref()
+                .and_then(|sim| {
+                    sim.active_actor
+                        .and_then(|id| sim.actors.get(&id).map(|actor| (actor.ap.0, id)))
+                })
+                .and_then(|(ap, _)| {
+                    battle_action_ap_cost(game_state, *action).map(|cost| ap < cost)
+                })
+                .unwrap_or(false);
+            let color = if ap_unavailable {
+                [0.48, 0.07, 0.05, if hovered { 0.92 } else { 0.82 }]
+            } else if selected || hovered {
                 [
                     palette.accent[0],
                     palette.accent[1],
@@ -598,11 +671,16 @@ impl HudRenderer {
 
             // Mouse-first tactical command labels.
             let action_scale = (1.35 * text_multiplier).clamp(1.05, 1.75);
-            for (_, label, [x, y, width, height]) in &action_buttons {
-                let label_x = x + (width - font.text_width(label, action_scale)) * 0.5;
+            for (action, _, [x, y, width, height]) in &action_buttons {
+                let label = fit_text(
+                    &battle_action_button_label(game_state, *action),
+                    action_scale,
+                    (*width - 8.0).max(1.0),
+                );
+                let label_x = x + (width - font.text_width(&label, action_scale)) * 0.5;
                 let label_y = y + (height - GLYPH_H as f32 * action_scale) * 0.5;
                 text_meshes.push(font.render_text(
-                    label,
+                    &label,
                     label_x,
                     label_y,
                     action_scale,
@@ -653,12 +731,47 @@ impl HudRenderer {
                 text_meshes.push(weapon_mesh);
             }
 
+            // 5. Recent combat feed (newest first). The compact format keeps
+            // the actor, result, damage, location, and defeat state together.
+            if combat_log_height > 0.0 {
+                text_meshes.push(font.render_text(
+                    "COMBAT FEED",
+                    combat_log_x + 12.0,
+                    combat_log_y + 7.0,
+                    txt_scale_small,
+                    palette.accent,
+                    sw,
+                    sh,
+                ));
+                for (index, entry) in combat_log_entries.iter().enumerate() {
+                    let line = fit_text(
+                        &entry.text,
+                        txt_scale_small,
+                        (combat_log_width - 24.0).max(1.0),
+                    );
+                    text_meshes.push(font.render_text(
+                        &line,
+                        combat_log_x + 12.0,
+                        combat_log_y + 25.0 + index as f32 * combat_log_line_height,
+                        txt_scale_small,
+                        combat_log_color(entry.tone, palette),
+                        sw,
+                        sh,
+                    ));
+                }
+            }
+
             // 6-8. Wrapped action, instruction, and message copy.
             let mut text_y = bar_y + 8.0;
+            let message_color = if message.starts_with("ACTION FAILED") {
+                [1.0, 0.18, 0.12, 1.0]
+            } else {
+                palette.warning
+            };
             for (lines, color) in [
                 (&action_lines, palette.accent),
                 (&instruction_lines, palette.text),
-                (&message_lines, palette.warning),
+                (&message_lines, message_color),
             ] {
                 for line in lines {
                     let mesh =
@@ -1145,6 +1258,18 @@ impl HudRenderer {
             buttons,
             pointer,
         );
+    }
+}
+
+fn combat_log_color(tone: CombatLogTone, palette: pb_render::ui_contract::UiPalette) -> [f32; 4] {
+    match tone {
+        CombatLogTone::Neutral => palette.text,
+        CombatLogTone::Success => palette.ally,
+        CombatLogTone::Miss => palette.warning,
+        CombatLogTone::Critical => [1.0, 0.28, 0.08, 1.0],
+        CombatLogTone::Warning => palette.warning,
+        CombatLogTone::Failure => [1.0, 0.18, 0.12, 1.0],
+        CombatLogTone::Defeat => palette.enemy,
     }
 }
 

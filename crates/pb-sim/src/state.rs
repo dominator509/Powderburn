@@ -365,4 +365,6 @@ pub enum SimError {
     OutOfBounds(TileXY),
     /// The equipped weapon does not support the requested special action.
     InvalidWeaponAction(ActorId),
+    /// A Volley was requested, but no squad member could pay for a shot.
+    NoEligibleVolley(ActorId),
 }

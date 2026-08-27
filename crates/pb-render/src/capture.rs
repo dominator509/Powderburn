@@ -32,30 +32,8 @@ impl CaptureScene {
         let mut tiles = Vec::with_capacity((cols * rows) as usize);
         for y in 0..rows {
             for x in 0..cols {
-                let variation = ((x * 17 + y * 29 + state.scenario_id) % 7) as f32 * 0.012;
                 let tile = pb_core::geom::TileXY::new(x as i16, y as i16);
-                let terrain = state
-                    .terrain_tiles
-                    .get(&tile)
-                    .map(String::as_str)
-                    .unwrap_or_else(|| {
-                        if state.weather == pb_sim::environment::Weather::Snow {
-                            "Snow"
-                        } else {
-                            "Grass"
-                        }
-                    });
-                let material = crate::tiles::material_for_terrain(terrain);
-                let elevation = state.tile_elevations.get(&tile).copied().unwrap_or(0);
-                let tint = if state.difficult_tiles.contains(&tile) {
-                    0.88 + variation
-                } else {
-                    0.94 + variation
-                };
-                tiles.push(
-                    crate::tiles::TileVisual::new(tint, tint, tint, elevation)
-                        .with_material(material),
-                );
+                tiles.push(crate::tiles::visual_tile_for_state(state, tile));
             }
         }
 
@@ -70,20 +48,24 @@ impl CaptureScene {
         });
         let mut sprites = Vec::with_capacity(ordered_actors.len());
         for (id, actor) in ordered_actors {
-            let grid_x = f32::from(actor.position.x);
-            let grid_y = f32::from(actor.position.y);
-            let iso_x = (grid_x - grid_y) * 32.0;
             let elevation = state
                 .tile_elevations
                 .get(&actor.position)
                 .copied()
                 .unwrap_or(0);
-            let iso_y = (grid_x + grid_y) * 16.0
-                + elevation as f32 * crate::tiles::ELEVATION_SCREEN_STEP
-                - 38.0;
-            let mut sprite = crate::sprites::SpriteInstance::new(iso_x, iso_y, 20.0 + grid_y);
-            sprite.width = 104.0;
-            sprite.height = 104.0;
+            let [iso_x, iso_y] =
+                crate::tiles::tile_center_with_elevation(actor.position, elevation);
+            let mut sprite = crate::sprites::SpriteInstance::new(
+                iso_x,
+                iso_y,
+                20.0 + f32::from(actor.position.y),
+            );
+            // Keep the proof renderer on the same planted one-tile avatar
+            // footprint as the interactive combat renderer. A capture should
+            // audit the game the player actually sees, not a second scale.
+            sprite.width = 58.0;
+            sprite.height = 82.0;
+            sprite.anchor_bottom = true;
             sprite.set_character(id.0);
             if actor.faction_id == "player" {
                 (sprite.r, sprite.g, sprite.b) = (0.90, 0.96, 1.0);

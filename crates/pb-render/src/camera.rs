@@ -27,8 +27,8 @@ impl IsoCamera {
             zoom: 1.0,
             viewport_width: viewport_width as f32,
             viewport_height: viewport_height as f32,
-            tile_w: 64.0,
-            tile_h: 32.0,
+            tile_w: crate::tiles::TILE_WIDTH,
+            tile_h: crate::tiles::TILE_HEIGHT,
         }
     }
 

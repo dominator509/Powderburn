@@ -63,10 +63,8 @@ impl SmokeSystem {
         camera_matrix_bytes: &[u8; 64],
         target_format: wgpu::TextureFormat,
     ) -> Self {
-        let tile_w = 64.0;
-        let tile_h = 32.0;
-        let half_w = tile_w * 0.5;
-        let half_h = tile_h * 0.5;
+        let half_w = crate::tiles::TILE_HALF_WIDTH;
+        let half_h = crate::tiles::TILE_HALF_HEIGHT;
 
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -79,8 +77,7 @@ impl SmokeSystem {
                     continue;
                 }
 
-                let iso_x = (x as f32 - y as f32) * half_w;
-                let iso_y = (x as f32 + y as f32) * half_h;
+                let [iso_x, iso_y] = crate::tiles::iso_tile_center(x, y);
                 let z = 10.0; // smoke renders above tiles and units
 
                 // Preserve the kernel's 0-6 density as a readable opacity.
@@ -269,8 +266,8 @@ impl SmokeSystem {
             color: [f32; 4],
         }
 
-        let half_w = 32.0;
-        let half_h = 16.0;
+        let half_w = crate::tiles::TILE_HALF_WIDTH;
+        let half_h = crate::tiles::TILE_HALF_HEIGHT;
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         for y in 0..rows {
@@ -280,8 +277,7 @@ impl SmokeSystem {
                 if tile.density == 0 {
                     continue;
                 }
-                let iso_x = (x as f32 - y as f32) * half_w;
-                let iso_y = (x as f32 + y as f32) * half_h;
+                let [iso_x, iso_y] = crate::tiles::iso_tile_center(x, y);
                 let normalized = f32::from(tile.density) / 6.0;
                 let alpha = 0.12 + normalized * 0.58;
                 let gray = 0.78 + normalized * 0.16;

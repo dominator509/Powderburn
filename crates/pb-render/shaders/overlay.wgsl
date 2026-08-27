@@ -46,19 +46,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         // Movement: fill the entire diamond so the pointer reads as one tile.
         // Dots and a perimeter remain as secondary non-color cues.
         let diamond = abs(input.local.x - 0.5) + abs(input.local.y - 0.5);
-        let border = smoothstep(0.38, 0.49, diamond);
+        let border = smoothstep(0.36, 0.47, diamond);
         let cell = fract(input.local * 8.0) - vec2<f32>(0.5);
         let dots = 1.0 - step(0.16, length(cell));
         ink = max(border, dots);
-        return vec4<f32>(input.color.rgb, input.color.a * mix(0.72, 1.0, ink));
+        return vec4<f32>(input.color.rgb, input.color.a * mix(0.82, 1.0, ink));
     } else if input.pattern < 4.5 {
-        // Targeting: fill the same single-tile diamond and retain an aiming
-        // ring plus perimeter as secondary non-color cues.
+        // Targeting: fill one complete tile with a high-contrast footprint.
+        // Hit chance is already printed in the HUD; it must not turn the
+        // target surface into a faint intersection-only line.
         let diamond = abs(input.local.x - 0.5) + abs(input.local.y - 0.5);
-        let border = smoothstep(0.38, 0.49, diamond);
+        let border = smoothstep(0.34, 0.47, diamond);
         let aiming_ring = 1.0 - step(0.045, abs(diamond - 0.24));
         ink = max(border, aiming_ring);
-        return vec4<f32>(input.color.rgb, input.color.a * mix(0.76, 1.0, ink));
+        return vec4<f32>(input.color.rgb, input.color.a * mix(0.90, 1.0, ink));
     } else if input.pattern < 5.5 {
         ink = step(0.58, fract(input.local.y * 10.0));
     } else if input.pattern < 6.5 {

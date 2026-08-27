@@ -340,4 +340,14 @@ mod tests {
         };
         assert_eq!(subtitle.to_string(), "[Battlefield] Rifle shot");
     }
+
+    #[test]
+    fn gendered_combat_cues_are_distinct_and_catalogued() {
+        assert_ne!(Sfx::DamageMale.filename(), Sfx::DamageFemale.filename());
+        assert_ne!(Sfx::DeathMale.filename(), Sfx::DeathFemale.filename());
+        assert!(Sfx::ALL.contains(&Sfx::DamageMale));
+        assert!(Sfx::ALL.contains(&Sfx::DamageFemale));
+        assert!(Sfx::ALL.contains(&Sfx::DeathMale));
+        assert!(Sfx::ALL.contains(&Sfx::DeathFemale));
+    }
 }
