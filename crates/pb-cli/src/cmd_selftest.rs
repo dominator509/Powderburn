@@ -18,6 +18,16 @@ use pb_sim::state::{ActorState, SimState, Stance};
 use crate::args::Args;
 use crate::output;
 
+/// Absolute path to the authored content tree, resolved from the crate's
+/// manifest directory. `cargo test` runs each package's test binaries with
+/// cwd = the crate root, so a bare relative "content" path only resolves
+/// when the operator happens to invoke from the workspace root. Resolving
+/// from CARGO_MANIFEST_DIR (the same pattern as crates/*/tests) makes the
+/// selftest cwd-independent.
+fn content_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content")
+}
+
 /// Run the `selftest` subcommand.
 pub fn run_selftest(args: &Args) -> Result<(), String> {
     // 1. Fix32 basic arithmetic
@@ -56,8 +66,8 @@ pub fn run_selftest(args: &Args) -> Result<(), String> {
     assert_eq!(r1, r2);
 
     // 8. Authored weapon data
-    let content_root = Path::new("content");
-    let content = load_all(content_root).map_err(|e| format!("content load: {e}"))?;
+    let content_root = content_root();
+    let content = load_all(&content_root).map_err(|e| format!("content load: {e}"))?;
     let weapon = content
         .weapons
         .get("colt_army_1860")
@@ -157,7 +167,7 @@ fn run_selftest_metrics() -> Result<(), String> {
 
     // Measure a real full content parse.
     let content_started = std::time::Instant::now();
-    load_all(Path::new("content")).map_err(|error| format!("content load: {error}"))?;
+    load_all(&content_root()).map_err(|error| format!("content load: {error}"))?;
     registry.set_content_load_ms(duration_ms(content_started.elapsed()));
 
     // Create a close-quarters state so utility AI reaches legal shot actions.

@@ -1,0 +1,94 @@
+name: ci
+
+# POWDERBURN CI. Minimal and honest: every step is the repository's own
+# command-table entry (see COMMANDS.md), run in the verify.sh gate order.
+# Out of scope for CI, by design:
+#   test-e2e.sh  -- needs a real headless GPU adapter (wgpu gl/vulkan)
+#   smoke-test.sh -- runs the shipped binaries against release artifacts
+#   live-fire.sh  -- real-world conditions, never runs in CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  GIT_TERMINAL_PROMPT: "0"
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: "1"
+  RUSTUP_TOOLCHAIN: "1.85.0"
+  PB_HOME: ${{ github.workspace }}
+  PB_CONFIG_DIR: ${{ github.workspace }}/.pbci-config
+  PB_ASSET_ROOT: ${{ github.workspace }}/assets
+  PB_GOLDEN_DIR: ${{ github.workspace }}/tests/golden
+  PB_CACHE_DIR: ${{ github.workspace }}/.pbcache
+  PB_HEADLESS_ADAPTER: gl
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libxkbcommon-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            mesa-vulkan-drivers \
+            binutils \
+            zstd
+
+      - name: Install Rust toolchain (pinned 1.85.0)
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.85.0
+          rustc --version
+
+      - name: Vendor dependencies
+        run: sh scripts/install.sh
+
+      - name: Format check
+        run: sh scripts/format-check.sh
+
+      - name: Lint
+        run: sh scripts/lint.sh
+
+      - name: Typecheck
+        run: sh scripts/typecheck.sh
+
+      - name: Reality gate
+        run: sh scripts/reality-gate.sh
+
+      - name: Spec coverage check
+        run: sh scripts/spec-coverage-check.sh
+
+      - name: Unit tests
+        run: sh scripts/test-unit.sh
+
+      - name: Integration tests
+        run: sh scripts/test-integration.sh
+
+      - name: Build
+        timeout-minutes: 90
+        run: sh scripts/build.sh
+
+      - name: Security check
+        run: sh scripts/security-check.sh
+
+      - name: Dependency audit
+        run: sh scripts/dependency-audit.sh
