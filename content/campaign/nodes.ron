@@ -2,7 +2,7 @@
   (
     id: "m01_elk_creek",
     kind: "Mission",
-    date: "1867-08-12",
+    date: "1867-04-12",
     requires: [],
     grants: [],
     unlocks: ["m002_pawnee_fork"],
@@ -89,7 +89,7 @@
   (
     id: "m002_pawnee_fork",
     kind: "Mission",
-    date: "1867-08-19",
+    date: "1867-04-19",
     requires: [],
     grants: [],
     unlocks: ["m06_smoky_hill_station"],

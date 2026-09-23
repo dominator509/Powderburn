@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"Four days late can be the distance between warning and mourning.", voice:Some("m16_01_whitehorse.wav")),
     (speaker:"Elias Ward", text:"We cannot steal those days back. We can keep Teague from stealing the truth.", voice:Some("m16_02_elias.wav")),
+    (speaker:"Whitehorse", text:"Rain makes every trail speak. Listen for the ground the scouts think they hid.", voice:None),
+    (speaker:"Elias Ward", text:"We carry the dispatch to the next fire. If the message arrives late, it still arrives whole.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m16_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Use the flooded ground as a screen. The scouts will not expect patience."),
+    (id:"m16_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Protect the dispatch. We are carrying a truth the dead cannot deliver."),
+    (id:"m16_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"They are in the trees. Keep the courier moving and the rifles facing out."),
+    (id:"m16_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The trail is open. Wrap the dispatch and take it to the next light."),
   ],
   score: Some("winter_count.wav"),
   date: "1876-06-29",

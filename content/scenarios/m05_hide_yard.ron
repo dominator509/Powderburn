@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Doyle", text:"I have tracked animals with kinder records than this.", voice:Some("m05_01_doyle.wav")),
     (speaker:"Naomi Freed", text:"Take the names. Burn the prices. People are not Teague's inventory.", voice:Some("m05_02_naomi.wav")),
+    (speaker:"Doyle", text:"The ledger is in the office beyond the pens. We clear a path and leave the rest to the fire.", voice:None),
+    (speaker:"Naomi Freed", text:"If a name is still breathing, we do not turn it into a number today.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m05_move", trigger:"first_player_move", speaker:"Doyle", text:"Move along the pens. The smell is bad, but it tells us where the yard ends."),
+    (id:"m05_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Take the guards off the office. The names are in there."),
+    (id:"m05_hit", trigger:"first_enemy_hit", speaker:"Doyle", text:"Keep your heads down. Those men are protecting a price list, not a life."),
+    (id:"m05_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The office is close. Burn the prices after the names are safe."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1874-06-27",

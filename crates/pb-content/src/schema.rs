@@ -122,6 +122,22 @@ pub struct StoryLineData {
     pub voice: Option<String>,
 }
 
+/// One short character bark triggered by an authoritative combat event.
+///
+/// Trigger names are intentionally data-facing so the same authored line can
+/// be replayed by the desktop client and headless presentation tests without
+/// putting narrative text in the simulation kernel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleDialogueData {
+    pub id: String,
+    pub trigger: String,
+    pub speaker: String,
+    pub text: String,
+    /// Optional WAV filename under `assets/audio/dialogue/`.
+    #[serde(default)]
+    pub voice: Option<String>,
+}
+
 /// A scenario definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioData {
@@ -133,6 +149,9 @@ pub struct ScenarioData {
     /// Character exchange shown after the briefing and before deployment.
     #[serde(default)]
     pub prebattle_dialogue: Vec<StoryLineData>,
+    /// Short character exchanges fired once by real combat events.
+    #[serde(default)]
+    pub battle_dialogue: Vec<BattleDialogueData>,
     /// Mood score filename under `assets/audio/`.
     #[serde(default)]
     pub score: Option<String>,

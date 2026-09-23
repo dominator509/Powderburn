@@ -74,6 +74,7 @@ pub fn validate(content: &Content) -> Vec<Diagnostic> {
 
     // 4. Unknown scenario references in campaign nodes.
     check_scenario_references(content, &mut diagnostics);
+    check_campaign_scenario_alignment(content, &mut diagnostics);
 
     // 5. Dialogue structure, references, translation, and act coverage.
     check_dialogue(content, &mut diagnostics);
@@ -307,6 +308,64 @@ fn check_scenario_references(content: &Content, out: &mut Vec<Diagnostic>) {
 }
 
 /// Validate dialogue references, accessibility fields, translation law, and act coverage.
+/// Keep each campaign node and its playable scenario synchronized so the map,
+/// briefing, Ledger, and battlefield cannot silently describe different
+/// moments in the story.
+fn check_campaign_scenario_alignment(content: &Content, out: &mut Vec<Diagnostic>) {
+    for node in content.campaign_nodes.values() {
+        let Some(scenario_id) = node.scenario_id.as_deref() else {
+            continue;
+        };
+        let Some(scenario) = content.scenarios.get(scenario_id) else {
+            continue;
+        };
+        if node.date != scenario.date {
+            out.push(Diagnostic::new(
+                "E-CAMPAIGN-DATE",
+                format!(
+                    "campaign node `{}` is dated {} but scenario `{}` is dated {}",
+                    node.id, node.date, scenario.id, scenario.date
+                ),
+            ));
+        }
+        if node.kind == "Mission" {
+            if scenario.briefing.len() < 2 {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!(
+                        "mission `{}` needs at least two authored briefing beats",
+                        node.id
+                    ),
+                ));
+            }
+            if scenario.prebattle_dialogue.len() < 4 {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!(
+                        "mission `{}` needs at least four pre-battle dialogue lines",
+                        node.id
+                    ),
+                ));
+            }
+            if scenario.battle_dialogue.len() < 4 {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!(
+                        "mission `{}` needs at least four in-battle dialogue lines",
+                        node.id
+                    ),
+                ));
+            }
+            if scenario.score.is_none() {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!("mission `{}` needs an authored mood score", node.id),
+                ));
+            }
+        }
+    }
+}
+
 fn check_dialogue(content: &Content, out: &mut Vec<Diagnostic>) {
     if content.dialogue.is_empty() {
         return;
@@ -544,6 +603,52 @@ fn check_faction_and_archetype(content: &Content, out: &mut Vec<Diagnostic>) {
                 ));
             }
         }
+        let mut battle_line_ids = BTreeSet::new();
+        for line in &scenario.battle_dialogue {
+            if line.id.trim().is_empty()
+                || line.speaker.trim().is_empty()
+                || line.text.trim().is_empty()
+            {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!(
+                        "scenario `{}` has an in-battle dialogue line with an empty field",
+                        scenario.id
+                    ),
+                ));
+            }
+            if !battle_line_ids.insert(line.id.as_str()) {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-STORY",
+                    format!(
+                        "scenario `{}` repeats in-battle dialogue id `{}`",
+                        scenario.id, line.id
+                    ),
+                ));
+            }
+            if !matches!(
+                line.trigger.as_str(),
+                "first_player_move"
+                    | "first_player_shot"
+                    | "first_player_hit"
+                    | "first_enemy_hit"
+                    | "first_missed_shot"
+                    | "first_ally_wounded"
+                    | "first_enemy_down"
+                    | "first_ally_down"
+                    | "first_critical"
+                    | "first_smoke"
+                    | "first_ally_routed"
+            ) {
+                out.push(Diagnostic::new(
+                    "E-CAMPAIGN-TRIGGER",
+                    format!(
+                        "scenario `{}` uses unknown in-battle dialogue trigger `{}`",
+                        scenario.id, line.trigger
+                    ),
+                ));
+            }
+        }
     }
 }
 
@@ -725,6 +830,7 @@ mod tests {
             display_name: "Test".into(),
             briefing: Vec::new(),
             prebattle_dialogue: Vec::new(),
+            battle_dialogue: Vec::new(),
             score: None,
             date: "1867-10-21".into(),
             map: MapData {
@@ -1013,6 +1119,30 @@ mod tests {
         assert!(ref_diags.is_empty(), "known scenario: {:?}", ref_diags);
     }
 
+    #[test]
+    fn campaign_scenario_date_mismatch_is_reported() {
+        let mut node = dummy_campaign_node("mission_a");
+        node.kind = "Mission".into();
+        node.date = "1868-10-21".into();
+        node.scenario_id = Some("s1".into());
+
+        let mut content = empty_content();
+        content
+            .scenarios
+            .insert("s1".into(), dummy_scenario("s1", vec![], vec![]));
+        content.campaign_nodes.insert("mission_a".into(), node);
+
+        let diags = validate(&content);
+        assert!(
+            diags
+                .iter()
+                .any(|diagnostic| diagnostic.code == "E-CAMPAIGN-DATE"
+                    && diagnostic.message.contains("mission_a")),
+            "date drift should be rejected: {:?}",
+            diags
+        );
+    }
+
     // ------------------------------------------------------------------
     // Actor structure
     // ------------------------------------------------------------------
@@ -1212,6 +1342,7 @@ mod tests {
 
         let mut node = dummy_campaign_node("node_a");
         node.scenario_id = Some("s1".into());
+        node.date = "1873-04-14".into();
         node.companion_gates.push("elena".into());
 
         let mut content = empty_content();

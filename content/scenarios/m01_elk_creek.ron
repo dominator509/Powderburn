@@ -16,8 +16,14 @@
         (speaker: "Naomi Freed", text: "Then survive long enough to testify. I did not drag the truth this far to bury it with you.", voice: Some("m01_05_naomi.wav")),
         (speaker: "Elias Ward", text: "Powderburn Company! Hold the creek. Naomi lives. Teague gets nothing else today.", voice: Some("m01_06_elias.wav")),
     ],
+    battle_dialogue: [
+        (id: "m01_move", trigger: "first_player_move", speaker: "Naomi Freed", text: "The creek stones are slick. Take the bank, not the water."),
+        (id: "m01_shot", trigger: "first_player_shot", speaker: "Elias Ward", text: "Make the first report true. One shot, one fact."),
+        (id: "m01_hit", trigger: "first_enemy_hit", speaker: "Naomi Freed", text: "They found us. Keep the wagon between us and them."),
+        (id: "m01_down", trigger: "first_enemy_down", speaker: "Elias Ward", text: "One rider down. The counter-book stays with the living."),
+    ],
     score: Some("dust_and_ashes.wav"),
-    date: "1867-08-12",
+    date: "1867-04-12",
     map: (
         width: 20,
         height: 12,

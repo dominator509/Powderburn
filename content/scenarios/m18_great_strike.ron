@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Ames", text:"Teague does not care which side shoots first. He owns the story after.", voice:Some("m18_01_ames.wav")),
     (speaker:"Doyle", text:"Then we remove his storytellers before they pull a trigger.", voice:Some("m18_02_doyle.wav")),
+    (speaker:"Ames", text:"Rain turns the yard into mirrors. Watch the reflections; a false uniform is still a weapon.", voice:None),
+    (speaker:"Doyle", text:"Workers are not targets. The provocateurs are the ones who brought guns to the story.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m18_move", trigger:"first_player_move", speaker:"Doyle", text:"Keep the workers behind the rail cars. We move the line without becoming it."),
+    (id:"m18_shot", trigger:"first_player_shot", speaker:"Ames", text:"Only the provocateurs. Teague needs a first shot more than he needs a victory."),
+    (id:"m18_hit", trigger:"first_enemy_hit", speaker:"Doyle", text:"They are trying to make the yard choose sides. Hold the workers clear."),
+    (id:"m18_down", trigger:"first_enemy_down", speaker:"Ames", text:"One storyteller is silent. Find the file that tells us who hired him."),
   ],
   score: Some("iron_road.wav"),
   date: "1877-07-21",

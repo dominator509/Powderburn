@@ -9,6 +9,14 @@
   prebattle_dialogue: [
     (speaker:"Wen Li", text:"They will print the photograph without men like us. Teague means to erase the payroll too.", voice:Some("m02_01_wen.wav")),
     (speaker:"Naomi Freed", text:"Then we keep the workers breathing and make the missing wages impossible to ignore.", voice:Some("m02_02_naomi.wav")),
+    (speaker:"Wen Li", text:"Ballast shifts under a running man. The rail bed gives cover only if we cross it together.", voice:None),
+    (speaker:"Naomi Freed", text:"The ceremony is over. The workers are still here, and so is the truth they were paid to forget.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m02_move", trigger:"first_player_move", speaker:"Wen Li", text:"Use the ties as steps. Stay below the rail line until the next post."),
+    (id:"m02_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Keep the workers breathing. The payroll is useless without their names."),
+    (id:"m02_hit", trigger:"first_enemy_hit", speaker:"Wen Li", text:"They are shooting from the car. Get the crew behind the ballast."),
+    (id:"m02_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The car is open. Take the book before the train takes the evidence."),
   ],
   score: Some("iron_road.wav"),
   date: "1869-05-10",

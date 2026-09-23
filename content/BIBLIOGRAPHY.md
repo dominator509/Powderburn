@@ -3,6 +3,7 @@
 Every historical source cited by any content record in this repository.
 
 ## Treaties and Government Documents
+- Spring 1867 — Fort Larned National Historic Site, National Park Service
 - Medicine Lodge Treaty, 1867 — National Archives and Records Administration
 - Treaty of Fort Laramie, 1868 — National Archives
 
@@ -18,5 +19,6 @@ Every historical source cited by any content record in this repository.
 - The Red River War — Texas State Historical Association
 
 ## Reference
+- POWDERBURN Narrative Bible — `docs/NARRATIVE_BIBLE.md`
 - The Transcontinental Railroad — Stephen E. Ambrose
 - Fort Marion Prisoners, 1875–1878 — Florida Museum of Natural History

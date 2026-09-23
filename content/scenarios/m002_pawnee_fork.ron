@@ -9,6 +9,14 @@
   prebattle_dialogue: [
     (speaker:"Naomi Freed", text:"That courier knows which initials bought my brother's rope.", voice:Some("m002_01_naomi.wav")),
     (speaker:"Elias Ward", text:"Then we take the key, and Teague loses the shelter of numbers.", voice:Some("m002_02_elias.wav")),
+    (speaker:"Naomi Freed", text:"The old camp gives us a clean approach. Do not let the prairie turn you into a silhouette.", voice:None),
+    (speaker:"Elias Ward", text:"If the courier runs, we follow his tracks. We do not chase the history happening behind him.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m002_move", trigger:"first_player_move", speaker:"Naomi Freed", text:"Keep to the camp edge. The wind is cover if we use it."),
+    (id:"m002_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Make the first report true. One shot, one fact."),
+    (id:"m002_hit", trigger:"first_enemy_hit", speaker:"Naomi Freed", text:"They found us. Keep the courier between us and the open ground."),
+    (id:"m002_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"One rider down. The key stays with the living."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1867-04-19",

@@ -101,6 +101,18 @@ pub struct BattleAnimation {
     pub kind: BattleAnimationKind,
 }
 
+/// A transient battlefield bark shown over the live combat feed. The
+/// simulation remains authoritative; this is presentation-only state keyed by
+/// a stable authored dialogue id.
+#[derive(Debug, Clone)]
+pub struct ActiveBattleDialogue {
+    pub id: String,
+    pub speaker: String,
+    pub text: String,
+    pub voice: Option<String>,
+    pub started: Instant,
+}
+
 /// Semantic emphasis for one player-facing combat result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CombatLogTone {
@@ -181,6 +193,14 @@ pub struct GameState {
     pub battle_events: Vec<pb_core::event::Event>,
     /// Active presentation-only movement and weapon animations.
     pub battle_animations: Vec<BattleAnimation>,
+    /// Authored barks available to the current scenario.
+    pub battle_dialogue: Vec<pb_content::schema::BattleDialogueData>,
+    /// Dialogue ids already consumed during the current battle.
+    pub battle_dialogue_seen: Vec<String>,
+    /// Most recent transient battlefield bark.
+    pub active_battle_dialogue: Option<ActiveBattleDialogue>,
+    /// Subsequent barks waiting for the current one to finish displaying.
+    pub battle_dialogue_queue: Vec<ActiveBattleDialogue>,
     /// Recent player-facing combat results, newest entry last.
     pub combat_log: Vec<CombatLogEntry>,
     /// Authored Ledger choices awaiting player acknowledgement.
@@ -287,6 +307,10 @@ impl GameState {
             ],
             battle_events: Vec::new(),
             battle_animations: Vec::new(),
+            battle_dialogue: Vec::new(),
+            battle_dialogue_seen: Vec::new(),
+            active_battle_dialogue: None,
+            battle_dialogue_queue: Vec::new(),
             combat_log: Vec::new(),
             pending_ledger_writes: Vec::new(),
             ledger_write_cursor: 0,

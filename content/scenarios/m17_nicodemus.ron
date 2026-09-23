@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Naomi Freed", text:"This is why I carried the names. Not to live inside grief. To make room for this.", voice:Some("m17_01_naomi.wav")),
     (speaker:"Elias Ward", text:"Then this ground, these homes, and your future are the mission.", voice:Some("m17_02_elias.wav")),
+    (speaker:"Naomi Freed", text:"There is no wall around a future. We make one from doors, corners, and people who refuse to run.", voice:None),
+    (speaker:"Elias Ward", text:"The settlement decides what it becomes. We hold the lanes until they can decide in peace.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m17_move", trigger:"first_player_move", speaker:"Naomi Freed", text:"House to house. Keep an evacuation lane open behind the people working."),
+    (id:"m17_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Defend the homes, not the idea of them. Every neighbor gets a way out."),
+    (id:"m17_hit", trigger:"first_enemy_hit", speaker:"Naomi Freed", text:"They are testing the unfinished houses. Move the families behind the next wall."),
+    (id:"m17_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The settlement stands. Let the builders return to their work."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1877-09-17",

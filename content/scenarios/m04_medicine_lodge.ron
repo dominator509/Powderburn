@@ -9,6 +9,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"Your paper can name the men who profit. My people still pay the price.", voice:Some("m04_01_whitehorse.wav")),
     (speaker:"Elias Ward", text:"Then today the people leave alive, and the profiteers lose their lie.", voice:Some("m04_02_elias.wav")),
+    (speaker:"Whitehorse", text:"The treaty road is not our battlefield. Keep your fire away from the families they mean to frighten.", voice:None),
+    (speaker:"Elias Ward", text:"We break the lie at its armed edge. No farther.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m04_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Walk the road like a guest. Cover is not permission to forget who is here."),
+    (id:"m04_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Only the men carrying the lie. Let the travelers pass through our shadow."),
+    (id:"m04_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"They want panic. Give them silence and a clear road behind us."),
+    (id:"m04_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The road is theirs again. We leave before our victory becomes another story."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1867-10-21",

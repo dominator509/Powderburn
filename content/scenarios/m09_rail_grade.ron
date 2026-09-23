@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Wen Li", text:"They call the grade finished. A road is not finished while the men who built it go hungry.", voice:Some("m09_01_wen.wav")),
     (speaker:"Elias Ward", text:"Then we collect the wages, not another entry for the dead.", voice:Some("m09_02_elias.wav")),
+    (speaker:"Wen Li", text:"The cut is open ground. We move the crew in short bounds, or Teague counts them twice.", voice:None),
+    (speaker:"Elias Ward", text:"Take the high side, protect the book, and leave nobody under the unfinished grade.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m09_move", trigger:"first_player_move", speaker:"Wen Li", text:"Stay with the cut. The stone breaks their sightline if we keep moving."),
+    (id:"m09_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Every rifle buys a worker one more step. Spend it carefully."),
+    (id:"m09_hit", trigger:"first_enemy_hit", speaker:"Wen Li", text:"The cordon is firing into the men. Break the nearest rifle line."),
+    (id:"m09_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The grade is ours for a minute. Get the payroll book out."),
   ],
   score: Some("iron_road.wav"),
   date: "1869-06-02",

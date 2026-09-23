@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"A name is not evidence for your cause. It belongs first to the person who answers to it.", voice:Some("m19_01_whitehorse.wav")),
     (speaker:"Elias Ward", text:"You carry the list. You decide where it goes.", voice:Some("m19_02_elias.wav")),
+    (speaker:"Whitehorse", text:"The fort has walls, guards, and men who profit from forgetting. We carry the names through the gaps.", voice:None),
+    (speaker:"Elias Ward", text:"No one in this company owns the list. We are only its road out.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m19_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Wall to wall. Hard cover is useful, but do not mistake it for freedom."),
+    (id:"m19_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Open the passage to the names. We do not stay to become another lock."),
+    (id:"m19_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"They have the courtyard. Keep the list moving beyond their reach."),
+    (id:"m19_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The road is open. Whitehorse carries the names; we guard the distance."),
   ],
   score: Some("winter_count.wav"),
   date: "1878-04-13",

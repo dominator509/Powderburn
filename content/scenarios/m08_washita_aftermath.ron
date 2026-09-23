@@ -9,6 +9,14 @@
   prebattle_dialogue: [
     (speaker:"Doyle", text:"The east draw is ugly, narrow, and still our best chance.", voice:Some("m08_01_doyle.wav")),
     (speaker:"Naomi Freed", text:"Ugly is a road. Dead is an ending. Take the draw.", voice:Some("m08_02_naomi.wav")),
+    (speaker:"Doyle", text:"Keep the witnesses in the middle. We are the walls until the draw opens.", voice:None),
+    (speaker:"Naomi Freed", text:"Nobody breaks formation to settle a score. The list reaches the fire with us.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m08_move", trigger:"first_player_move", speaker:"Doyle", text:"Step by step. The draw is narrow, but it is still a road home."),
+    (id:"m08_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Make room for the witnesses. Every shot must buy them another pace."),
+    (id:"m08_hit", trigger:"first_enemy_hit", speaker:"Doyle", text:"Hold the line. Wounded or not, nobody leaves the center alone."),
+    (id:"m08_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The ambush is thinning. Keep the list moving."),
   ],
   score: Some("winter_count.wav"),
   date: "1868-12-01",

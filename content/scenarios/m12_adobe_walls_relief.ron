@@ -8,9 +8,17 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"We warned them. A warning is not protection.", voice:Some("m12r_01_whitehorse.wav")),
     (speaker:"Elias Ward", text:"No. Protection is what we do next.", voice:Some("m12r_02_elias.wav")),
+    (speaker:"Whitehorse", text:"Dust will hide the walls and the people behind them. We move by touch and by trust.", voice:None),
+    (speaker:"Elias Ward", text:"We break the siege long enough to make a road. Nobody waits for a perfect victory.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m12r_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Stay low. The dust makes a wall if we let it settle between us."),
+    (id:"m12r_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Open the route, not a monument. Get the witnesses to the far side."),
+    (id:"m12r_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"They are at the breach. Pull the people behind the adobe and hold the gap."),
+    (id:"m12r_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The road is open. Move now; the dust will not cover us twice."),
   ],
   score: Some("winter_count.wav"),
-  date: "1878-11-12",
+  date: "1874-06-26",
   map: (
     width: 24,
     height: 14,

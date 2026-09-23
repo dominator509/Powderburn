@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Ames", text:"I drew clean lines for dirty men. These surveyors should not die correcting my work.", voice:Some("m13_01_ames.wav")),
     (speaker:"Mercer", text:"Then quit confessing and cover the north wall. We bring them home.", voice:Some("m13_02_mercer.wav")),
+    (speaker:"Ames", text:"The pass narrows above the scree. Put the strongest legs in front and leave them a way back.", voice:None),
+    (speaker:"Mercer", text:"Elevation is a tool, not a throne. We climb to see, then come down with the surveyors.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m13_move", trigger:"first_player_move", speaker:"Mercer", text:"Take the shelf one tile at a time. The mountain punishes haste."),
+    (id:"m13_shot", trigger:"first_player_shot", speaker:"Ames", text:"Their firing line is below us. Make the pass wide enough for the surveyors."),
+    (id:"m13_hit", trigger:"first_enemy_hit", speaker:"Mercer", text:"North wall! Keep them from turning the scree into a trap."),
+    (id:"m13_down", trigger:"first_enemy_down", speaker:"Ames", text:"The line broke. Bring the survey party through before the slope shifts again."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1872-08-14",

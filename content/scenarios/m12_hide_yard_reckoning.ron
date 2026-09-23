@@ -8,9 +8,17 @@
   prebattle_dialogue: [
     (speaker:"Naomi Freed", text:"The badge got us inside. It also told those prisoners exactly who they had to fear.", voice:Some("m12h_01_naomi.wav")),
     (speaker:"Elias Ward", text:"We free them first. They may judge the disguise after.", voice:Some("m12h_02_elias.wav")),
+    (speaker:"Naomi Freed", text:"The yard is close and foul. Keep the prisoners behind us and the ledgers dry.", voice:None),
+    (speaker:"Elias Ward", text:"We wear their mark for one night. We leave it in the mud with the men who earned it.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m12h_move", trigger:"first_player_move", speaker:"Naomi Freed", text:"Through the killing yard. Keep the captives out of the smoke."),
+    (id:"m12h_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Do not fire past the prisoners. The badge ends with our choices."),
+    (id:"m12h_hit", trigger:"first_enemy_hit", speaker:"Naomi Freed", text:"They know the disguise is broken. Get the prisoners to the north gate."),
+    (id:"m12h_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"The yard is losing its guards. Take the killing book and go."),
   ],
   score: Some("dust_and_ashes.wav"),
-  date: "1878-11-12",
+  date: "1874-06-26",
   map: (
     width: 24,
     height: 14,

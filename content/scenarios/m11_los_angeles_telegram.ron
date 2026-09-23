@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Wen Li", text:"He died for eleven lines of wire copy. Make them travel farther than he did.", voice:Some("m11_01_wen.wav")),
     (speaker:"Naomi Freed", text:"They reach the train. We remember the man who could not.", voice:Some("m11_02_naomi.wav")),
+    (speaker:"Wen Li", text:"The depot is all doors and no shelter. The message must move even when we cannot.", voice:None),
+    (speaker:"Naomi Freed", text:"Do not stop to win the yard. Clear the next tile for the courier and keep the wire alive.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m11_move", trigger:"first_player_move", speaker:"Wen Li", text:"Platform to platform. The telegram has to cross before the Ring closes the doors."),
+    (id:"m11_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"That shot buys the courier a lane. Keep the lane open."),
+    (id:"m11_hit", trigger:"first_enemy_hit", speaker:"Wen Li", text:"They are on the wire office. Protect the message, not the building."),
+    (id:"m11_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The next door is clear. Run the telegram while they are looking at the smoke."),
   ],
   score: Some("iron_road.wav"),
   date: "1871-10-27",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 
@@ -9,8 +10,8 @@ MISSIONS = [
     ("m05_hide_yard", "Adobe Walls: The Hide Yard", "1874-06-27", "Day", "Wind", "S", "HideYard", "f_bandits", "sharps_1874", True, "Destroy the Ring's private killing ledger after the fixed battle has ended."),
     ("m002_pawnee_fork", "Pawnee Fork: Hancock's Shadow", "1867-04-19", "Day", "Wind", "E", "Prairie", "f_elk_creek_ring", "spencer_1860", True, "Recover proof from Ring riders operating beyond the historical column."),
     ("m003_adobe_walls", "Adobe Walls: Second Morning", "1874-06-27", "Day", "Clear", "SW", "Adobe", "f_elk_creek_ring", "sharps_1874", True, "Survive Ring gunmen exploiting the confusion without rewriting the fixed battle."),
-    ("m12_adobe_walls_relief", "Relief at Adobe Walls", "1878-11-12", "Dusk", "Dust", "N", "Adobe", "f_elk_creek_ring", "winchester_1873", False, "Break Teague's siege and bring the surviving witnesses out."),
-    ("m12_hide_yard_reckoning", "Hide Yard Reckoning", "1878-11-12", "Night", "Wind", "NW", "HideYard", "f_elk_creek_ring", "winchester_1873", False, "End the Ring's last armed account at the abandoned hide yard."),
+    ("m12_adobe_walls_relief", "Relief at Adobe Walls", "1874-06-26", "Dusk", "Dust", "N", "Adobe", "f_elk_creek_ring", "winchester_1873", False, "Break Teague's siege and bring the surviving witnesses out."),
+    ("m12_hide_yard_reckoning", "Hide Yard Reckoning", "1874-06-26", "Night", "Wind", "NW", "HideYard", "f_elk_creek_ring", "winchester_1873", False, "End the Ring's last armed account at the abandoned hide yard."),
     ("m06_smoky_hill_station", "Smoky Hill Station", "1867-09-03", "Dusk", "Wind", "E", "Station", "f_bandits", "henry_1860", False, "Hold the station yard and recover the stolen mail strongbox."),
     ("m07_washita_winter", "Washita Winter", "1868-11-26", "Moonlit", "Snow", "N", "Snow", "f_elk_creek_ring", "spencer_1860", False, "Extract civilians from Ring raiders at the edge of the historical disaster."),
     ("m08_washita_aftermath", "Washita Aftermath", "1868-12-01", "Dusk", "Snow", "NE", "Snow", "f_bandits", "remington_1858", False, "Escort the winter-count witnesses through a closing ambush."),
@@ -211,13 +212,24 @@ def update_nodes(nodes: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Create missing campaign scenario skeletons without replacing authored content."
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="replace existing scenario files with generated skeletons",
+    )
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent.parent
     scenario_root = root / "content" / "scenarios"
     for ordinal, mission in enumerate(MISSIONS):
         node_id = mission[0]
-        (scenario_root / f"{node_id}.ron").write_text(
-            scenario_text(mission, ordinal), encoding="utf-8", newline="\n"
-        )
+        scenario_path = scenario_root / f"{node_id}.ron"
+        if scenario_path.exists() and not args.force:
+            continue
+        scenario_path.write_text(scenario_text(mission, ordinal), encoding="utf-8", newline="\n")
     nodes_path = root / "content" / "campaign" / "nodes.ron"
     nodes_path.write_text(update_nodes(nodes_path.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
 

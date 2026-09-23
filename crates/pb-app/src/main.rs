@@ -908,7 +908,7 @@ mod presentation_clock_tests {
     }
 
     #[test]
-    fn every_campaign_battle_has_story_score_and_voiced_dialogue() {
+    fn every_campaign_battle_has_story_score_and_dialogue_assets() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content_root = root.join("content");
         let audio_root = root.join("assets/audio");
@@ -935,8 +935,13 @@ mod presentation_clock_tests {
                 scenario.id
             );
             assert!(
-                !scenario.prebattle_dialogue.is_empty(),
-                "{} has no character scene",
+                scenario.prebattle_dialogue.len() >= 4,
+                "{} needs a full character scene",
+                scenario.id
+            );
+            assert!(
+                scenario.battle_dialogue.len() >= 4,
+                "{} needs event-tied battle dialogue",
                 scenario.id
             );
             let Some(score) = scenario.score.as_deref() else {
@@ -947,10 +952,22 @@ mod presentation_clock_tests {
                 "{} references missing score {score}",
                 scenario.id
             );
-            for line in &scenario.prebattle_dialogue {
-                let Some(voice) = line.voice.as_deref() else {
-                    panic!("{} has an unvoiced spoken line", scenario.id);
-                };
+            let voiced_lines = scenario
+                .prebattle_dialogue
+                .iter()
+                .filter_map(|line| line.voice.as_deref())
+                .collect::<Vec<_>>();
+            assert!(
+                voiced_lines.len() >= 2,
+                "{} needs at least two voiced pre-battle lines",
+                scenario.id
+            );
+            for voice in voiced_lines.into_iter().chain(
+                scenario
+                    .battle_dialogue
+                    .iter()
+                    .filter_map(|line| line.voice.as_deref()),
+            ) {
                 assert!(
                     audio_root.join("dialogue").join(voice).is_file(),
                     "{} references missing voice {voice}",
@@ -2509,6 +2526,7 @@ fn main() -> Result<(), String> {
                 ..
             } => {
                 if game_state.screen == GameScreen::Battle && !game_state.paused {
+                    combat::advance_battle_dialogue(&mut game_state);
                     game_state.presentation_frame =
                         game_state.presentation_frame.wrapping_add(1);
                 }
@@ -2663,349 +2681,32 @@ fn main() -> Result<(), String> {
                                 .collect::<Vec<_>>();
                             let max_scroll = filtered.len().saturating_sub(1);
                             let start = game_state.ledger_scroll.min(max_scroll);
-                            for entry in filtered.iter().skip(start).take(8) {
-                                lines.push(format!(
-                                    "#{:03} {} â€” {} â€” {}",
-                                    entry.index, entry.name, entry.place, entry.date
-                                ));
-                                lines.push(format!("  \"{}\"", entry.chosen_line));
-                            }
-                            if filtered.is_empty() {
-                                lines.push(
-                                    "Elias's first page is untouched. No name meets this filter."
-                                        .to_string(),
-                                );
-                            }
-                            lines.push(format!(
-                                "Chain head: {}",
-                                campaign_state.ledger_head_hash
-                            ));
-                        } else {
-                            lines.push(
-                                "Elias's first page is untouched. No campaign is open."
-                                    .to_string(),
-                            );
-                            lines.push(format!("Chain head: {ZERO_LEDGER_HEAD}"));
-                        }
-                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            "THE LEDGER",
-                            &refs,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::NewCompany => {
-                        title_renderer.render(&render_device, &view);
-                        let lines = match pb_content::load::load_all(&content_root) {
-                            Ok(content) => new_company_screen_lines(
-                                &content,
-                                game_state.new_company_way.as_deref(),
-                            ),
-                            Err(error) => vec![
-                                "Campaign data could not be loaded.".to_string(),
-                                format!("Details: {error}"),
-                                "ESC  Return to the title".to_string(),
-                            ],
-                        };
-                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            "NEW COMPANY",
-                            &refs,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::MapTravel => {
-                        map_renderer.render(&render_device, &view);
-                        let mut lines = Vec::new();
-                        if game_state.map_choices.is_empty() {
-                            lines.push("CURRENT ROUTE â€” The Ledger fixes the next destination.".to_string());
-                            lines.push(
-                                "Linear historical passages advance in date order; major forks are yours to choose."
-                                    .to_string(),
-                            );
-                        } else {
-                            lines.push("ROUTE DECISION â€” Choose the company's next destination:".to_string());
-                            if let Ok(content) = pb_content::load::load_all(&content_root) {
-                                for (index, choice_id) in
-                                    game_state.map_choices.iter().enumerate()
-                                {
-                                    lines.push(format!(
-                                        "{}. {}",
-                                        index + 1,
-                                        travel_choice_label(&content, choice_id)
-                                    ));
-                                }
-                            }
-                        }
-                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            "MAP & TRAVEL",
-                            &refs,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::Briefing => {
-                        let mut lines = Vec::new();
-                        let mut use_prologue_art = false;
-                        match game_state
-                            .current_mission
-                            .as_deref()
-                            .ok_or_else(|| "E-CAMPAIGN-STATE: no mission selected".to_string())
-                            .and_then(|mission| {
-                                pb_content::load::load_all(&content_root)
-                                    .map_err(|error| format!("E-CAMPAIGN-CONTENT: {error}"))
-                                    .and_then(|content| {
-                                        campaign::scenario_for_mission(&content, mission)
-                                            .cloned()
-                                    })
-                            }) {
-                            Ok(scenario) => {
-                                use_prologue_art = scenario.id == "scn_m01_elk_creek";
-                                lines.push(format!(
-                                    "{} â€” {} | {} | {}",
-                                    scenario.display_name,
-                                    scenario.date,
-                                    scenario.weather,
-                                    scenario.light
-                                ));
-                                if game_state.briefing_page == 0 {
-                                    let count = scenario.briefing.len().max(1);
-                                    lines.push(format!(
-                                        "STORY {}/{}",
-                                        game_state.briefing_line.saturating_add(1).min(count),
-                                        count
-                                    ));
-                                    if let Some(line) =
-                                        scenario.briefing.get(game_state.briefing_line)
-                                    {
-                                        lines.push(line.clone());
-                                    } else {
-                                        lines.push(
-                                            "No authored situation was provided for this mission."
-                                                .to_string(),
-                                        );
-                                    }
-                                } else {
-                                    let count = scenario.prebattle_dialogue.len().max(1);
-                                    lines.push(format!(
-                                        "SCENE {}/{}",
-                                        game_state.briefing_line.saturating_add(1).min(count),
-                                        count
-                                    ));
-                                    if let Some(line) =
-                                        scenario.prebattle_dialogue.get(game_state.briefing_line)
-                                    {
-                                        lines.push(format!("{}: {}", line.speaker, line.text));
-                                    }
-                                    if briefing_can_deploy(&game_state, &content_root) {
-                                        for objective in &scenario.objectives {
-                                            lines.push(format!(
-                                                "OBJECTIVE â€” {}",
-                                                objective.description
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                lines.push("This mission briefing could not be opened.".to_string());
-                                lines.push(format!("Details: {error}"));
-                            }
-                        }
-                        if use_prologue_art {
-                            prologue_renderer.render(&render_device, &view);
-                        } else {
-                            title_renderer.render(&render_device, &view);
-                        }
-                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            if use_prologue_art && game_state.briefing_page == 0 {
-                                "ELK CREEK â€” THE DEBT"
-                            } else if use_prologue_art {
-                                "ELK CREEK â€” NO MORE RUNNING"
-                            } else {
-                                "ON THE HARD ROAD"
-                            },
-                            &refs,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::Settings => {
-                        title_renderer.render(&render_device, &view);
-                        let lines = settings_screen_lines(&game_state);
-                        let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            "SETTINGS",
-                            &refs,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::Bibliography => {
-                        title_renderer.render(&render_device, &view);
-                        let bibliography_lines =
-                            bibliography::section_lines(game_state.bibliography_section);
-                        hud_renderer.render_screen_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            "BIBLIOGRAPHY",
-                            bibliography_lines,
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::Battle => {
-                        // Always render the combat frame
-                        combat::render_combat_frame(
-                            &mut combat_renderer,
-                            &game_state,
-                            &render_device,
-                            &view,
-                            surface_format,
-                            sw,
-                            sh,
-                        );
+                            for entry in filtered.iter().skip(start).take(8+ÝôêÚ$z{-®éÜj×een::Bibliography)
+        );
+        assert_eq!(
+            GameScreen::Bibliography.transition(GameScreen::Title),
+            Ok(GameScreen::Title)
+        );
+        assert_eq!(
+            GameScreen::Camp.transition(GameScreen::LedgerView),
+            Ok(GameScreen::LedgerView)
+        );
+    }
 
-                        // Render HUD (unless paused â€” we dim instead)
-                        if !game_state.paused {
-                            hud_renderer.render(&font, &game_state, &render_device, &view, sw, sh);
-                        }
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "E-SCREEN-TRANSITION")]
+    fn undeclared_transition_panics_in_debug() {
+        let mut state = GameState::new();
+        let _ = state.go_to(GameScreen::Battle);
+    }
 
-                        // Pause overlay (semi-transparent dim + text)
-                        if game_state.paused {
-                            hud_renderer.render_pause_overlay(
-                                &font,
-                                &render_device,
-                                &view,
-                                sw,
-                                sh,
-                                &game_state.settings,
-                                &screen_buttons,
-                                pointer,
-                            );
-                        }
-                    }
-                    GameScreen::AfterAction => {
-                        after_action_renderer.render(
-                            &game_state,
-                            &font,
-                            &render_device,
-                            &view,
-                            surface_format,
-                            sw,
-                            sh,
-                        );
-                        hud_renderer.render_buttons_only(
-                            &font,
-                            &render_device,
-                            &view,
-                            (sw, sh),
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::SaveSlot => {
-                        combat::render_combat_frame(
-                            &mut combat_renderer,
-                            &game_state,
-                            &render_device,
-                            &view,
-                            surface_format,
-                            sw,
-                            sh,
-                        );
-                        // Dim overlay + save slot text
-                        hud_renderer.render_slot_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            sw,
-                            sh,
-                            "SAVE SLOT",
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                    GameScreen::LoadSlot => {
-                        combat::render_combat_frame(
-                            &mut combat_renderer,
-                            &game_state,
-                            &render_device,
-                            &view,
-                            surface_format,
-                            sw,
-                            sh,
-                        );
-                        hud_renderer.render_slot_overlay(
-                            &font,
-                            &render_device,
-                            &view,
-                            sw,
-                            sh,
-                            "LOAD SLOT",
-                            &game_state.settings,
-                            &screen_buttons,
-                            pointer,
-                        );
-                    }
-                }
-
-                // Print game state message as a simple HUD to stdout
-                if !game_state.message.is_empty() {
-                    println!("{}", game_state.message);
-                    game_state.message.clear();
-                }
-
-                frame.present();
-            }
-
-            Event::AboutToWait => {
-                target.set_control_flow(ControlFlow::WaitUntil(
-                    Instant::now() + presentation_frame_interval(game_state.settings.slow_clock),
-                ));
-                window.request_redraw();
-            }
-
-            _ => {}
-        }
-    });
-
-    match result {
-        Ok(()) => Ok(()),
-        Err(e) => Err(format!("event loop error: {e}")),
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn undeclared_transition_is_refused_without_mutation_in_release() {
+        let mut state = GameState::new();
+        let result = state.go_to(GameScreen::Battle);
+        assert!(matches!(result, Err(error) if error.starts_with("E-SCREEN-TRANSITION:")));
+        assert_eq!(state.screen, GameScreen::Title);
     }
 }

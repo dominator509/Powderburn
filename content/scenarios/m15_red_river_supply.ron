@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"Every crate you stop is one less payment for somebody else's suffering.", voice:Some("m15_01_whitehorse.wav")),
     (speaker:"Doyle", text:"Convoy is four wagons, six rifles, and no innocence. I can work with that.", voice:Some("m15_02_doyle.wav")),
+    (speaker:"Whitehorse", text:"The canyon gives us one chance to choose the distance. Let the wagons enter the pocket.", voice:None),
+    (speaker:"Doyle", text:"Break the route, not the people caught in it. We leave the historical column untouched.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m15_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Take the high shelf. Smoke will tell us which way the convoy is turning."),
+    (id:"m15_shot", trigger:"first_player_shot", speaker:"Doyle", text:"First wagon, then the escort. Stop the road before you chase the rifles."),
+    (id:"m15_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"The canyon is closing. Move through the smoke before the wind changes."),
+    (id:"m15_down", trigger:"first_enemy_down", speaker:"Doyle", text:"The convoy is broken. Secure the crates and leave the campaign road alone."),
   ],
   score: Some("hard_road.wav"),
   date: "1874-09-12",

@@ -9,6 +9,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"Do not call this saving us. Save the people in that ravine. Leave the larger words alone.", voice:Some("m07_01_whitehorse.wav")),
     (speaker:"Elias Ward", text:"No larger words. Show me the ravine.", voice:Some("m07_02_elias.wav")),
+    (speaker:"Whitehorse", text:"Snow hides a safe footstep and a dead one. Test the ground before you ask it to carry you.", voice:None),
+    (speaker:"Elias Ward", text:"We keep a retreat lane open. Nobody gets stranded for the sake of a clean shot.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m07_move", trigger:"first_player_move", speaker:"Whitehorse", text:"There. Follow the stones. The snow remembers weight."),
+    (id:"m07_shot", trigger:"first_player_shot", speaker:"Elias Ward", text:"Cover the ravine. The people are the mission, not the riders."),
+    (id:"m07_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"Down! Keep moving toward the hollow. The cold will finish what bullets start."),
+    (id:"m07_down", trigger:"first_enemy_down", speaker:"Elias Ward", text:"One less rifle. Use the silence to bring them out."),
   ],
   score: Some("winter_count.wav"),
   date: "1868-11-26",

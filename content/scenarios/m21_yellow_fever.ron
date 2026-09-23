@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Alcantara", text:"The fever does not choose victims. Teague does, even here.", voice:Some("m21_01_alcantara.wav")),
     (speaker:"Naomi Freed", text:"Then we take back the medicine and leave him nobody to count as profit.", voice:Some("m21_02_naomi.wav")),
+    (speaker:"Alcantara", text:"The ward is crowded and the rain is carrying the sickness through every doorway. We need the quinine intact.", voice:None),
+    (speaker:"Naomi Freed", text:"No heroics. Move the medicine, cover the volunteers, and let the fever find no help from us.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m21_move", trigger:"first_player_move", speaker:"Alcantara", text:"Keep to the dry boards. Mud costs time the patients do not have."),
+    (id:"m21_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Clear the wagon lane. The medicine moves before we claim the yard."),
+    (id:"m21_hit", trigger:"first_enemy_hit", speaker:"Alcantara", text:"A volunteer is down. Bring them behind the ward and keep the quinine covered."),
+    (id:"m21_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The wagon is close. Get it to Tomas before dawn."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1878-09-01",

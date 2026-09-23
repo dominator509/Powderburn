@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Whitehorse", text:"Do not mistake fighting Teague for owning what happens here.", voice:Some("m003_01_whitehorse.wav")),
     (speaker:"Naomi Freed", text:"We own only our choices. Teague's killers are one of them.", voice:Some("m003_02_naomi.wav")),
+    (speaker:"Whitehorse", text:"The walls are already famous. Our work is smaller: find the crime inside the noise.", voice:None),
+    (speaker:"Naomi Freed", text:"Keep your eyes on the men using the confusion. We do not add our names to the wrong list.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m003_move", trigger:"first_player_move", speaker:"Whitehorse", text:"Rubble changes the ground. Move where the wall still has a shadow."),
+    (id:"m003_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Separate Teague's gunmen from the battle they are hiding inside."),
+    (id:"m003_hit", trigger:"first_enemy_hit", speaker:"Whitehorse", text:"The long rifles have the open ground. Break their sightline with the rubble."),
+    (id:"m003_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"That killer cannot write the story now. Find the evidence before the dust settles."),
   ],
   score: Some("hard_road.wav"),
   date: "1874-06-27",

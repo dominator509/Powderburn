@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Silas Teague", text:"Ward, you built a religion from a bookkeeping error. Come upstairs and learn what the country actually costs.", voice:Some("m24_01_teague.wav")),
     (speaker:"Elias Ward", text:"No sermon. No absolution. We bring you out alive, and the people you priced speak for themselves.", voice:Some("m24_02_elias.wav")),
+    (speaker:"Silas Teague", text:"Your friends will not agree on what this book means. That is why I kept it from them.", voice:None),
+    (speaker:"Elias Ward", text:"They do not have to agree. They only have to live long enough to tell the truth in their own voices.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m24_move", trigger:"first_player_move", speaker:"Elias Ward", text:"Up the stairs. The counting room is the last place he can hide the names."),
+    (id:"m24_shot", trigger:"first_player_shot", speaker:"Silas Teague", text:"There is your first correction, Ward. Another body in the margins."),
+    (id:"m24_hit", trigger:"first_enemy_hit", speaker:"Elias Ward", text:"Keep the witnesses behind us. Teague gets no more authors."),
+    (id:"m24_down", trigger:"first_enemy_down", speaker:"Silas Teague", text:"Kill enough of my men and you will call the ledger justice."),
   ],
   score: Some("hard_road.wav"),
   date: "1878-11-11",

@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Ames", text:"The patron is ruined. Men like Teague become most dangerous when money stops protecting them.", voice:Some("m14_01_ames.wav")),
     (speaker:"Naomi Freed", text:"Then we take his protection away and survive what he does next.", voice:Some("m14_02_naomi.wav")),
+    (speaker:"Ames", text:"The office is burning from the inside. Choose a route before the records become ash.", voice:None),
+    (speaker:"Naomi Freed", text:"Tonight is not about revenge. It is the last hour before Teague decides which of us disappears.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m14_move", trigger:"first_player_move", speaker:"Ames", text:"Through the side room. Fire makes every doorway a deadline."),
+    (id:"m14_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Break their guard, not the shelves. We need the books intact."),
+    (id:"m14_hit", trigger:"first_enemy_hit", speaker:"Ames", text:"The patron's men are buying time with bullets. Take the records and keep moving."),
+    (id:"m14_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The office is opening. Find the pages that name the next marked town."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1873-09-18",

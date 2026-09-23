@@ -376,3 +376,59 @@ fn shipped_campaign_is_chronological_and_visits_all_twelve_camps() {
         Some("m24_ledger_reckoning")
     );
 }
+
+#[test]
+fn every_shipped_mission_matches_its_authored_story_contract() {
+    let Ok(content) = load_all(std::path::Path::new("../../content")) else {
+        panic!("shipped content must load");
+    };
+
+    let missions: Vec<_> = content
+        .campaign_nodes
+        .values()
+        .filter(|node| node.kind == "Mission")
+        .collect();
+    assert_eq!(missions.len(), 24);
+
+    for node in missions {
+        let Some(scenario_id) = node.scenario_id.as_deref() else {
+            panic!("mission '{}' must identify its scenario", node.id);
+        };
+        let Some(scenario) = content.scenarios.get(scenario_id) else {
+            panic!(
+                "mission '{}' references missing scenario '{}'",
+                node.id, scenario_id
+            );
+        };
+        assert_eq!(
+            node.date, scenario.date,
+            "mission '{}' and scenario '{}' must share one canonical date",
+            node.id, scenario_id
+        );
+        assert!(
+            scenario.briefing.len() >= 2,
+            "mission '{}' needs a complete briefing",
+            node.id
+        );
+        assert!(
+            !scenario.prebattle_dialogue.is_empty(),
+            "mission '{}' needs prebattle dialogue",
+            node.id
+        );
+        assert!(
+            scenario.prebattle_dialogue.len() >= 4,
+            "mission '{}' needs a full prebattle exchange",
+            node.id
+        );
+        assert!(
+            scenario.battle_dialogue.len() >= 4,
+            "mission '{}' needs event-tied in-battle dialogue",
+            node.id
+        );
+        assert!(
+            scenario.score.is_some(),
+            "mission '{}' needs a narrative score",
+            node.id
+        );
+    }
+}

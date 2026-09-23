@@ -8,6 +8,14 @@
   prebattle_dialogue: [
     (speaker:"Ruelas", text:"My family gathered salt before their courthouse had a roof. Teague calls memory trespass.", voice:Some("m20_01_ruelas.wav")),
     (speaker:"Naomi Freed", text:"Then we defend the people who remember, not just the paper that agrees.", voice:Some("m20_02_naomi.wav")),
+    (speaker:"Ruelas", text:"The archive is in the adobe storehouse. The salt road is behind it, and every title is a loaded gun.", voice:None),
+    (speaker:"Naomi Freed", text:"We protect the records and the people who made them. The courthouse can argue with both later.", voice:None),
+  ],
+  battle_dialogue: [
+    (id:"m20_move", trigger:"first_player_move", speaker:"Ruelas", text:"Stay with the archive wall. The salt road is open, but it is not safe."),
+    (id:"m20_shot", trigger:"first_player_shot", speaker:"Naomi Freed", text:"Clear the doorway. Ruelas decides which records leave with us."),
+    (id:"m20_hit", trigger:"first_enemy_hit", speaker:"Ruelas", text:"They are coming for the papers because the papers remember the people."),
+    (id:"m20_down", trigger:"first_enemy_down", speaker:"Naomi Freed", text:"The storehouse can breathe. Get the records away from the fire."),
   ],
   score: Some("dust_and_ashes.wav"),
   date: "1877-12-17",

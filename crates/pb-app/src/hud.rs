@@ -425,11 +425,28 @@ impl HudRenderer {
         let dynamic_bar_h = (content_line_count as f32 * line_height + 28.0)
             .max(BAR_H)
             .min(sh * 0.45);
+        let bar_y = sh - dynamic_bar_h - (HUD_BOTTOM - BAR_H);
+
+        let dialogue_width = (sw - 2.0 * MARGIN).min(760.0).max(1.0);
+        let dialogue_x = (sw - dialogue_width) * 0.5;
+        let dialogue_line_height = GLYPH_H as f32 * txt_scale_small + 5.0;
+        let dialogue_lines = game_state
+            .active_battle_dialogue
+            .as_ref()
+            .map(|dialogue| {
+                layout_wrapped_text(&dialogue.text, txt_scale_small, dialogue_width - 32.0)
+            })
+            .unwrap_or_default();
+        let dialogue_height = if game_state.active_battle_dialogue.is_some() {
+            32.0 + dialogue_line_height * dialogue_lines.len().max(1) as f32
+        } else {
+            0.0
+        };
+        let dialogue_y = (bar_y - dialogue_height - 12.0).max(76.0);
 
         let mut rects = Vec::new();
 
         // Bottom bar background.
-        let bar_y = sh - dynamic_bar_h - (HUD_BOTTOM - BAR_H);
         rects.push(HudRect {
             x: 0.0,
             y: bar_y,
@@ -455,6 +472,15 @@ impl HudRenderer {
                 w: combat_log_width,
                 h: combat_log_height,
                 color: [0.018, 0.022, 0.02, 0.92],
+            });
+        }
+        if dialogue_height > 0.0 {
+            rects.push(HudRect {
+                x: dialogue_x,
+                y: dialogue_y,
+                w: dialogue_width,
+                h: dialogue_height,
+                color: [0.025, 0.032, 0.028, 0.96],
             });
         }
 
@@ -755,6 +781,33 @@ impl HudRenderer {
                         combat_log_y + 25.0 + index as f32 * combat_log_line_height,
                         txt_scale_small,
                         combat_log_color(entry.tone, palette),
+                        sw,
+                        sh,
+                    ));
+                }
+            }
+
+            // Triggered character barks stay visible as a proper story panel
+            // instead of competing with the terse combat feed. The panel is
+            // fed by the same event batch that produced the action result.
+            if let Some(dialogue) = game_state.active_battle_dialogue.as_ref() {
+                text_meshes.push(font.render_text(
+                    &format!("{}  |  BATTLE DIALOGUE", dialogue.speaker),
+                    dialogue_x + 16.0,
+                    dialogue_y + 8.0,
+                    txt_scale_small,
+                    palette.accent,
+                    sw,
+                    sh,
+                ));
+                for (index, line) in dialogue_lines.iter().enumerate() {
+                    let line = fit_text(&line.text, txt_scale_small, dialogue_width - 32.0);
+                    text_meshes.push(font.render_text(
+                        &line,
+                        dialogue_x + 16.0,
+                        dialogue_y + 25.0 + index as f32 * dialogue_line_height,
+                        txt_scale_small,
+                        palette.text,
                         sw,
                         sh,
                     ));

@@ -86,7 +86,7 @@ impl AudioSystem {
                     continue;
                 }
                 let source = worker_dir.join(&request.filename);
-                let playback = if gain == 100 {
+                let playback = if gain == 100 || is_compressed_audio(&source) {
                     source
                 } else {
                     match scaled_cache_file(&source, gain) {
@@ -97,11 +97,23 @@ impl AudioSystem {
                         }
                     }
                 };
-                let child = std::process::Command::new("aplay")
-                    .arg("-q")
-                    .arg(&playback)
-                    .spawn()
-                    .or_else(|_| std::process::Command::new("paplay").arg(&playback).spawn());
+                let child = if is_compressed_audio(&playback) {
+                    std::process::Command::new("paplay")
+                        .arg(&playback)
+                        .spawn()
+                        .or_else(|_| {
+                            std::process::Command::new("aplay")
+                                .arg("-q")
+                                .arg(&playback)
+                                .spawn()
+                        })
+                } else {
+                    std::process::Command::new("aplay")
+                        .arg("-q")
+                        .arg(&playback)
+                        .spawn()
+                        .or_else(|_| std::process::Command::new("paplay").arg(&playback).spawn())
+                };
                 if request.dialogue {
                     if let Ok(mut child) = child {
                         let _ = child.wait();
@@ -135,7 +147,7 @@ impl AudioSystem {
                     thread::sleep(Duration::from_millis(250));
                     continue;
                 }
-                let playback = if gain == 100 {
+                let playback = if gain == 100 || is_compressed_audio(&source) {
                     source.clone()
                 } else {
                     match scaled_cache_file(&source, gain) {
@@ -227,7 +239,8 @@ impl AudioSystem {
         });
     }
 
-    /// Play one authored dialogue WAV and duck the score until it finishes.
+    /// Play one authored dialogue WAV or compressed OGG and duck the score
+    /// until it finishes.
     pub fn play_dialogue(&self, filename: &str, speaker: &str, subtitle: &str) -> bool {
         let relative = format!("dialogue/{filename}");
         if !safe_audio_path(&relative) {
@@ -286,10 +299,16 @@ fn volume_percent(value: f32) -> u8 {
 
 fn safe_audio_path(filename: &str) -> bool {
     let path = Path::new(filename);
-    path.extension().and_then(|value| value.to_str()) == Some("wav")
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
+    matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("wav" | "ogg")
+    ) && path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn is_compressed_audio(path: &Path) -> bool {
+    path.extension().and_then(|value| value.to_str()) == Some("ogg")
 }
 
 fn scaled_cache_file(source: &Path, gain: u8) -> Result<PathBuf, String> {
@@ -349,5 +368,13 @@ mod tests {
         assert!(Sfx::ALL.contains(&Sfx::DamageFemale));
         assert!(Sfx::ALL.contains(&Sfx::DeathMale));
         assert!(Sfx::ALL.contains(&Sfx::DeathFemale));
+    }
+
+    #[test]
+    fn compressed_dialogue_paths_are_supported_without_path_traversal() {
+        assert!(safe_audio_path("dialogue/m01_move.ogg"));
+        assert!(is_compressed_audio(Path::new("dialogue/m01_move.ogg")));
+        assert!(!safe_audio_path("../dialogue/m01_move.ogg"));
+        assert!(!safe_audio_path("dialogue/m01_move.mp3"));
     }
 }
